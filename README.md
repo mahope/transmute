@@ -68,6 +68,17 @@ echo '{"a":1}' | transmute --output xml
 node test/test.js
 ```
 
+## Desktop app
+
+A cross-platform desktop version (macOS, Windows, Linux) with a visual pipeline builder is available — see the [product page](https://auditedwp.pages.dev/transmute/). Free tier: 3 transformations per launch. $19 one-time license.
+
+## Why Transmute?
+
+- **Private by default** — everything runs locally, your data never touches a server
+- **Zero dependencies** — one Node.js file, no install bloat
+- **Pipelines** — chain filter → map → sort → convert in a single pass
+- **Cross-platform** — macOS, Windows, Linux
+
 ## License
 
 MIT
