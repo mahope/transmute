@@ -20,6 +20,7 @@ async function main() {
   let inputFormat = null;
   let pipeline = [];
   let outputFormat = null;
+  let tableName = 'my_table';
 
   // Parse args
   for (let i = 0; i < args.length; i++) {
@@ -33,6 +34,9 @@ async function main() {
     } else if (arg === '--output' || arg === '-o') {
       i++;
       outputFormat = args[i];
+    } else if (arg === '--table') {
+      i++;
+      tableName = args[i];
     } else if (arg === '--help' || arg === '-h') {
       showHelp();
       return;
@@ -69,7 +73,7 @@ async function main() {
   if (outputFormat === null) outputFormat = 'table';
 
   // Run pipeline
-  const result = run(inputText, inputFormat, pipeline, outputFormat);
+  const result = run(inputText, inputFormat, pipeline, outputFormat, { tableName });
   if (result.error) {
     console.error(`Error: ${result.error}`);
     process.exit(1);
@@ -96,7 +100,8 @@ function showPreview(text, format) {
   console.log('Available commands:');
   console.log('  --pipe \'[{"op":"filter","expr":"item.x > 5"},{"op":"sort","by":"name"}]\'');
   console.log('  --format json|csv|yaml|xml (input format)');
-  console.log('  --output json|csv|yaml|xml|table (output format)');
+  console.log('  --output json|csv|yaml|xml|table|sql (output format)');
+  console.log('  transmute users.csv --output sql --table users   # CSV to SQL INSERT statements');
   console.log('');
   console.log('Examples:');
   console.log('  transmute data.json --pipe \'[{"op":"head","n":5}]\' --output csv');
@@ -115,7 +120,8 @@ Usage:
 Options:
   -f, --format <type>    Input format (json, csv, yaml, xml). Auto-detected.
   -p, --pipe <json>      Transformation pipeline as JSON array
-  -o, --output <type>    Output format (json, csv, yaml, xml, table). Default: table
+  -o, --output <type>    Output format (json, csv, yaml, xml, table, sql). Default: table
+  --table <name>         Table name for SQL output (default: my_table)
   -h, --help             Show this help
 
 Pipeline operations:

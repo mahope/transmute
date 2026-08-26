@@ -237,5 +237,44 @@ test('filter on parsed XML', () => {
 
 // ─── SUMMARY ─────────────────────────────────────────────────────────────
 
+
+
+// ─── SQL serializer ───
+const { run: runSQL } = require('../src/engine.js');
+
+function t(name, fn) {
+  try { fn(); console.log('  ✅', name); passed++; }
+  catch (e) { console.log('  ❌', name, e.message); failed++; }
+}
+
+t('JSON → SQL INSERT basic', () => {
+  const r = runSQL('[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]', 'json', [], 'sql', { tableName: 'users' });
+  if (r.error) throw new Error(r.error);
+  if (!r.text.includes('INSERT INTO "users" ("id", "name") VALUES')) throw new Error('missing header');
+  if (!r.text.includes("(1, 'Alice')")) throw new Error('missing row');
+});
+
+t('CSV → SQL numbers stay numeric', () => {
+  const r = runSQL('a,b\n1,hello\n2.5,world', 'csv', [], 'sql');
+  if (r.text.includes("'1,'") || r.text.includes('(\'1\'')) throw new Error('number quoted');
+  if (!r.text.includes('(1, \'hello\')')) throw new Error(r.text);
+});
+
+t('SQL escapes single quotes', () => {
+  const r = runSQL('[{"name":"O\'Brien\'s Shop"}]', 'json', [], 'sql');
+  if (!r.text.includes("'O''Brien''s Shop'")) throw new Error(r.text);
+});
+
+t('SQL NULL for empty values', () => {
+  const r = runSQL('[{"a":null,"b":""}]', 'json', [], 'sql');
+  if (!r.text.includes('(NULL, NULL)')) throw new Error(r.text);
+});
+
+t('pipeline + sql works', () => {
+  const r = runSQL('[{"n":3},{"n":1},{"n":2}]', 'json', [{ op: 'sort', by: 'n' }], 'sql');
+  const idx1 = r.text.indexOf('(1'), idx2 = r.text.indexOf('(2'), idx3 = r.text.indexOf('(3');
+  if (!(idx1 < idx2 && idx2 < idx3)) throw new Error('sort not applied');
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
