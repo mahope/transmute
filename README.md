@@ -1,5 +1,9 @@
 # Transmute
 
+[![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/badge/install-npx%20github:mahope%2Ftransmute-CB3837)](https://github.com/mahope/transmute#install--run)
+
 Cross-platform CLI data transformer — JSON, CSV, YAML, XML. Filter, sort, map, pick, omit, unique and convert between formats. Zero dependencies, runs anywhere Node.js runs (macOS, Windows, Linux).
 
 Part of [Transmute](https://auditedwp.pages.dev/transmute/) — the desktop data transformer.
