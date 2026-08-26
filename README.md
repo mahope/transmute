@@ -6,7 +6,10 @@
 
 Cross-platform CLI data transformer — JSON, CSV, YAML, XML. Filter, sort, map, pick, omit, unique and convert between formats. Zero dependencies, runs anywhere Node.js runs (macOS, Windows, Linux).
 
-Part of [Transmute](https://auditedwp.pages.dev/transmute/) — the desktop data transformer.
+[![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Transmute** is also a cross-platform **desktop app** (macOS, Windows, Linux) with a visual pipeline builder — free tier: 3 transformations per launch, [$19 one-time license](https://auditedwp.pages.dev/transmute/).
 
 ## Install / run
 
