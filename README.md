@@ -64,6 +64,12 @@ echo '{"a":1}' | transmute --output xml
 | omit | `{"op":"omit","fields":["password"]}` |
 | sort | `{"op":"sort","by":"name","dir":"asc"}` |
 | unique | `{"op":"unique","by":"email"}` |
+| group | `{"op":"group","by":"city"}` |
+| add | `{"op":"add","fields":{"total":"item.price * item.qty"}}` |
+| join | `{"op":"join","on":"id","keep":"left","with":[...]}` |
+| rename | `{"op":"rename","mapping":{"qty":"quantity"}}` |
+| flatten | `{"op":"flatten","field":"items"}` |
+| head / tail / count | `{"op":"head","n":5}` · `{"op":"count"}` |
 
 ## Tests
 

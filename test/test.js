@@ -20,6 +20,36 @@ function test(name, fn) {
 }
 
 console.log('\n📋 Transmute Engine Tests\n');
+// ─── ADD & JOIN ──────────────────────────────────────────────────────────
+
+test('add computed field', () => {
+  const r = run('[{"price":10,"qty":2}]', 'json', [{op:'add',fields:{total:'item.price * item.qty'}}]);
+  assert.strictEqual(r.data[0].total, 20);
+});
+
+test('add leaves existing fields untouched', () => {
+  const r = run('[{"name":"A","price":5,"qty":1}]', 'json', [{op:'add',fields:{total:'item.price * item.qty'}}]);
+  assert.strictEqual(r.data[0].name, 'A');
+});
+
+test('add with bad expression yields null, not crash', () => {
+  const r = run('[{"a":1}]', 'json', [{op:'add',fields:{x:'item.nope.deep'}}]);
+  assert.strictEqual(r.data.length, 1);
+});
+
+test('join merges matching rows on key', () => {
+  const r = run('[{"id":"a"},{"id":"b"}]', 'json',
+    [{op:'join',on:'id',with:[{id:'a',city:'X'}]}]);
+  assert.strictEqual(r.data[0].city, 'X');
+  assert.strictEqual(r.data.length, 1); // non-matching dropped by default
+});
+
+test('join keep:left keeps unmatched rows', () => {
+  const r = run('[{"id":"a"},{"id":"z"}]', 'json',
+    [{op:'join',on:'id',keep:'left',with:[{id:'a',city:'X'}]}]);
+  assert.strictEqual(r.data.length, 2);
+});
+
 
 // ─── PARSING ─────────────────────────────────────────────────────────────
 

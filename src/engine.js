@@ -348,6 +348,42 @@ const operations = {
       }
     }
     return result;
+  },
+  add: (data, params) => {
+    const fields = params.fields ?? {};
+    return data.map((item, i) => {
+      const out = { ...item };
+      for (const [name, spec] of Object.entries(fields)) {
+        const expr = typeof spec === 'object' && spec !== null ? spec.expr : spec;
+        try {
+          out[name] = compileExpression(expr)(item, i);
+        } catch (e) {
+          out[name] = null;
+        }
+      }
+      return out;
+    });
+  },
+  join: (data, params) => {
+    const rows = Array.isArray(params.with) ? params.with : [];
+    const on = params.on;
+    const index = new Map(rows.map(r => [String(r[on]), r]));
+    const keepMissing = params.keep === 'left' || params.keep === 'all';
+    const prefix = params.prefix ?? '';
+    const result = [];
+    for (const item of data) {
+      const match = index.get(String(item[on]));
+      if (match) {
+        const merged = { ...item };
+        for (const [k, v] of Object.entries(match)) {
+          if (k !== on && !(k in merged)) merged[prefix + k] = v;
+        }
+        result.push(merged);
+      } else if (keepMissing) {
+        result.push(item);
+      }
+    }
+    return result;
   }
 };
 
