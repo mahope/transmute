@@ -1,0 +1,11 @@
+name,age,email,role,status
+Alice Hansen,32,alice@example.com,admin,active
+Bob Jensen,25,bob@example.com,user,active
+Charlie Nielsen,47,charlie@example.com,admin,inactive
+Ditte Poulsen,19,ditte@example.com,user,active
+Erik Madsen,38,erik@example.com,editor,active
+Freja Sørensen,29,freja@example.com,user,inactive
+Gustav Pedersen,41,gustav@example.com,admin,active
+Hanne Christensen,55,hanne@example.com,user,active
+Ib Andersen,22,ib@example.com,editor,inactive
+Jytte Larsen,33,jytte@example.com,user,active

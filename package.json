@@ -1,0 +1,18 @@
+{
+  "name": "transmute",
+  "version": "0.1.0",
+  "description": "Cross-platform data transformer — JSON, CSV, YAML, XML",
+  "main": "src/engine.js",
+  "bin": {
+    "transmute": "src/cli.js"
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "node test/test.js",
+    "start": "node src/cli.js"
+  },
+  "keywords": ["json", "csv", "yaml", "xml", "transformer", "data", "pipeline"],
+  "license": "MIT"
+}
