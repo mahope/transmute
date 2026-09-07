@@ -45,7 +45,7 @@
   --surface-2: #eef0ee;
   --ink: #171a1e;
   --ink-2: #4a525a;
-  --ink-3: #737c84;
+  --ink-3: #626b73;
   --line: #dbe0e2;
   --accent: #0f7b6c;
   --accent-hover: #0b6558;
@@ -459,6 +459,8 @@ td:first-child { white-space: nowrap; }
 .crumbs [aria-current] { color: var(--ink); }
 
 .doc-layout { display: grid; gap: 2rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.doc-layout .toc-side { order: -1; }
+@media (min-width: 1100px) { .doc-layout .toc-side { order: 0; } }
 @media (min-width: 1100px) { .doc-layout { grid-template-columns: minmax(0, 1fr) 260px; gap: 4rem; } .doc-layout.no-toc { grid-template-columns: minmax(0, 1fr); } }
 .prose { max-width: var(--w-prose); min-width: 0; }
 .prose h1 { max-width: 22ch; }

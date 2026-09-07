@@ -25,10 +25,6 @@ WIDTHS = [360, 768, 1280]
 INBOX = "https://mahope.tools/api/bugreport"
 
 
-def bb(page):
-    """Locator for BugBottle's shadow root host (the only shadow host on the page)."""
-    return page.locator("div:has(> .wrap)").first
-
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -78,7 +74,6 @@ def main() -> int:
             page.wait_for_timeout(200)
 
             # BugBottle panel.
-            host = page.locator("body > div:not([class])").filter(has=page.locator("button.trigger"))
             trigger = page.locator("button.trigger")
             if trigger.count() == 0:
                 print(f"{w}px BugBottle: trigger not found")
