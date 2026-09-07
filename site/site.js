@@ -10,10 +10,12 @@
   var t = {
     en: { copy: 'Copy', copied: 'Copied', failed: 'Select and copy', open: 'Open menu', close: 'Close menu',
           search: 'Search', placeholder: 'Search guides, operations, questions…', none: 'No results for', results: 'results',
-          hint: '↑↓ to move · Enter to open · Esc to close', all: 'See all results', running: 'Running…', rows: 'rows' },
+          hint: '↑↓ to move · Enter to open · Esc to close', all: 'See all results', running: 'Running…', rows: 'rows',
+          link: 'Copy link to this pipeline', linked: 'Link copied', download: 'Download output' },
     da: { copy: 'Kopiér', copied: 'Kopieret', failed: 'Markér og kopiér', open: 'Åbn menu', close: 'Luk menu',
           search: 'Søg', placeholder: 'Søg i guides, operationer, spørgsmål…', none: 'Ingen resultater for', results: 'resultater',
-          hint: '↑↓ flytter · Enter åbner · Esc lukker', all: 'Se alle resultater', running: 'Kører…', rows: 'rækker' }
+          hint: '↑↓ flytter · Enter åbner · Esc lukker', all: 'Se alle resultater', running: 'Kører…', rows: 'rækker',
+          link: 'Kopiér link til denne pipeline', linked: 'Link kopieret', download: 'Download output' }
   }[lang];
 
   function $(sel, el) { return (el || doc).querySelector(sel); }
@@ -31,6 +33,8 @@
   }
   var iconCopy = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
   var iconDone = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  var iconLink = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+  var iconDown = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M4 19h16"/></svg>';
   var iconSearch = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
 
   /* ---------- Theme ---------- */
@@ -440,8 +444,61 @@
           e.preventDefault();
           var s = ta.selectionStart; ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(s); ta.selectionStart = ta.selectionEnd = s + 2; schedule();
         }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); clearTimeout(timer); run(); }
       });
     });
+
+    /* Shareable state: #try=<base64url json> restores input, pipeline and formats. Written on
+       every run after the first edit, so the address bar always links to what is on screen. */
+    function encode(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+    function decode(s) { return decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/')))); }
+    function state() { return { i: inputEl.value, p: pipeEl.value, f: fmtIn.value, o: fmtOut.value }; }
+    function link() { return location.origin + location.pathname + '#try=' + encode(JSON.stringify(state())); }
+    var touched = false;
+    var m = /(?:^|[#&])try=([A-Za-z0-9_-]+)/.exec(location.hash);
+    if (m) {
+      try {
+        var st = JSON.parse(decode(m[1]));
+        if (typeof st.i === 'string') inputEl.value = st.i;
+        if (typeof st.p === 'string') pipeEl.value = st.p;
+        if (st.f && $$('option', fmtIn).some(function (o) { return o.value === st.f; })) fmtIn.value = st.f;
+        if (st.o && $$('option', fmtOut).some(function (o) { return o.value === st.o; })) fmtOut.value = st.o;
+        presets.forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        touched = true;
+        setTimeout(function () { box.scrollIntoView({ block: 'start' }); }, 50);
+      } catch (err) { /* malformed hash: keep the example */ }
+    }
+    [inputEl, pipeEl].forEach(function (n) { n.addEventListener('input', function () { touched = true; }); });
+    [fmtIn, fmtOut].forEach(function (n) { n.addEventListener('change', function () { touched = true; }); });
+    presets.forEach(function (b) { b.addEventListener('click', function () { touched = true; }); });
+    box.addEventListener('input', function () { if (touched && history.replaceState) history.replaceState(null, '', link()); });
+    box.addEventListener('change', function () { if (touched && history.replaceState) history.replaceState(null, '', link()); });
+
+    var actions = el('p', { 'class': 'try-actions' });
+    var shareBtn = el('button', { type: 'button', 'class': 'share' }, iconLink + '<span>' + t.link + '</span>');
+    var shareTimer;
+    shareBtn.addEventListener('click', function () {
+      var done = function (ok) {
+        shareBtn.classList.toggle('is-done', ok);
+        shareBtn.innerHTML = (ok ? iconDone : iconLink) + '<span>' + (ok ? t.linked : t.failed) + '</span>';
+        clearTimeout(shareTimer);
+        shareTimer = setTimeout(function () { shareBtn.classList.remove('is-done'); shareBtn.innerHTML = iconLink + '<span>' + t.link + '</span>'; }, 1800);
+      };
+      copyText(link()).then(function () { done(true); }, function () { done(false); });
+    });
+    var dlBtn = el('button', { type: 'button', 'class': 'share' }, iconDown + '<span>' + t.download + '</span>');
+    dlBtn.addEventListener('click', function () {
+      if (box.classList.contains('has-error')) return;
+      var ext = fmtOut.value === 'table' ? 'txt' : fmtOut.value;
+      var mime = { json: 'application/json', csv: 'text/csv', yaml: 'application/yaml', xml: 'application/xml', sql: 'application/sql', txt: 'text/plain' }[ext];
+      var blob = new Blob([outEl.textContent + '\n'], { type: mime + ';charset=utf-8' });
+      var a = el('a', { href: URL.createObjectURL(blob), download: 'transmute-output.' + ext });
+      doc.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+    actions.appendChild(shareBtn); actions.appendChild(dlBtn);
+    var after = $('.try-command', box) || outCopy;
+    if (after) after.parentNode.insertBefore(actions, after.nextSibling);
     run();
   }
 

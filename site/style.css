@@ -400,6 +400,8 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .try-presets button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hover); }
 .try-command { margin: 1rem 0 0; font-size: 0.9rem; color: var(--ink-2); max-width: none; display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; }
 .try-command code { color: var(--ink); }
+.try-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.9rem 0 0; max-width: none; }
+.share.is-done { color: var(--accent); border-color: var(--accent); }
 .try-static-note { color: var(--ink-2); font-size: 0.925rem; }
 .js .try-static-note { display: none; }
 
