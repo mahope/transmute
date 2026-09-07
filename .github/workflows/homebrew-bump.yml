@@ -1,0 +1,63 @@
+name: Bump Homebrew formula
+
+# When a vX.Y.Z tag is pushed, update Formula/transmute.rb in mahope/homebrew-tap
+# with the new source-archive url + sha256. Triggered on tag push rather than
+# "release published" because the release in build.yml is created with
+# GITHUB_TOKEN, and events raised by GITHUB_TOKEN do not start other workflows.
+# Requires the TAP_TOKEN secret (fine-grained GitHub PAT with contents:write on
+# mahope/homebrew-tap - same token as in deskuptime and clean-copy-cli).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to bump to (e.g. v0.2.1)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag, download source archive, compute sha256
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          for i in 1 2 3 4 5 6; do
+            curl -fsSL "$URL" -o src.tar.gz && break
+            echo "archive not ready yet (attempt $i)"; sleep 20
+          done
+          [ -s src.tar.gz ] || { echo "::error::could not download $URL"; exit 1; }
+          tar -tzf src.tar.gz | grep -q "src/cli.js" || { echo "::error::archive has no src/cli.js"; exit 1; }
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          echo "SHA256=$(sha256sum src.tar.gz | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Update Formula/transmute.rb in mahope/homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::TAP_TOKEN secret not set"; exit 1; }
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/mahope/homebrew-tap.git" tap
+          cd tap
+          F="Formula/transmute.rb"
+          [ -f "$F" ] || { echo "::error::$F missing in homebrew-tap"; exit 1; }
+          sed -i \
+            -e "s|archive/refs/tags/v[0-9.]*\\.tar\\.gz|archive/refs/tags/${TAG}.tar.gz|" \
+            -e "s|sha256 \"[a-f0-9]*\"|sha256 \"${SHA256}\"|" \
+            "$F"
+          grep -q "tags/${TAG}.tar.gz" "$F" || { echo "::error::sed did not update the url"; exit 1; }
+          grep -q "$SHA256" "$F" || { echo "::error::sed did not update the sha256"; exit 1; }
+          git diff --stat
+          if git diff --quiet; then echo "formula already at ${VER}"; exit 0; fi
+          git config user.name "transmute-release-bot"
+          git config user.email "mads@mahope.dk"
+          git add "$F"
+          git commit -m "transmute ${VER}: bump url/sha (automated)"
+          git push
+          echo "tap updated to ${VER}"
