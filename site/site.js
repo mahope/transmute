@@ -393,7 +393,7 @@
     var inputEl = $('[data-role=input]', box), pipeEl = $('[data-role=pipeline]', box), outEl = $('[data-role=output]', box),
         fmtIn = $('[data-role=informat]', box), fmtOut = $('[data-role=outformat]', box), status = $('[data-role=status]', box),
         cmdEl = $('[data-role=command]', box), presets = $$('[data-preset]', box);
-    var frame = el('iframe', { src: '/try.html', sandbox: 'allow-scripts', title: 'Transmute engine', 'aria-hidden': 'true', tabindex: '-1', hidden: '' });
+    var frame = el('iframe', { src: '/try', sandbox: 'allow-scripts', title: 'Transmute engine', 'aria-hidden': 'true', tabindex: '-1', hidden: '' });
     var ready = false, pending = null, seq = 0, timer;
     box.classList.add('is-live');
     outEl.setAttribute('aria-live', 'polite');

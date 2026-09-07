@@ -9,7 +9,7 @@
 
 # The playground frame runs the engine, whose expressions need new Function(). It is loaded
 # only in a sandboxed iframe (opaque origin) and never touches the page it sits in.
-/try.html
+/try
   ! X-Frame-Options
   ! Content-Security-Policy
   Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'
