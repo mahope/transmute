@@ -1,18 +1,40 @@
 {
-  "name": "transmute",
-  "version": "0.2.0",
+  "name": "@mahope/transmute",
+  "version": "0.2.1",
   "description": "Cross-platform data transformer — JSON, CSV, YAML, XML",
   "main": "src/engine.js",
   "bin": {
     "transmute": "src/cli.js"
   },
   "files": [
-    "src/"
+    "src/",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node test/test.js",
     "start": "node src/cli.js"
   },
-  "keywords": ["json", "csv", "yaml", "xml", "transformer", "data", "pipeline"],
-  "license": "MIT"
+  "keywords": [
+    "json",
+    "csv",
+    "yaml",
+    "xml",
+    "transformer",
+    "data",
+    "pipeline"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mahope/transmute.git"
+  },
+  "homepage": "https://github.com/mahope/transmute",
+  "bugs": "https://github.com/mahope/transmute/issues",
+  "engines": {
+    "node": ">=18"
+  }
 }

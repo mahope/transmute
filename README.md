@@ -2,19 +2,19 @@
 
 [![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![npm](https://img.shields.io/badge/install-npx%20github:mahope%2Ftransmute-CB3837)](https://github.com/mahope/transmute#install--run)
+[![npm](https://img.shields.io/badge/install-npx%20%40mahope%2Ftransmute-CB3837)](https://github.com/mahope/transmute#install--run)
 
 Cross-platform CLI data transformer — JSON, CSV, YAML, XML. Filter, sort, map, pick, omit, unique and convert between formats. Zero dependencies, runs anywhere Node.js runs (macOS, Windows, Linux).
 
 [![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Transmute** is also a cross-platform **desktop app** (macOS, Windows, Linux) with a visual pipeline builder — free tier: 3 transformations per launch, [$19 one-time license](https://auditedwp.pages.dev/transmute/).
+**Transmute** is also a cross-platform **desktop app** (macOS, Windows, Linux) with a visual pipeline builder — free tier: 3 transformations per launch, [$19 one-time license](https://github.com/mahope/transmute).
 
 ## Install / run
 
 ```bash
-npx github:mahope/transmute people.csv --output json
+npx @mahope/transmute people.csv --output json
 ```
 
 Or clone and run locally:
