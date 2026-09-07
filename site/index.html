@@ -1,530 +1,274 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Transmute — Desktop Data Transformer</title>
-<meta name="description" content="Transform JSON, CSV, YAML, and XML data on your desktop. No uploads. No subscriptions. One-time $19.">
-<meta name="keywords" content="json to csv, csv to json, data transformer, yaml converter, desktop app, developer tools">
-<meta property="og:title" content="Transmute — Desktop Data Transformer">
-<meta property="og:description" content="Transform JSON, CSV, YAML, and XML data on your desktop. No uploads. No subscriptions.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transmute – convert JSON, CSV, YAML, XML and SQL from the terminal</title>
+<meta name="description" content="Transmute is an offline command-line tool and desktop app that converts between JSON, CSV, YAML, XML and SQL and runs filter, sort, join and flatten pipelines. MIT licensed, made in Odense by Mads Holst Jensen (mahoje.dk).">
+<link rel="canonical" href="https://transmute.run/">
+<link rel="alternate" hreflang="en" href="https://transmute.run/">
+<link rel="alternate" hreflang="da" href="https://transmute.run/da/">
+<link rel="alternate" hreflang="x-default" href="https://transmute.run/">
+<meta property="og:title" content="Transmute – convert JSON, CSV, YAML, XML and SQL from the terminal">
+<meta property="og:description" content="Offline CLI and desktop app for converting data files and running small pipelines. Nothing leaves your machine.">
 <meta property="og:url" content="https://transmute.run/">
 <meta property="og:type" content="website">
-<link rel="canonical" href="https://transmute.run/">
-<meta name="twitter:card" content="summary_large_image">
-<style>
-:root {
-  --bg: #0f0f13;
-  --surface: #18181d;
-  --border: #2a2a32;
-  --text: #e4e4e7;
-  --dim: #8a8a96;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --green: #22c55e;
-  --code-bg: #1e1e24;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Transmute",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Windows, Linux",
+  "url": "https://transmute.run/",
+  "license": "https://opensource.org/licenses/MIT",
+  "author": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"}
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; }
-.container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
-
-/* Hero */
-.hero { padding: 100px 0 60px; text-align: center; }
-.hero h1 { font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 16px; }
-.hero h1 span { background: linear-gradient(135deg, var(--accent), var(--accent-hover)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.hero p { font-size: 1.2rem; color: var(--dim); max-width: 600px; margin: 0 auto 32px; }
-.hero .badge { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 100px; padding: 6px 16px; font-size: 0.85rem; color: var(--dim); margin-bottom: 20px; }
-
-/* CTA */
-.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 8px; font-size: 1rem; font-weight: 600; text-decoration: none; transition: all 0.2s; cursor: pointer; border: none; }
-.btn-primary { background: var(--accent); color: white; }
-.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-.btn-secondary:hover { border-color: var(--accent); }
-.btn:disabled, .btn.coming-soon { opacity: 0.5; cursor: not-allowed; }
-.meta { font-size: 0.85rem; color: var(--dim); text-align: center; margin-top: 8px; }
-.meta strong { color: var(--text); }
-
-/* Async Demo */
-.demo { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px; margin-bottom: 60px; }
-.demo h2 { font-size: 1.3rem; margin-bottom: 16px; }
-.demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-@media (max-width: 640px) { .demo-grid { grid-template-columns: 1fr; } }
-.demo-box { display: flex; flex-direction: column; gap: 8px; }
-.demo-box label { font-size: 0.85rem; color: var(--dim); font-weight: 600; }
-.demo-box textarea, .demo-box select { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; color: var(--text); font-family: var(--mono); font-size: 0.85rem; resize: vertical; }
-.demo-box textarea { min-height: 160px; }
-.demo-box select { cursor: pointer; }
-.pipe-preview { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 0.8rem; color: var(--accent); overflow-x: auto; white-space: pre; margin-bottom: 12px; min-height: 40px; }
-
-/* Features */
-.features { padding: 0 0 60px; }
-.features h2 { text-align: center; font-size: 1.8rem; margin-bottom: 40px; }
-.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; }
-.feature-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
-.feature-card .icon { width: 40px; height: 40px; border-radius: 8px; background: var(--accent); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; margin-bottom: 12px; }
-.feature-card h3 { font-size: 1rem; margin-bottom: 8px; }
-.feature-card p { font-size: 0.9rem; color: var(--dim); }
-
-/* CLI examples */
-.cli-section { padding: 0 0 60px; }
-.cli-section h2 { text-align: center; font-size: 1.8rem; margin-bottom: 40px; }
-.cli-grid { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 700px; margin: 0 auto; }
-.cli-block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-.cli-block code { font-family: var(--mono); font-size: 0.85rem; color: var(--accent); display: block; }
-.cli-block .comment { color: var(--dim); font-size: 0.8rem; margin-bottom: 4px; }
-
-/* Pricing */
-.pricing { padding: 0 0 60px; text-align: center; }
-.pricing h2 { font-size: 1.8rem; margin-bottom: 32px; }
-.pricing-card { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px 48px; text-align: center; }
-.pricing-card .price { font-size: 3rem; font-weight: 800; color: var(--accent); }
-.pricing-card .price span { font-size: 1rem; color: var(--dim); font-weight: 400; }
-.pricing-card ul { list-style: none; margin: 20px 0; text-align: left; }
-.pricing-card ul li { padding: 6px 0; font-size: 0.9rem; color: var(--dim); }
-.pricing-card ul li::before { content: '✓ '; color: var(--green); font-weight: 700; }
-
-/* FAQ */
-.faq { padding: 0 0 80px; }
-.faq h2 { text-align: center; font-size: 1.8rem; margin-bottom: 32px; }
-.faq-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; }
-.faq-item summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
-.faq-item p { margin-top: 8px; font-size: 0.9rem; color: var(--dim); }
-
-/* Footer */
-.footer { text-align: center; padding: 40px 0; border-top: 1px solid var(--border); color: var(--dim); font-size: 0.85rem; }
-.footer a { color: var(--text); }
-</style>
+</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="wordmark" href="/">transmute</a>
+    <nav class="site-nav" aria-label="Site">
+      <a href="/" aria-current="page">Home</a>
+      <a href="#guides">Guides</a>
+      <a href="https://github.com/mahope/transmute">GitHub</a>
+      <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a>
+      <a href="/da/" lang="da" hreflang="da">Dansk</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
 
 <section class="hero">
-  <div class="container">
-    <div class="badge">v0.1 — Desktop & CLI</div>
-    <h1>Transform your data with <span>Transmute</span></h1>
-    <p>JSON → CSV → YAML → XML. Filter, sort, map, and convert — all on your machine. No uploads. No subscriptions.</p>
-    <div class="cta">
-      <span class="btn btn-primary coming-soon">Buy — $19 (coming soon)</span>
-      <a href="https://github.com/mahope/transmute/releases" class="btn btn-secondary">Download →</a>
-      <a href="#try-it" class="btn btn-secondary">Try it online →</a>
+  <div class="wrap">
+    <h1>Convert JSON, CSV, YAML, XML and SQL from the terminal. Nothing leaves your machine.</h1>
+    <p class="lede">Transmute is a small command-line tool for developers, analysts and anyone else who gets handed a data file in the wrong format. Point it at a file, say what you want out, and optionally filter, sort, join or flatten on the way.</p>
+    <div class="install">
+      <code>npm i -g @mahope/transmute</code>
+      <a class="btn btn-quiet" href="#install">Other ways to install</a>
     </div>
-    <div class="meta">
-      CLI: <code style="background:var(--code-bg);padding:2px 8px;border-radius:4px;">npm i -g @mahope/transmute</code><br>
-      <strong>Free CLI</strong> · Desktop app $19 one-time · Windows · macOS · Linux
+<pre><code><span class="p">$</span> npx @mahope/transmute people.csv -o json
+<span class="out">[
+  {
+    "name": "Alice",
+    "age": 32,
+    "city": "Aarhus"
+  },
+  {
+    "name": "Bob",
+    "age": 25,
+    "city": "Odense"
+  }
+]</span></code></pre>
+  </div>
+</section>
+
+<section class="section" id="examples">
+  <div class="wrap">
+    <h2>Three things you would actually do with it</h2>
+    <p class="intro">Every example on this page was run against the current release before it was pasted in. The output is what you get.</p>
+    <div class="examples">
+
+      <div class="example">
+        <h3>Turn an API export into a spreadsheet-ready CSV</h3>
+        <p>Keep the shipped orders, keep three columns, sort by value. Field names are yours; <code>item</code> is the current row.</p>
+<pre><code><span class="p">$</span> transmute orders.json --pipe '[
+  {"op":"filter","expr":"item.status === \"shipped\""},
+  {"op":"pick","fields":["id","customer","total"]},
+  {"op":"sort","by":"total","dir":"desc"}
+]' --output csv
+<span class="out">id,customer,total
+1039,Cara Vind,2199.99
+1042,Alice Hansen,1299</span></code></pre>
+      </div>
+
+      <div class="example">
+        <h3>Seed a database from a CSV</h3>
+        <p>Numbers stay numbers, strings are quoted and escaped, empty cells become <code>NULL</code>. Works for Postgres, MySQL and SQLite.</p>
+<pre><code><span class="p">$</span> transmute users.csv --output sql --table users
+<span class="out">-- Generated by Transmute
+INSERT INTO "users" ("id", "name", "email") VALUES
+  (1, 'Alice', 'alice@example.com'),
+  (2, 'O''Brien', 'bob@example.com');</span></code></pre>
+      </div>
+
+      <div class="example">
+        <h3>Read an XML file as JSON</h3>
+        <p>XML values come through as strings, so wrap them in <code>Number()</code> when you filter on them.</p>
+<pre><code><span class="p">$</span> transmute users.xml --pipe '[{"op":"filter","expr":"Number(item.age) > 26"},{"op":"pick","fields":["name"]}]' -o json
+<span class="out">[
+  {
+    "name": "Alice"
+  }
+]</span></code></pre>
+      </div>
+
     </div>
   </div>
 </section>
 
-<section class="demo" id="try-it">
-  <div class="container">
-    <h2>Try it →</h2>
-    <div class="demo-grid">
-      <div class="demo-box">
-        <label for="inputData">Input data</label>
-        <textarea id="inputData" placeholder='Paste JSON, CSV, YAML, or XML...'>[{"name":"Alice","age":32,"role":"admin"},{"name":"Bob","age":25,"role":"user"},{"name":"Charlie","age":38,"role":"admin"}]</textarea>
-      </div>
-      <div class="demo-box">
-        <label for="outputPane">Output</label>
-        <textarea id="outputPane" readonly placeholder="Transformed output will appear here..."></textarea>
-      </div>
+<section class="section" id="formats">
+  <div class="wrap two-col">
+    <div>
+      <h2>Formats</h2>
+      <dl class="formats">
+        <dt>Reads</dt>
+        <dd>JSON, CSV, YAML and XML. The format is detected from the file extension or the content; override it with <code>--format</code>.</dd>
+        <dt>Writes</dt>
+        <dd>JSON, CSV, YAML, XML, SQL <code>INSERT</code> statements, or an aligned table in the terminal (the default).</dd>
+        <dt>Worth knowing</dt>
+        <dd>CSV values are coerced the way a spreadsheet would: <code>32</code> becomes a number, <code>true</code> a boolean. The YAML parser handles lists of flat records and simple key–value documents, not anchors or multi-line strings. Everything is read into memory, so it is built for files up to a few hundred megabytes rather than multi-gigabyte logs.</dd>
+      </dl>
     </div>
-    <div class="demo-grid" style="grid-template-columns:1fr auto 1fr;">
-      <div class="demo-box">
-        <label for="inputFormat">Input format</label>
-        <select id="inputFormat">
-          <option value="json">JSON</option>
-          <option value="csv">CSV</option>
-          <option value="yaml">YAML</option>
-          <option value="xml">XML</option>
-        </select>
-      </div>
-      <div class="demo-box" style="justify-content:flex-end;">
-        <button id="runTransform" class="btn btn-primary" style="padding:8px 24px;">Run →</button>
-      </div>
-      <div class="demo-box">
-        <label for="outputFormat">Output format</label>
-        <select id="outputFormat">
-          <option value="json">JSON</option>
-          <option value="csv">CSV</option>
-          <option value="yaml">YAML</option>
-          <option value="xml">XML</option>
-        </select>
-      </div>
-    </div>
-    <div style="margin-top:12px;">
-      <label style="font-size:0.85rem;color:var(--dim);font-weight:600;">Pipeline (JSON operations)</label>
-      <div class="pipe-preview" id="pipeDisplay" contenteditable="true">[{"op":"filter","expr":"item.age > 26"},{"op":"sort","by":"name","dir":"asc"},{"op":"pick","fields":["name","role"]}]</div>
-    </div>
-    <div class="quick-buttons" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-      <button class="btn btn-secondary quick-btn" style="padding:4px 12px;font-size:0.8rem;" data-pipe='[{"op":"filter","expr":"item.age > 26"}]'>Filter age &gt; 26</button>
-      <button class="btn btn-secondary quick-btn" style="padding:4px 12px;font-size:0.8rem;" data-pipe='[{"op":"sort","by":"name","dir":"asc"}]'>Sort A–Z</button>
-      <button class="btn btn-secondary quick-btn" style="padding:4px 12px;font-size:0.8rem;" data-pipe='[{"op":"group","by":"role"}]'>Group by role</button>
-      <button class="btn btn-secondary quick-btn" style="padding:4px 12px;font-size:0.8rem;" data-pipe='[{"op":"count"}]'>Count rows</button>
-      <button class="btn btn-secondary quick-btn" style="padding:4px 12px;font-size:0.8rem;" data-pipe='[{"op":"head","n":3}]'>First 3</button>
-    </div>
-    <div id="transformError" style="color:#ef4444;font-size:0.85rem;margin-top:8px;display:none;"></div>
-  </div>
-</section>
-
-<section class="features">
-  <div class="container">
-    <h2>What you can do</h2>
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="icon">🔄</div>
-        <h3>Convert between formats</h3>
-        <p>JSON ↔ CSV ↔ YAML ↔ XML. One command, one click. Preserves structure automatically.</p>
-      </div>
-      <div class="feature-card">
-        <div class="icon">🔍</div>
-        <h3>Filter & query</h3>
-        <p>Keep only the rows you need. `.age > 18`, `.status === "active"` — plain JavaScript expressions.</p>
-      </div>
-      <div class="feature-card">
-        <div class="icon">📐</div>
-        <h3>Sort & group</h3>
-        <p>Sort by any field. Group by category. Count, deduplicate, pick and omit columns.</p>
-      </div>
-      <div class="feature-card">
-        <div class="icon">🔒</div>
-        <h3>100% local</h3>
-        <p>Your data never leaves your machine. No uploads, no servers, no privacy concerns.</p>
-      </div>
-      <div class="feature-card">
-        <div class="icon">⚡</div>
-        <h3>Pipe & automate</h3>
-        <p>Chain operations: filter → sort → pick → export. Use in scripts, cron jobs, and CI/CD.</p>
-      </div>
-      <div class="feature-card">
-        <div class="icon">💻</div>
-        <h3>Cross-platform</h3>
-        <p>CLI works everywhere Node runs. Desktop app for macOS, Windows, and Linux.</p>
+    <div>
+      <h2>Pipeline operations</h2>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Operation</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td>filter</td><td><code>{"op":"filter","expr":"item.age > 18"}</code></td></tr>
+          <tr><td>map</td><td><code>{"op":"map","expr":"({...item, active: true})"}</code></td></tr>
+          <tr><td>pick / omit</td><td><code>{"op":"pick","fields":["name","email"]}</code></td></tr>
+          <tr><td>sort</td><td><code>{"op":"sort","by":"name","dir":"asc"}</code></td></tr>
+          <tr><td>unique</td><td><code>{"op":"unique","by":"email"}</code></td></tr>
+          <tr><td>group</td><td><code>{"op":"group","by":"city"}</code></td></tr>
+          <tr><td>add</td><td><code>{"op":"add","fields":{"total":"item.price * item.qty"}}</code></td></tr>
+          <tr><td>join</td><td><code>{"op":"join","on":"id","keep":"left","with":[…]}</code></td></tr>
+          <tr><td>rename</td><td><code>{"op":"rename","mapping":{"qty":"quantity"}}</code></td></tr>
+          <tr><td>flatten</td><td><code>{"op":"flatten","field":"items"}</code></td></tr>
+          <tr><td>head / tail / count</td><td><code>{"op":"head","n":5}</code></td></tr>
+        </tbody>
+      </table>
       </div>
     </div>
   </div>
 </section>
 
-<section class="cli-section">
-  <div class="container">
-    <h2>CLI — one command, any format</h2>
-    <div class="cli-grid">
-      <div class="cli-block"><span class="comment"># Install (Node.js 18+)</span><code>npm i -g @mahope/transmute</code></div>
-      <div class="cli-block"><span class="comment"># Filter active users over 18, pick name+email, sort by name</span><code>transmute users.csv --pipe '[{"op":"filter","expr":"item.age > 18"},{"op":"pick","fields":["name","email"]},{"op":"sort","by":"name"}]' --output csv</code></div>
-      <div class="cli-block"><span class="comment"># Pipe from stdin, show first 5 as formatted JSON</span><code>cat data.json | transmute --pipe '[{"op":"head","n":5}]' --output json</code></div>
-      <div class="cli-block"><span class="comment"># Count rows and group by status</span><code>transmute logs.json --pipe '[{"op":"group","by":"status"}]' --output table</code></div>
-      <div class="cli-block"><span class="comment"># Interactive preview — just pass the file</span><code>transmute data.yaml</code></div>
+<section class="section" id="pipelines">
+  <div class="wrap">
+    <h2>Chaining steps</h2>
+    <p class="intro">A pipeline is a JSON array of steps, run in order. Expressions are plain JavaScript with the current row as <code>item</code>. Here a cart is joined with stock levels from a second data set, then filtered and counted:</p>
+<pre><code><span class="p">$</span> transmute cart.json --pipe '[
+  {"op":"join","on":"sku","keep":"left","with":[{"sku":"A1","stock":42},{"sku":"B2","stock":0}]},
+  {"op":"filter","expr":"item.stock > 0"},
+  {"op":"count"}
+]' --output json
+<span class="out">[
+  {
+    "count": 1
+  }
+]</span></code></pre>
+    <p>To join against a whole file instead of inline rows, splice it in from the shell: <code>--pipe "[{\"op\":\"join\",\"on\":\"sku\",\"with\":$(cat stock.json)}]"</code>. The <a href="/guides/join-two-files/">join guide</a> walks through it.</p>
+  </div>
+</section>
+
+<section class="section" id="install">
+  <div class="wrap two-col">
+    <div>
+      <h2>Install the CLI</h2>
+      <p>Needs Node.js 18 or newer. No other dependencies.</p>
+<pre><code><span class="p">$</span> npm i -g @mahope/transmute
+<span class="p">$</span> transmute --help</code></pre>
+      <p>Or run it once without installing:</p>
+<pre><code><span class="p">$</span> npx @mahope/transmute data.yaml -o json</code></pre>
+      <p>Pass a file with no options to get a quick table preview of it. Pipe from stdin with <code>cat file | transmute …</code>. Source and issues on <a href="https://github.com/mahope/transmute">GitHub</a>.</p>
+    </div>
+    <div>
+      <h2>Desktop app</h2>
+      <p>The same engine with a window around it: paste or open a file, build the pipeline step by step, see the result update as you go. Built with Tauri, so it is a small native binary on each platform.</p>
+      <p><a class="btn btn-primary" href="https://github.com/mahope/transmute/releases">Download for macOS, Windows or Linux</a></p>
+      <p>The desktop app will be a one-time purchase of 19 USD, no subscription. Checkout is not connected yet, so for now it is free to download; the current build allows three transformations per launch until a licence is entered. The CLI has no limits and stays free under the MIT licence.</p>
     </div>
   </div>
 </section>
 
-<section class="pricing">
-  <div class="container">
-    <h2>Simple pricing</h2>
-    <div class="pricing-card">
-      <div class="price">$19 <span>one-time</span></div>
-      <p style="color:var(--dim);font-size:0.9rem;">3 activations · Lifetime updates</p>
-      <ul>
-        <li>Desktop app (macOS, Windows, Linux)</li>
-        <li>Interactive pipeline builder</li>
-        <li>All transformations & formats</li>
-        <li>Batch processing</li>
-        <li>History & favorites</li>
-        <li>CLI — <strong>always free</strong></li>
-      </ul>
-      <span class="btn btn-primary coming-soon" style="margin-top:12px;">Buy — Coming soon</span>
-      <a href="https://github.com/mahope/transmute/releases" class="btn btn-secondary" style="margin-top:12px;">Download from GitHub →</a>
-      <p style="color:var(--dim);font-size:0.8rem;margin-top:8px;">CLI is free forever. No subscription.</p>
-    </div>
+<section class="section" id="guides">
+  <div class="wrap">
+    <h2>Guides</h2>
+    <p class="intro">Longer walkthroughs of specific jobs, each with commands you can paste and the output they produce.</p>
+    <ul class="guide-list">
+      <li><a href="/guides/json-to-csv-pipeline/">JSON to CSV with filters</a><span>Clean spreadsheets from API data: pick columns, filter rows, sort, dedupe.</span></li>
+      <li><a href="/guides/csv-to-sql/">CSV to SQL INSERT statements</a><span>Seed Postgres, MySQL or SQLite from a spreadsheet export.</span></li>
+      <li><a href="/guides/json-to-sql/">JSON to SQL INSERT statements</a><span>Shape rows first, then generate statements with correct escaping and NULLs.</span></li>
+      <li><a href="/guides/flatten-nested-json/">Flatten nested JSON arrays</a><span>One row per array element, ready for CSV.</span></li>
+      <li><a href="/guides/join-two-files/">Join two files by a shared key</a><span>A left join from the terminal, without Python or SQLite.</span></li>
+      <li><a href="/guides/add-computed-fields/">Add computed fields</a><span>Totals, tax and derived flags from existing columns.</span></li>
+      <li><a href="/guides/jq-alternative/">Filtering JSON without learning jq</a><span>Named steps instead of jq syntax, with format conversion built in.</span></li>
+      <li><a href="/guides/xml-to-json/">XML to JSON</a><span>From the command line or in Python, with the caveats spelled out.</span></li>
+      <li><a href="/guides/json-to-xml/">JSON to XML</a><span>Well-formed XML from a JSON array, plus the Python equivalent.</span></li>
+      <li><a href="/guides/csv-to-xml/">CSV to XML</a><span>Spreadsheet exports as XML, with filtering on the way.</span></li>
+    </ul>
   </div>
 </section>
 
-<section class="faq">
-  <div class="container">
-    <h2>FAQ</h2>
-    <details class="faq-item">
-      <summary>How is this different from web-based tools like JSON Formatter?</summary>
-      <p>Online tools require you to paste your data into a website — your data travels over the network and sits on someone else's server. Transmute runs entirely on your machine. Nothing leaves your computer. For sensitive data (customer info, API keys, internal reports), that matters.</p>
+<section class="section faq" id="faq">
+  <div class="wrap">
+    <h2>Questions</h2>
+    <details>
+      <summary>Does it work offline?</summary>
+      <p>Yes. Neither the CLI nor the desktop app makes a network request. Once installed you can pull the cable out.</p>
     </details>
-    <details class="faq-item">
-      <summary>Is the CLI really free forever?</summary>
-      <p>Yes. The CLI (<code>npm i -g @mahope/transmute</code>) is free and open source. No limits, no trial, no upgrade nag. The desktop app adds an interactive GUI, pipeline builder, history, and batch processing — but the CLI covers everything for daily use.</p>
+    <details>
+      <summary>Where does my data go?</summary>
+      <p>Nowhere. Files are read from disk or stdin, transformed in memory and written to stdout. There is no telemetry, no account and no server side.</p>
     </details>
-    <details class="faq-item">
-      <summary>What platforms do you support?</summary>
-      <p>The CLI works anywhere Node.js runs (macOS, Windows, Linux). The desktop app is built with Tauri and ships native installers for all three platforms.</p>
+    <details>
+      <summary>What is the licence?</summary>
+      <p>The CLI and engine are MIT licensed; the source is on GitHub. The desktop app is a paid product (19 USD one-time) once checkout is live. Until then it is free to download with the limit described above.</p>
     </details>
-    <details class="faq-item">
-      <summary>Can I use this in CI/CD or scripts?</summary>
-      <p>Yes. The CLI is designed for piping: `cat data.json | transmute --pipe '...' --output csv`. Works in GitHub Actions, cron jobs, shell scripts, anything with Node.js.</p>
+    <details>
+      <summary>What is the difference between the CLI and the desktop app?</summary>
+      <p>They share the same engine and produce the same output. The CLI is for scripts, cron jobs, CI and anyone comfortable in a terminal. The desktop app is for building a pipeline interactively and seeing the result while you do it. If you only ever need one, the CLI is the one to start with.</p>
     </details>
-    <details class="faq-item">
-      <summary>When will the desktop app and payment be available?</summary>
-      <p>Payment processing is pending our payment provider setup. The CLI is available immediately. We'll announce when checkout is live.</p>
+    <details>
+      <summary>How do I quote the pipeline on Windows?</summary>
+      <p>With difficulty, honestly. In Git Bash or WSL the single-quote form on this page works as written, and that is the recommended route. In PowerShell you can use the stop-parsing token and write inner quotes as <code>\"</code>: <code>transmute --% orders.json --pipe "[{\"op\":\"filter\",\"expr\":\"item.status === 'shipped'\"}]" -o csv</code>. That breaks as soon as the pipeline contains <code>&lt;</code> or <code>&gt;</code>, because cmd.exe reads them as redirects, so comparisons are best run from Git Bash or WSL.</p>
+    </details>
+    <details>
+      <summary>Can I use the engine from my own code?</summary>
+      <p>Yes. <code>require('@mahope/transmute')</code> exposes <code>run(text, inputFormat, pipeline, outputFormat)</code> together with the parsers, serializers and operations. It is one file with no dependencies.</p>
     </details>
   </div>
 </section>
 
-<footer class="footer">
-  <div class="container">
-    <p>Transmute · <a href="https://github.com/mahope/transmute">GitHub</a> · <a href="https://github.com/mahope/transmute/releases">Releases</a> · <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a> · <a href="https://eucomplypro.com/">EUComply</a></p>
+<section class="section" id="maker">
+  <div class="wrap maker">
+    <div>
+      <h2>Who makes this</h2>
+      <p>Transmute is made by <a href="https://mahoje.dk">Mads Holst Jensen</a>, a developer and technical partner based in Odense, Denmark. He builds and runs software for small companies and their teams, and this tool grew out of that work.</p>
+    </div>
+    <div>
+      <p>Bug reports and feature requests go to <a href="https://github.com/mahope/transmute/issues">GitHub issues</a>. For anything else, including working together, see <a href="https://mahoje.dk">mahoje.dk</a>.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen · mahoje.dk</a>, Odense, Denmark.</p>
+      <p>CLI released under the MIT licence.</p>
+    </div>
+    <ul>
+      <li><a href="/#guides">Guides</a></li>
+      <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+      <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
+      <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
+      <li><a href="/da/" lang="da">Dansk</a></li>
+    </ul>
   </div>
 </footer>
-
-<script>
-// Transmute in-browser engine — lightweight port for the demo
-(function(){
-  // ── CSV Parser ──
-  function parseCSV(text) {
-    const lines = text.trim().split('\n');
-    if (lines.length === 0) return [];
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-      if (vals.length === 1 && vals[0] === '') continue;
-      const row = {};
-      headers.forEach((h, idx) => { row[h] = vals[idx] || ''; });
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  // ── Simple YAML parser ──
-  function parseYAML(text) {
-    const lines = text.split('\n');
-    const result = [];
-    let current = null;
-    let isList = false;
-    for (const line of lines) {
-      const t = line.trim();
-      if (!t || t.startsWith('#')) continue;
-      if (t.startsWith('- ')) {
-        isList = true;
-        const val = t.slice(2).trim();
-        if (val.includes(': ')) {
-          if (current) result.push(current);
-          current = {};
-          const [k, ...v] = val.split(': ');
-          current[k.trim()] = v.join(': ').trim();
-        } else {
-          if (current) result.push(current);
-          current = null;
-          result.push(/^\d+$/.test(val) ? Number(val) : val);
-        }
-      } else if (t.includes(': ')) {
-        if (!current || !isList) { current = {}; }
-        const [k, ...v] = t.split(': ');
-        current[k.trim()] = v.join(': ').trim();
-      }
-    }
-    if (current) result.push(current);
-    return result;
-  }
-
-  // ── Simple XML parser ──
-  function parseXML(text) {
-    const rows = [];
-    const itemRegex = /<(\w+)[^>]*>([\s\S]*?)<\/\1>/g;
-    let match;
-    const items = [];
-    while ((match = itemRegex.exec(text)) !== null) items.push(match);
-    if (items.length === 0) return rows;
-    const firstTag = items[0][1];
-    const children = items.filter(m => m[1] !== firstTag);
-    if (children.length > 0) {
-      const row = {};
-      children.forEach(m => { row[m[1]] = m[2].trim(); });
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  // ── Parse ──
-  function parseData(text, format) {
-    if (format === 'json') return JSON.parse(text);
-    if (format === 'csv') return parseCSV(text);
-    if (format === 'yaml') return parseYAML(text);
-    if (format === 'xml') return parseXML(text);
-    throw new Error('Unknown format');
-  }
-
-  // ── Serialize ──
-  function serializeJSON(data) { return JSON.stringify(data, null, 2); }
-
-  function serializeCSV(data) {
-    if (data.length === 0) return '';
-    const keys = Object.keys(data[0]);
-    return [keys.join(','), ...data.map(r => keys.map(k => r[k] ?? '').join(','))].join('\n');
-  }
-
-  function serializeYAML(data) {
-    return data.map(item => {
-      if (typeof item !== 'object') return `- ${item}`;
-      return Object.entries(item).map(([k, v], i) => `${i === 0 ? '- ' : '  '}${k}: ${v}`).join('\n');
-    }).join('\n');
-  }
-
-  function serializeXML(data) {
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<data>\n';
-    for (const row of data) {
-      xml += '  <item>\n';
-      for (const [k, v] of Object.entries(row)) {
-        xml += `    <${k}>${String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</${k}>\n`;
-      }
-      xml += '  </item>\n';
-    }
-    xml += '</data>';
-    return xml;
-  }
-
-  // ── Transformations ──
-  function transform(data, pipe) {
-    let result = data;
-    for (const step of pipe) {
-      switch (step.op) {
-        case 'filter': {
-          const fn = new Function('item', 'i', `"use strict"; return (${step.expr});`);
-          result = result.filter(fn);
-          break;
-        }
-        case 'map': {
-          const fn = new Function('item', 'i', `"use strict"; return (${step.expr});`);
-          result = result.map(fn);
-          break;
-        }
-        case 'pick':
-          result = result.map(item => {
-            const p = {};
-            (Array.isArray(step.fields) ? step.fields : [step.fields]).forEach(f => { if (f in item) p[f] = item[f]; });
-            return p;
-          });
-          break;
-        case 'omit': {
-          const set = new Set(Array.isArray(step.fields) ? step.fields : [step.fields]);
-          result = result.map(item => { const o = {}; for (const [k,v] of Object.entries(item)) if (!set.has(k)) o[k]=v; return o; });
-          break;
-        }
-        case 'sort': {
-          const dir = step.dir === 'desc' ? -1 : 1;
-          result = [...result].sort((a,b) => {
-            const va = a[step.by], vb = b[step.by];
-            if (va === undefined) return 1; if (vb === undefined) return -1;
-            if (typeof va === 'number') return (va - vb) * dir;
-            return String(va).localeCompare(String(vb)) * dir;
-          });
-          break;
-        }
-        case 'unique': {
-          const seen = new Set();
-          result = result.filter(item => {
-            const key = step.by ? item[step.by] : JSON.stringify(item);
-            if (seen.has(key)) return false; seen.add(key); return true;
-          });
-          break;
-        }
-        case 'group': {
-          const groups = {};
-          result.forEach(item => {
-            const key = item[step.by] ?? '(null)';
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(item);
-          });
-          result = Object.entries(groups).map(([key, items]) => ({ key, count: items.length, items }));
-          break;
-        }
-        case 'count':
-          result = [{ count: result.length }];
-          break;
-        case 'head':
-          result = result.slice(0, step.n ?? 10);
-          break;
-        case 'tail':
-          result = result.slice(-(step.n ?? 10));
-          break;
-        case 'rename': {
-          const m = step.mapping || {};
-          result = result.map(item => { const r = {}; for (const [k,v] of Object.entries(item)) r[m[k]??k] = v; return r; });
-          break;
-        }
-        case 'flatten': {
-          const flat = [];
-          result.forEach(item => {
-            const arr = item[step.field];
-            if (Array.isArray(arr)) { arr.forEach(sub => flat.push(typeof sub === 'object' ? {...item, [step.field]: undefined, ...sub} : {...item, [step.field]: sub})); }
-            else flat.push(item);
-          });
-          result = flat;
-          break;
-        }
-        default: throw new Error(`Unknown operation: ${step.op}`);
-      }
-    }
-    return result;
-  }
-
-  // ── DOM binding ──
-  const inputEl = document.getElementById('inputData');
-  const outputEl = document.getElementById('outputPane');
-  const inputFormatEl = document.getElementById('inputFormat');
-  const outputFormatEl = document.getElementById('outputFormat');
-  const pipeEl = document.getElementById('pipeDisplay');
-  const runBtn = document.getElementById('runTransform');
-  const errorEl = document.getElementById('transformError');
-
-  const serializers = { json: serializeJSON, csv: serializeCSV, yaml: serializeYAML, xml: serializeXML };
-
-  function runTransform() {
-    errorEl.style.display = 'none';
-    try {
-      const data = parseData(inputEl.value, inputFormatEl.value);
-      const pipe = JSON.parse(pipeEl.textContent);
-      const result = transform(data, pipe);
-      const outFormat = outputFormatEl.value;
-      if (result.length > 0 && outFormat === 'json') {
-        outputEl.value = serializers.json(result);
-      } else if (outFormat === 'csv') {
-        outputEl.value = serializers.csv(result);
-      } else if (outFormat === 'yaml') {
-        outputEl.value = serializers.yaml(result);
-      } else if (outFormat === 'xml') {
-        outputEl.value = serializers.xml(result);
-      } else {
-        outputEl.value = JSON.stringify(result, null, 2);
-      }
-    } catch (err) {
-      errorEl.textContent = 'Error: ' + err.message;
-      errorEl.style.display = 'block';
-    }
-  }
-
-  runBtn.addEventListener('click', runTransform);
-
-  // Quick buttons
-  document.querySelectorAll('.quick-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      pipeEl.textContent = btn.dataset.pipe;
-      runTransform();
-    });
-  });
-
-  // Auto-run on load
-  runTransform();
-
-  // Re-run when input/format/pipe changes (debounced)
-  let debounceTimer;
-  function debounceRun() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(runTransform, 300);
-  }
-  inputEl.addEventListener('input', debounceRun);
-  inputFormatEl.addEventListener('change', debounceRun);
-  outputFormatEl.addEventListener('change', debounceRun);
-  pipeEl.addEventListener('input', debounceRun);
-})();
-</script>
 
 </body>
 </html>

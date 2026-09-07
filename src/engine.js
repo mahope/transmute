@@ -526,7 +526,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
 
     // Serialize
     if (!serializers[outputFormat]) return { error: `Unknown output format: ${outputFormat}` };
-    const text = serializers[outputFormat](data, opts.tableName);
+    const text = serializers[outputFormat](data, outputFormat === 'sql' ? opts.tableName : undefined);
 
     return { data, text };
   } catch (err) {

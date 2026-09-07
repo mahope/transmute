@@ -1,55 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Convert CSV to SQL INSERT Statements (MySQL, PostgreSQL, SQLite)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convert CSV to SQL INSERT Statements (MySQL, PostgreSQL, SQLite) – Transmute</title>
 <meta name="description" content="Turn any CSV, JSON, YAML or XML file into ready-to-run INSERT statements from the command line. Handles quotes, NULLs and numeric types. Free CLI examples.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔁</text></svg>">
-<meta property="og:title" content="Convert CSV to SQL INSERT Statements">
-<meta property="og:description" content="Turn CSV, JSON, YAML or XML into INSERT statements from the terminal. Free CLI, correct quoting, numbers stay numbers.">
+<link rel="canonical" href="https://transmute.run/guides/csv-to-sql/">
+<meta property="og:title" content="Convert CSV to SQL INSERT Statements (MySQL, PostgreSQL, SQLite)">
+<meta property="og:description" content="Turn any CSV, JSON, YAML or XML file into ready-to-run INSERT statements from the command line. Handles quotes, NULLs and numeric types. Free CLI examples.">
+<meta property="og:url" content="https://transmute.run/guides/csv-to-sql/">
 <meta property="og:type" content="article">
-<style>
-:root{--ink:#101828;--muted:#4a5a6a;--line:#dde3ea;--bg:#fff;--soft:#f5f7fa;--accent:#7c3aed;--accent-dark:#6023d0;}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
-.wrap{max-width:760px;margin:0 auto;padding:0 20px}
-header{border-bottom:1px solid var(--line);padding:14px 0}
-header .wrap{display:flex;align-items:center;justify-content:space-between}
-.logo{font-weight:800;font-size:18px;text-decoration:none;color:var(--ink)}
-.logo span{color:var(--accent)}
-nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
-nav a:hover{color:var(--accent)}
-h1{font-size:34px;line-height:1.2;margin:40px 0 8px;letter-spacing:-.02em}
-.meta{color:var(--muted);font-size:14px;margin-bottom:32px}
-h2{font-size:24px;margin:36px 0 10px;letter-spacing:-.01em}
-p{margin-bottom:16px}
-code{background:var(--soft);padding:2px 6px;border-radius:4px;font-size:14px;font-family:'SF Mono','Fira Code','Consolas',monospace}
-pre{background:#17122b;color:#e6e2f5;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:16px 0;font-family:'SF Mono','Fira Code','Consolas',monospace}
-pre .cm{color:#7d7699}pre .prompt{color:#7d7699}pre .kw{color:#b79bf5}pre .str{color:#a8d88a}
-.cta-box{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:24px;margin:40px 0}
-.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;margin-top:8px}
-.btn:hover{background:var(--accent-dark)}
-footer{border-top:1px solid var(--line);margin-top:48px;padding:24px 0;color:var(--muted);font-size:13px;text-align:center}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Convert CSV to SQL INSERT Statements (MySQL, PostgreSQL, SQLite)",
+  "description": "Turn any CSV, JSON, YAML or XML file into ready-to-run INSERT statements from the command line. Handles quotes, NULLs and numeric types. Free CLI examples.",
+  "url": "https://transmute.run/guides/csv-to-sql/",
+  "author": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"},
+  "publisher": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"}
+}
+</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
-<header>
+<header class="site-header">
   <div class="wrap">
-    <a href="/" class="logo">Trans<span>mute</span></a>
-    <nav>
-      <a href="/">Free Demo</a>
-      <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a>
-      <a href="/">Web Converter</a>
+    <a class="wordmark" href="/">transmute</a>
+    <nav class="site-nav" aria-label="Site">
+      <a href="/">Home</a>
+      <a href="/#guides" aria-current="page">Guides</a>
+      <a href="https://github.com/mahope/transmute">GitHub</a>
+      <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a>
     </nav>
   </div>
 </header>
 
+<main id="main" class="prose">
 <div class="wrap">
-
+<article>
 <h1>Convert CSV to SQL INSERT Statements</h1>
-<p class="meta">📅 September 2026 · 4 min read · <a href="/">Try it in your browser →</a></p>
 
 <p>You have a CSV export — users, products, sensor readings — and you need it into a database. Most answers online are one-off Python scripts or websites that choke on files with more than a few thousand rows. Here's the shortest reliable path, straight from the terminal.</p>
 
@@ -60,7 +55,7 @@ footer{border-top:1px solid var(--line);margin-top:48px;padding:24px 0;color:var
 1,Alice,alice@example.com
 2,O'Brien,bob@example.com</span></pre>
 
-<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute users.csv --output sql --table users
+<pre><span class="p">$</span> transmute users.csv --output sql --table users
 <span class="cm">-- Generated by Transmute
 INSERT INTO "users" ("id", "name", "email") VALUES
   (1, 'Alice', 'alice@example.com'),
@@ -74,14 +69,14 @@ INSERT INTO "users" ("id", "name", "email") VALUES
 <li><strong>Pipe it through filters first</strong> — clean your data on the way in:</li>
 </ul>
 
-<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute users.csv     --pipe <span class="str">'[{"op":"filter","expr":"item.email"},{"op":"unique","by":"email"}]'</span>     --output sql --table users</pre>
+<pre><span class="p">$</span> transmute users.csv     --pipe <span class="str">'[{"op":"filter","expr":"item.email"},{"op":"unique","by":"email"}]'</span>     --output sql --table users</pre>
 
 <p>The same <code>--output sql</code> flag works from <strong>JSON, YAML or XML</strong> input too — any format Transmute reads can become INSERT statements.</p>
 
 <h2 id="postgres">PostgreSQL: faster alternative for big files</h2>
 <p>For very large CSVs (100k+ rows) in Postgres, <code>COPY</code> beats row-by-row INSERTs:</p>
 
-<pre><span class="prompt">=#</span> <span class="kw">COPY</span> users (id, name, email) <span class="kw">FROM</span> <span class="str">'/path/users.csv'</span> <span class="kw">CSV HEADER;</span></pre>
+<pre><span class="p">=#</span> <span class="kw">COPY</span> users (id, name, email) <span class="kw">FROM</span> <span class="str">'/path/users.csv'</span> <span class="kw">CSV HEADER;</span></pre>
 
 <p>But COPY needs server-side file access and exact column order. INSERT statements work everywhere — including hosted databases where you only have a SQL editor.</p>
 
@@ -94,26 +89,37 @@ INSERT INTO "users" ("id", "name", "email") VALUES
 <h2 id="json">Bonus: seed data from JSON</h2>
 <p>Fixtures and API exports convert the same way — handy for test databases:</p>
 
-<pre><span class="prompt">$</span> <span class="kw">cat</span> fixtures.json | <span class="kw">npx</span> github:mahope/transmute --format json --output sql --table products</pre>
+<pre><span class="p">$</span> <span class="kw">cat</span> fixtures.json | transmute --format json --output sql --table products</pre>
 
+<aside class="aside">
+  <h2>Running these commands</h2>
+  <p>The examples use <code>transmute</code> as installed with <code>npm i -g @mahope/transmute</code> (Node.js 18 or newer). Without installing, replace <code>transmute</code> with <code>npx @mahope/transmute</code>. Everything runs locally; no file is uploaded anywhere.</p>
+  <p>Related guides:</p>
+  <ul>
+    <li><a href="/guides/json-to-sql/">JSON to SQL INSERT statements</a></li>
+    <li><a href="/guides/json-to-csv-pipeline/">JSON to CSV with filters</a></li>
+    <li><a href="/guides/add-computed-fields/">Add computed fields</a></li>
+  </ul>
+</aside>
 
-<div class="cta-box">
-  <h3>Any format to SQL — without writing a script</h3>
-  <p>The Transmute CLI is free (<code>npx github:mahope/transmute</code>). The desktop app adds an interactive pipeline builder, live preview and batch processing — one-time $19, no subscription.</p>
-  <a href="/" class="btn">Try the live demo →</a>
-  &nbsp;
-  <a href="/#pricing" class="btn">See pricing</a>
+</article>
 </div>
+</main>
 
-<div class="cta-box" style="background:#fff">
-  <p style="margin-bottom:8px"><strong>More guides:</strong> <a href="https://eucomplypro.com/guides/csv-to-json/">CSV to JSON</a> · <a href="https://eucomplypro.com/guides/json-to-csv-pipeline/">JSON to CSV pipelines</a> · <a href="https://eucomplypro.com/guides/join-two-files/">Join two files</a></p>
-</div>
-
-</div>
-
-<footer>
-  <p><a href="/">Transmute</a> · <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a> · <a href="/">Free Web Converter</a> · <a href="https://eucomplypro.com/privacy/">Privacy</a> · <a href="https://eucomplypro.com/terms/">Terms</a></p>
-  <p style="margin-top:8px">© 2026 Mahope. All transformations run locally on your machine.</p>
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen · mahoje.dk</a>, Odense, Denmark.</p>
+      <p>CLI released under the MIT licence.</p>
+    </div>
+    <ul>
+      <li><a href="/#guides">Guides</a></li>
+      <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+      <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
+      <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
+      <li><a href="/da/" lang="da">Dansk</a></li>
+    </ul>
+  </div>
 </footer>
 
 </body>

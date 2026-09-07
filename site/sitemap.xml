@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://transmute.run/</loc></url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://transmute.run/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/"/>
+    <xhtml:link rel="alternate" hreflang="da" href="https://transmute.run/da/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/da/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/"/>
+    <xhtml:link rel="alternate" hreflang="da" href="https://transmute.run/da/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/"/>
+  </url>
   <url><loc>https://transmute.run/guides/add-computed-fields/</loc></url>
   <url><loc>https://transmute.run/guides/csv-to-sql/</loc></url>
   <url><loc>https://transmute.run/guides/csv-to-xml/</loc></url>

@@ -1,76 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>How to Flatten Nested JSON Arrays (and Export to CSV) | Transmute</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Flatten Nested JSON Arrays (and Export to CSV) – Transmute</title>
 <meta name="description" content="Flatten nested JSON arrays and objects into flat CSV rows from the terminal. Free CLI: expand array fields, promote object keys, add computed columns.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔁</text></svg>">
+<link rel="canonical" href="https://transmute.run/guides/flatten-nested-json/">
 <meta property="og:title" content="How to Flatten Nested JSON Arrays (and Export to CSV)">
 <meta property="og:description" content="Flatten nested JSON arrays and objects into flat CSV rows from the terminal. Free CLI: expand array fields, promote object keys, add computed columns.">
+<meta property="og:url" content="https://transmute.run/guides/flatten-nested-json/">
 <meta property="og:type" content="article">
-<style>
-:root{--ink:#101828;--muted:#4a5a6a;--line:#dde3ea;--bg:#fff;--soft:#f5f7fa;--accent:#7c3aed;--accent-dark:#6023d0;}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
-.wrap{max-width:760px;margin:0 auto;padding:0 20px}
-header{border-bottom:1px solid var(--line);padding:14px 0}
-header .wrap{display:flex;align-items:center;justify-content:space-between}
-.logo{font-weight:800;font-size:18px;text-decoration:none;color:var(--ink)}
-.logo span{color:var(--accent)}
-nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
-nav a:hover{color:var(--accent)}
-h1{font-size:34px;line-height:1.2;margin:40px 0 8px;letter-spacing:-.02em}
-.meta{color:var(--muted);font-size:14px;margin-bottom:32px;display:flex;gap:16px;flex-wrap:wrap}
-h2{font-size:24px;margin:36px 0 10px;letter-spacing:-.01em;padding-top:8px}
-h3{font-size:18px;margin:24px 0 8px}
-p{margin-bottom:16px}
-code{background:var(--soft);padding:2px 6px;border-radius:4px;font-size:14px;font-family:'SF Mono','Fira Code','Consolas',monospace}
-pre{background:#17122b;color:#e6e2f5;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:16px 0;font-family:'SF Mono','Fira Code','Consolas',monospace}
-pre .kw{color:#b79bf5}pre .str{color:#a8d88a}pre .cm{color:#7d7699}pre .nm{color:#e6e2f5}pre .prompt{color:#7d7699}
-.table-wrap{overflow-x:auto;margin:16px 0}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
-th{background:var(--soft);font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
-ul,ol{margin:12px 0 16px;padding-left:24px}
-li{margin-bottom:6px}
-.cta-box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center;margin:32px 0}
-.cta-box h3{font-size:18px;margin-bottom:6px}
-.cta-box p{font-size:14px;color:var(--muted);margin-bottom:16px}
-.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:10px 22px;border-radius:6px;font-size:14px;transition:background .12s;margin:4px}
-.btn:hover{background:var(--accent-dark)}
-.btn.green{background:#1a7a44}
-footer{text-align:center;padding:32px 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:48px}
-footer a{color:var(--accent);text-decoration:none}
-@media(max-width:600px){h1{font-size:26px}h2{font-size:20px}}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "Article",
+  "@type": "TechArticle",
   "headline": "How to Flatten Nested JSON Arrays (and Export to CSV)",
   "description": "Flatten nested JSON arrays and objects into flat CSV rows from the terminal. Free CLI: expand array fields, promote object keys, add computed columns.",
   "url": "https://transmute.run/guides/flatten-nested-json/",
-  "author": {"@type": "Organization", "name": "Mahope"},
-  "publisher": {"@type": "Organization", "name": "Mahope"}
+  "author": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"},
+  "publisher": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"}
 }
 </script>
 </head>
 <body>
-<header>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
   <div class="wrap">
-    <a href="/" class="logo">Trans<span>mute</span></a>
-    <nav>
-      <a href="/">Free Demo</a>
-      <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a>
-      <a href="/">Web Converter</a>
+    <a class="wordmark" href="/">transmute</a>
+    <nav class="site-nav" aria-label="Site">
+      <a href="/">Home</a>
+      <a href="/#guides" aria-current="page">Guides</a>
+      <a href="https://github.com/mahope/transmute">GitHub</a>
+      <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a>
     </nav>
   </div>
 </header>
-<main class="wrap">
+
+<main id="main" class="prose">
+<div class="wrap">
 <article>
 <h1>How to Flatten Nested JSON Arrays (and Export to CSV)</h1>
-<div class="meta"><span>Guide</span><span>September 2026</span></div>
 
 <p>Nested JSON — arrays inside objects inside arrays — is everywhere: API responses, Stripe exports, MongoDB dumps, log files. Spreadsheets can't read it, and most "JSON to CSV" tools either choke on nesting or silently turn your data into <code>[object Object]</code>. This guide shows how to flatten nested JSON into flat rows from the command line, for free, without uploading your data anywhere.</p>
 
@@ -81,7 +55,7 @@ footer a{color:var(--accent);text-decoration:none}
   { "id": 2, "name": "Gadget", "tags": ["sale"] }
 ]</pre>
 <p>Each item has a <code>tags</code> array. A naive converter gives you a column containing the raw array as text. What you usually want is <strong>one row per tag</strong>, with the parent fields repeated:</p>
-<pre><span class="prompt">$</span> transmute items.json -p <span class="str">'[{"op":"flatten","field":"tags"}]'</span> -o csv
+<pre><span class="p">$</span> transmute items.json -p <span class="str">'[{"op":"flatten","field":"tags"}]'</span> -o csv
 <span class="nm">id,name,tags
 1,Widget,sale
 1,Widget,new
@@ -91,55 +65,72 @@ footer a{color:var(--accent);text-decoration:none}
 
 <h2 id="objects">Flattening nested objects instead of arrays</h2>
 <p>If the nested value is an object rather than an array — say a <code>meta</code> object with several keys — you have two options:</p>
-<h3>Keep it as JSON in one cell</h3>
-<p>Transmute serializes nested objects and arrays as compact JSON inside the CSV cell (properly quoted), so no data is lost:</p>
-<pre><span class="nm">id,meta
-1,"{""color"":""red""}"</span></pre>
+<h3>Do not leave it nested</h3>
+<p>CSV has no way to hold an object. If a row still contains one when it is serialized, the cell comes out as <code>[object Object]</code>, and an array comes out as its elements joined with commas. So promote the fields you need before the CSV step:</p>
 <h3>Promote fields with map</h3>
-<pre><span class="prompt">$</span> transmute items.json -p <span class="str">'[{"op":"map","expr":"({...item, color: item.meta?.color ?? null})"}]'</span> -o csv</pre>
+<pre><span class="p">$</span> transmute items.json -p <span class="str">'[{"op":"map","expr":"({...item, color: item.meta?.color ?? null})"}]'</span> -o csv</pre>
 <p>The spread keeps existing columns and adds the promoted field on top.</p>
 
 <h2 id="add">Adding computed columns while you're at it</h2>
 <p>The <code>add</code> operation evaluates an expression per row — useful for counts, totals or derived flags:</p>
-<pre><span class="prompt">$</span> transmute items.json -p <span class="str">'[{"op":"add","fields":{"tag_count":"item.tags.length"}}]'</span> -o csv
+<pre><span class="p">$</span> transmute items.json -p <span class="str">'[{"op":"add","fields":{"tag_count":"item.tags.length"}}]'</span> -o csv
 <span class="nm">id,name,tags,tag_count
-1,Widget,"[""sale"",""new""]",2
-2,Gadget,"[""sale""]",1</span></pre>
+1,Widget,"sale,new",2
+2,Gadget,sale,1</span></pre>
 
 <h2 id="deep">Deeply nested structures</h2>
 <p>For two or more levels of nesting, chain operations. Flatten level by level:</p>
-<pre><span class="prompt">$</span> transmute orders.json -p '[{"op":"flatten","field":"lines"},{"op":"flatten","field":"discounts"}]' -o csv</pre>
+<pre><span class="p">$</span> transmute orders.json -p '[{"op":"flatten","field":"lines"},{"op":"flatten","field":"discounts"}]' -o csv</pre>
 <p>If a field is missing on some rows, <code>flatten</code> passes those rows through untouched — you don't lose records, they just aren't expanded.</p>
 
 <h2 id="install">Getting the CLI</h2>
 <div class="table-wrap">
 <table>
 <tr><th>Method</th><th>Command</th></tr>
-<tr><td>npx (no install)</td><td><code>npx github:mahope/transmute</code></td></tr>
-<tr><td>curl installer</td><td><code>curl -fsSL https://eucomplypro.com/tools/install.sh | sh</code></td></tr>
+<tr><td>npx (no install)</td><td><code>npx @mahope/transmute items.json -o csv</code></td></tr>
+<tr><td>npm (global)</td><td><code>npm i -g @mahope/transmute</code></td></tr>
 </table>
 </div>
-<p>All processing happens locally. Nothing is uploaded — see <a href="/">the free web demo</a> if you'd rather try it in the browser first.</p>
+<p>All processing happens locally. Nothing is uploaded.</p>
 
 <h2>Gotchas</h2>
 <ul>
 <li><strong>Arrays of objects:</strong> when the flattened values are objects, their keys are merged into the row. Name collisions keep the parent's value unless the child defines the key.</li>
 <li><strong>null vs missing:</strong> both serialize to empty CSV cells; use <code>map</code> if you need to distinguish them.</li>
 <li><strong>Excel and leading zeros:</strong> if IDs like <code>"007"</code> lose their zeros after import, format the column as text in your spreadsheet tool.</li>
-<li><strong>Huge files:</strong> for multi-hundred-MB files prefer splitting first (<code>{"op":"head","n":50000}</code>) or use the desktop app's batch mode.</li>
+<li><strong>Huge files:</strong> everything is held in memory, so for multi-hundred-MB files split the input first or take a slice with <code>{"op":"head","n":50000}</code>.</li>
 </ul>
 
-<div class="cta-box">
-  <h3>Pipelines like this — without writing a script</h3>
-  <p>The Transmute CLI is free (<code>npx github:mahope/transmute</code>). The desktop app adds an interactive pipeline builder, live preview and batch processing — one-time $19, no subscription.</p>
-  <a href="/" class="btn">Try the free demo</a>
-  <a href="/#download" class="btn green">Get the desktop app — $19</a>
-</div>
+<aside class="aside">
+  <h2>Running these commands</h2>
+  <p>The examples use <code>transmute</code> as installed with <code>npm i -g @mahope/transmute</code> (Node.js 18 or newer). Without installing, replace <code>transmute</code> with <code>npx @mahope/transmute</code>. Everything runs locally; no file is uploaded anywhere.</p>
+  <p>Related guides:</p>
+  <ul>
+    <li><a href="/guides/json-to-csv-pipeline/">JSON to CSV with filters</a></li>
+    <li><a href="/guides/add-computed-fields/">Add computed fields</a></li>
+    <li><a href="/guides/join-two-files/">Join two files by a shared key</a></li>
+  </ul>
+</aside>
+
 </article>
+</div>
 </main>
-<footer>
-  <p><a href="/">Transmute</a> · <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a> · <a href="/">Free Web Converter</a> · <a href="https://eucomplypro.com/privacy/">Privacy</a> · <a href="https://eucomplypro.com/terms/">Terms</a></p>
-  <p style="margin-top:8px">© 2026 Mahope. All transformations run locally on your machine.</p>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen · mahoje.dk</a>, Odense, Denmark.</p>
+      <p>CLI released under the MIT licence.</p>
+    </div>
+    <ul>
+      <li><a href="/#guides">Guides</a></li>
+      <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+      <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
+      <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
+      <li><a href="/da/" lang="da">Dansk</a></li>
+    </ul>
+  </div>
 </footer>
+
 </body>
 </html>

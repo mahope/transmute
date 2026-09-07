@@ -1,80 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>How to Add Computed Fields to JSON or CSV (Without Writing a Script)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Add Computed Fields to JSON or CSV (Without Writing a Script) – Transmute</title>
 <meta name="description" content="Add derived columns like totals, tax or full names to any JSON or CSV file from the terminal. Free CLI, verified examples.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔁</text></svg>">
+<link rel="canonical" href="https://transmute.run/guides/add-computed-fields/">
 <meta property="og:title" content="How to Add Computed Fields to JSON or CSV (Without Writing a Script)">
 <meta property="og:description" content="Add derived columns like totals, tax or full names to any JSON or CSV file from the terminal. Free CLI, verified examples.">
+<meta property="og:url" content="https://transmute.run/guides/add-computed-fields/">
 <meta property="og:type" content="article">
-<style>
-:root{--ink:#101828;--muted:#4a5a6a;--line:#dde3ea;--bg:#fff;--soft:#f5f7fa;--accent:#7c3aed;--accent-dark:#6023d0;}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
-.wrap{max-width:760px;margin:0 auto;padding:0 20px}
-header{border-bottom:1px solid var(--line);padding:14px 0}
-header .wrap{display:flex;align-items:center;justify-content:space-between}
-.logo{font-weight:800;font-size:18px;text-decoration:none;color:var(--ink)}
-.logo span{color:var(--accent)}
-nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
-nav a:hover{color:var(--accent)}
-h1{font-size:34px;line-height:1.2;margin:40px 0 8px;letter-spacing:-.02em}
-.meta{color:var(--muted);font-size:14px;margin-bottom:32px;display:flex;gap:16px;flex-wrap:wrap}
-h2{font-size:24px;margin:36px 0 10px;letter-spacing:-.01em;padding-top:8px}
-h3{font-size:18px;margin:24px 0 8px}
-p{margin-bottom:16px}
-code{background:var(--soft);padding:2px 6px;border-radius:4px;font-size:14px;font-family:'SF Mono','Fira Code','Consolas',monospace}
-pre{background:#17122b;color:#e6e2f5;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:16px 0;font-family:'SF Mono','Fira Code','Consolas',monospace}
-pre .kw{color:#b79bf5}pre .str{color:#a8d88a}pre .cm{color:#7d7699}pre .nm{color:#e6e2f5}pre .prompt{color:#7d7699}
-.table-wrap{overflow-x:auto;margin:16px 0}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
-th{background:var(--soft);font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
-blockquote{border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;background:var(--soft);border-radius:0 6px 6px 0}
-blockquote p{margin:0;color:var(--muted);font-size:14px}
-ul,ol{margin:12px 0 16px;padding-left:24px}
-li{margin-bottom:6px}
-.cta-box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center;margin:32px 0}
-.cta-box h3{font-size:18px;margin-bottom:6px}
-.cta-box p{font-size:14px;color:var(--muted);margin-bottom:16px}
-.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:10px 22px;border-radius:6px;font-size:14px;transition:background .12s}
-.btn:hover{background:var(--accent-dark)}
-.btn.green{background:#1a7a44}
-footer{text-align:center;padding:32px 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:48px}
-footer a{color:var(--accent);text-decoration:none}
-@media(max-width:600px){h1{font-size:26px}h2{font-size:20px}}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "Article",
+  "@type": "TechArticle",
   "headline": "How to Add Computed Fields to JSON or CSV (Without Writing a Script)",
   "description": "Add derived columns like totals, tax or full names to any JSON or CSV file from the terminal. Free CLI, verified examples.",
   "url": "https://transmute.run/guides/add-computed-fields/",
-  "author": {"@type": "Organization", "name": "Mahope"},
-  "publisher": {"@type": "Organization", "name": "Mahope"}
+  "author": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"},
+  "publisher": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"}
 }
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
-<header>
+<header class="site-header">
   <div class="wrap">
-    <a href="/" class="logo">Trans<span>mute</span></a>
-    <nav>
-      <a href="/">Free Demo</a>
-      <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a>
-      <a href="/">Web Converter</a>
+    <a class="wordmark" href="/">transmute</a>
+    <nav class="site-nav" aria-label="Site">
+      <a href="/">Home</a>
+      <a href="/#guides" aria-current="page">Guides</a>
+      <a href="https://github.com/mahope/transmute">GitHub</a>
+      <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a>
     </nav>
   </div>
 </header>
 
+<main id="main" class="prose">
 <div class="wrap">
-
+<article>
 <h1>How to Add Computed Fields to JSON or CSV</h1>
-<p class="meta">📅 September 2026 · 4 min read · <a href="/">Try it in your browser →</a></p>
 
 
 <p>You have an order list and need a <code>total</code> column. Or user records where you want a lowercase <code>username</code>. The usual answers are a throwaway Python script or a spreadsheet round-trip. There's a shorter path.</p>
@@ -87,32 +57,32 @@ footer a{color:var(--accent);text-decoration:none}
   { "name": "Bob",   "price": 5,  "qty": 4 }
 ]</span></pre>
 
-<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute orders.json \
+<pre><span class="p">$</span> transmute orders.json \
     --pipe <span class="str">'[{"op":"add","fields":{"total":"item.price * item.qty"}}]'</span> \
     --output json
 <span class="cm">[
- {
+  {
   "name": "Alice",
   "price": 10,
   "qty": 2,
   "total": 20
- },
- {
+  },
+  {
   "name": "Bob",
   "price": 5,
   "qty": 4,
   "total": 20
- }
+  }
 ]</span></pre>
 
 <p><code>add</code> works on CSV input too — the types are coerced first, so arithmetic just works:</p>
 
-<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute orders.csv \
+<pre><span class="p">$</span> transmute orders.csv \
     --pipe <span class="str">'[{"op":"add","fields":{"total":"item.price * item.qty"}}]'</span> -o csv</pre>
 
 <p>Combine with the other pipeline steps — here adding a field and filtering in one pass:</p>
 
-<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute orders.json \
+<pre><span class="p">$</span> transmute orders.json \
     --pipe <span class="str">'[{"op":"add","fields":{"total":"item.price * item.qty"}},{"op":"filter","expr":"item.total >= 20"}]'</span> \
     --output json</pre>
 
@@ -129,24 +99,35 @@ footer a{color:var(--accent);text-decoration:none}
 <li><strong>A failing expression yields <code>null</code></strong> instead of crashing the whole run — handy for messy data, but scan for nulls afterwards (<code>{"op":"filter","expr":"item.total === null"}</code>).</li>
 </ul>
 
+<aside class="aside">
+  <h2>Running these commands</h2>
+  <p>The examples use <code>transmute</code> as installed with <code>npm i -g @mahope/transmute</code> (Node.js 18 or newer). Without installing, replace <code>transmute</code> with <code>npx @mahope/transmute</code>. Everything runs locally; no file is uploaded anywhere.</p>
+  <p>Related guides:</p>
+  <ul>
+    <li><a href="/guides/join-two-files/">Join two files by a shared key</a></li>
+    <li><a href="/guides/flatten-nested-json/">Flatten nested JSON arrays</a></li>
+    <li><a href="/guides/json-to-csv-pipeline/">JSON to CSV with filters</a></li>
+  </ul>
+</aside>
 
-<div class="cta-box">
-  <h3>Pipelines like this — without writing a script</h3>
-  <p>The Transmute CLI is free (<code>npx github:mahope/transmute</code>). The desktop app adds an interactive pipeline builder, live preview and batch processing — one-time $19, no subscription.</p>
-  <a href="/" class="btn green">Try the live demo →</a>
-  &nbsp;
-  <a href="/#pricing" class="btn">See pricing</a>
+</article>
 </div>
+</main>
 
-<div class="cta-box" style="background:#fff">
-  <p style="margin-bottom:8px"><strong>More guides:</strong> <a href="https://eucomplypro.com/guides/jq-alternative/">A simpler jq alternative</a> · <a href="https://eucomplypro.com/guides/json-to-csv-pipeline/">JSON to CSV pipelines</a></p>
-</div>
-
-</div>
-
-<footer>
-  <p><a href="/">Transmute</a> · <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a> · <a href="/">Free Web Converter</a> · <a href="https://eucomplypro.com/privacy/">Privacy</a> · <a href="https://eucomplypro.com/terms/">Terms</a></p>
-  <p style="margin-top:8px">© 2026 Mahope. All transformations run locally on your machine.</p>
+<footer class="site-footer">
+  <div class="wrap">
+    <div>
+      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen · mahoje.dk</a>, Odense, Denmark.</p>
+      <p>CLI released under the MIT licence.</p>
+    </div>
+    <ul>
+      <li><a href="/#guides">Guides</a></li>
+      <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+      <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
+      <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
+      <li><a href="/da/" lang="da">Dansk</a></li>
+    </ul>
+  </div>
 </footer>
 
 </body>
