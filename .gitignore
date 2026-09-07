@@ -4,3 +4,4 @@ target/
 *.localsite/.wrangler/
 .wrangler/
 site/.wrangler/
+tools/shots/
