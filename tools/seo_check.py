@@ -166,9 +166,15 @@ def main() -> int:
     for url, path in pages():
         if args.base:
             status, text = fetch(args.base.rstrip("/") + url)
-            if status != (404 if url.endswith("404.html") else 200):
+            # Cloudflare Pages serves /404.html itself with 200; the real test is an unknown path.
+            if status != 200:
                 print(f"{url}: HTTP {status}")
                 total += 1
+            if url.endswith("404.html"):
+                missing, _ = fetch(args.base.rstrip("/") + "/this-page-does-not-exist/")
+                if missing != 404:
+                    print(f"/this-page-does-not-exist/: HTTP {missing} (want 404)")
+                    total += 1
         else:
             text = path.read_text(encoding="utf-8")
         findings = check(url, text)
