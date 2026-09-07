@@ -84,6 +84,11 @@ node test/test.js
 - **Pipelines** — chain filter → map → sort → convert in a single pass
 - **Cross-platform** — macOS, Windows, Linux
 
+## Releasing
+
+`npm run release -- patch` (or `minor`/`major`) bumps the version, commits and pushes the tag.
+CI publishes to npm and creates the GitHub release.
+
 ## License
 
 MIT

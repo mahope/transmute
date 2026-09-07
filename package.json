@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "test": "node test/test.js",
-    "start": "node src/cli.js"
+    "start": "node src/cli.js",
+    "release": "node scripts/release.mjs"
   },
   "keywords": [
     "json",
