@@ -468,7 +468,7 @@
         setTimeout(function () { box.scrollIntoView({ block: 'start' }); }, 50);
       } catch (err) { /* malformed hash: keep the example */ }
     }
-    [inputEl, pipeEl].forEach(function (n) { n.addEventListener('input', function () { touched = true; }); });
+    [inputEl, pipeEl].forEach(function (n) { n.addEventListener('input', function () { touched = true; presets.forEach(function (x) { x.setAttribute('aria-pressed', 'false'); }); }); });
     [fmtIn, fmtOut].forEach(function (n) { n.addEventListener('change', function () { touched = true; }); });
     presets.forEach(function (b) { b.addEventListener('click', function () { touched = true; }); });
     box.addEventListener('input', function () { if (touched && history.replaceState) history.replaceState(null, '', link()); });
