@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Transmute engine frame</title>
+</head>
+<body>
+<script>var module = { exports: {} };</script>
+<script src="/engine.js"></script>
+<script>
+/* Runs inside a sandboxed iframe (opaque origin, no storage, no DOM access to the parent).
+   The parent posts { type: 'run', id, input, input_format, pipeline, output_format } and gets
+   { type: 'result', id, text | error, rows } back. Nothing is sent anywhere else. */
+(function () {
+  var api = module.exports;
+  function reply(src, msg) { src.postMessage(msg, '*'); }
+  addEventListener('message', function (e) {
+    var d = e.data || {};
+    if (d.type !== 'run' || !e.source) return;
+    var pipe = [];
+    try { pipe = d.pipeline && d.pipeline.trim() ? JSON.parse(d.pipeline) : []; }
+    catch (err) { return reply(e.source, { type: 'result', id: d.id, error: 'Pipeline is not valid JSON: ' + err.message }); }
+    if (!Array.isArray(pipe)) return reply(e.source, { type: 'result', id: d.id, error: 'Pipeline must be a JSON array of steps.' });
+    var fmt = d.input_format === 'auto' ? (api.detectFormat(null, d.input) || 'json') : d.input_format;
+    var r = api.run(d.input || '', fmt, pipe, d.output_format || 'table', { tableName: 'my_table' });
+    reply(e.source, { type: 'result', id: d.id, text: r.text, error: r.error, rows: r.data ? r.data.length : null, format: fmt });
+  });
+  parent.postMessage({ type: 'ready' }, '*');
+})();
+</script>
+</body>
+</html>

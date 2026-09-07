@@ -12,6 +12,7 @@
 <meta property="og:title" content="Transmute – convert JSON, CSV, YAML, XML and SQL from the terminal">
 <meta property="og:description" content="Offline CLI and desktop app for converting data files and running small pipelines. Nothing leaves your machine.">
 <meta name="theme-color" content="#0f7b6c">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -30,7 +31,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/style.css">
-<script src="/site.js"></script>
+<script src="/theme.js"></script>
+<script src="/site.js" defer></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -93,6 +95,14 @@
       ],
       "publisher": {
         "@id": "https://mahoje.dk/#org"
+      },
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://transmute.run/search/?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
       }
     },
     {
@@ -172,35 +182,42 @@
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
+<div class="family-bar"><nav class="container" aria-label="Mahope tools"><span>Mahope tools:</span><ul><li><a href="https://eucomplypro.com">EUComply</a></li><li><a href="https://cleancopy.tools">Clean Copy</a></li><li><a href="https://deskuptime.com">DeskUptime</a></li><li><a href="https://transmute.run" aria-current="true">Transmute</a></li><li><a href="https://bugbottle.dev">BugBottle</a></li><li class="all"><a href="https://mahope.tools">All tools</a></li></ul></nav></div>
 <header class="site-header">
-  <div class="wrap">
-    <a class="wordmark" href="/"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v3.2h-4.4V19H10.4V9.2H6z"/></svg><span>transmute</span></a>
-    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line class="l1" x1="4" y1="6" x2="20" y2="6"/><line class="l2" x1="4" y1="12" x2="20" y2="12"/><line class="l3" x1="4" y1="18" x2="20" y2="18"/></svg>
-    </button>
+  <div class="container">
+    <a class="brand" href="/" aria-current="page"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v3.2h-4.4V19H10.4V9.2H6z"/></svg><span>transmute</span></a>
     <nav class="site-nav" id="site-nav" aria-label="Site">
       <ul>
-        <li><a href="/" aria-current="page">Home</a></li>
-        <li><a href="#guides">Guides</a></li>
-        <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+        <li><a href="/#guides">Guides</a></li>
+        <li><a href="/#install">Download</a></li>
         <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
-        <li><a href="/da/" lang="da" hreflang="da">Dansk</a></li>
+        <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
       </ul>
     </nav>
+    <div class="header-tools">
+      <a class="search-open" href="/search/" aria-keyshortcuts="Control+K" title="Search guides, operations and questions"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Search</span><kbd>⌘K</kbd></a>
+      <a class="lang-switch" href="/da/" lang="da" hreflang="da" aria-label="Dansk">DA</a>
+      <button class="theme-toggle" type="button" aria-label="Theme" data-light="Switch to light theme" data-dark="Switch to dark theme" data-system="Use system theme"><svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line class="l1" x1="4" y1="6" x2="20" y2="6"/><line class="l2" x1="4" y1="12" x2="20" y2="12"/><line class="l3" x1="4" y1="18" x2="20" y2="18"/></svg>
+      </button>
+    </div>
   </div>
 </header>
 
-<main id="main">
+<main id="main" class="container">
 
 <section class="hero">
-  <div class="wrap">
-    <h1>Convert JSON, CSV, YAML, XML and SQL from the terminal. Nothing leaves your machine.</h1>
+  <div class="hero-text">
+      <h1>Convert JSON, CSV, YAML, XML and SQL from the terminal. Nothing leaves your machine.</h1>
     <p class="lede">Transmute is a small command-line tool for developers, analysts and anyone else who gets handed a data file in the wrong format. Point it at a file, say what you want out, and optionally filter, sort, join or flatten on the way.</p>
     <ul class="formats-row" aria-label="Formats"><li>json</li><li>csv</li><li>yaml</li><li>xml</li><li>sql</li><li>table</li></ul>
     <div class="install">
       <code>npm i -g @mahope/transmute</code>
       <a class="btn btn-quiet" href="#install">Other ways to install</a>
     </div>
+  </div>
+  <div class="hero-terminal">
 <pre><code><span class="p">$</span> npx @mahope/transmute people.csv -o json
 <span class="out">[
   {
@@ -217,9 +234,46 @@
   </div>
 </section>
 
+<section class="section try" id="try">
+  <h2>Try it here</h2>
+  <p class="intro">The same engine as the CLI, running in your browser. Edit the input or the pipeline and the output updates as you type. Nothing is uploaded.</p>
+  <ul class="try-presets" aria-label="Examples">
+    <li><button type="button" data-preset='{"input": "[\n  {\"id\": 1039, \"customer\": \"Cara Vind\", \"status\": \"shipped\", \"total\": 2199.99},\n  {\"id\": 1040, \"customer\": \"Bo Friis\", \"status\": \"pending\", \"total\": 349},\n  {\"id\": 1042, \"customer\": \"Alice Hansen\", \"status\": \"shipped\", \"total\": 1299}\n]", "pipeline": "[\n  {\"op\": \"filter\", \"expr\": \"item.status === \\\"shipped\\\"\"},\n  {\"op\": \"pick\", \"fields\": [\"id\", \"customer\", \"total\"]},\n  {\"op\": \"sort\", \"by\": \"total\", \"dir\": \"desc\"}\n]", "informat": "auto", "outformat": "csv"}' aria-pressed="true">Filter and pick</button></li>
+    <li><button type="button" data-preset='{"input": "id,name,email\n1,Alice,alice@example.com\n2,O&#39;Brien,bob@example.com\n3,,carol@example.com", "pipeline": "[]", "informat": "csv", "outformat": "sql"}' aria-pressed="false">CSV to SQL</button></li>
+    <li><button type="button" data-preset='{"input": "[\n  {\"order\": 7, \"items\": [{\"sku\": \"A1\", \"qty\": 2}, {\"sku\": \"B2\", \"qty\": 1}]},\n  {\"order\": 8, \"items\": [{\"sku\": \"C3\", \"qty\": 5}]}\n]", "pipeline": "[\n  {\"op\": \"flatten\", \"field\": \"items\"}\n]", "informat": "auto", "outformat": "table"}' aria-pressed="false">Flatten</button></li>
+    <li><button type="button" data-preset='{"input": "[\n  {\"sku\": \"A1\", \"qty\": 2},\n  {\"sku\": \"B2\", \"qty\": 1},\n  {\"sku\": \"Z9\", \"qty\": 4}\n]", "pipeline": "[\n  {\"op\": \"join\", \"on\": \"sku\", \"keep\": \"left\", \"prefix\": \"stock_\",\n   \"with\": [{\"sku\": \"A1\", \"stock\": 42}, {\"sku\": \"B2\", \"stock\": 0}]},\n  {\"op\": \"add\", \"fields\": {\"in_stock\": \"item.stock_stock > 0\"}}\n]", "informat": "auto", "outformat": "json"}' aria-pressed="false">Join</button></li>
+    <li><button type="button" data-preset='{"input": "<users>\n  <user><name>Alice</name><age>32</age></user>\n  <user><name>Bob</name><age>25</age></user>\n</users>", "pipeline": "[\n  {\"op\": \"filter\", \"expr\": \"Number(item.age) > 26\"}\n]", "informat": "auto", "outformat": "json"}' aria-pressed="false">XML to JSON</button></li>
+  </ul>
+  <div class="try-grid">
+    <div class="field">
+      <div class="field-label"><label for="try-input">Input</label><select data-role="informat" aria-label="Input format"><option value="auto" selected>auto</option><option value="json">json</option><option value="csv">csv</option><option value="yaml">yaml</option><option value="xml">xml</option></select></div>
+      <textarea id="try-input" data-role="input" spellcheck="false" autocomplete="off" autocapitalize="off">[
+  {&quot;id&quot;: 1039, &quot;customer&quot;: &quot;Cara Vind&quot;, &quot;status&quot;: &quot;shipped&quot;, &quot;total&quot;: 2199.99},
+  {&quot;id&quot;: 1040, &quot;customer&quot;: &quot;Bo Friis&quot;, &quot;status&quot;: &quot;pending&quot;, &quot;total&quot;: 349},
+  {&quot;id&quot;: 1042, &quot;customer&quot;: &quot;Alice Hansen&quot;, &quot;status&quot;: &quot;shipped&quot;, &quot;total&quot;: 1299}
+]</textarea>
+    </div>
+    <div class="field">
+      <div class="field-label"><label for="try-pipe">Pipeline</label><a href="/cheatsheet/">all operations</a></div>
+      <textarea id="try-pipe" data-role="pipeline" spellcheck="false" autocomplete="off" autocapitalize="off">[
+  {&quot;op&quot;: &quot;filter&quot;, &quot;expr&quot;: &quot;item.status === \&quot;shipped\&quot;&quot;},
+  {&quot;op&quot;: &quot;pick&quot;, &quot;fields&quot;: [&quot;id&quot;, &quot;customer&quot;, &quot;total&quot;]},
+  {&quot;op&quot;: &quot;sort&quot;, &quot;by&quot;: &quot;total&quot;, &quot;dir&quot;: &quot;desc&quot;}
+]</textarea>
+    </div>
+    <div class="field try-output">
+      <div class="field-label"><span id="try-output-label">Output</span><span><span class="try-status" data-role="status"></span> <select data-role="outformat" aria-label="Output format"><option value="table">table</option><option value="json">json</option><option value="csv" selected>csv</option><option value="yaml">yaml</option><option value="xml">xml</option><option value="sql">sql</option></select></span></div>
+      <pre data-role="output" aria-labelledby="try-output-label" tabindex="0">id,customer,total
+1039,Cara Vind,2199.99
+1042,Alice Hansen,1299</pre>
+    </div>
+  </div>
+  <p class="try-command">The same thing in the terminal: <code data-role="command">transmute data.json --pipe &#x27;[{&quot;op&quot;: &quot;filter&quot;, &quot;expr&quot;: &quot;item.status === \&quot;shipped\&quot;&quot;},{&quot;op&quot;: &quot;pick&quot;, &quot;fields&quot;: [&quot;id&quot;, &quot;customer&quot;, &quot;total&quot;]},{&quot;op&quot;: &quot;sort&quot;, &quot;by&quot;: &quot;total&quot;, &quot;dir&quot;: &quot;desc&quot;}]&#x27; -o csv</code></p>
+  <p class="try-static-note">With JavaScript off this shows the example as run against the current release; the CLI gives the same output.</p>
+</section>
+
 <section class="section" id="examples">
-  <div class="wrap">
-    <h2>Three things you would actually do with it</h2>
+      <h2>Three things you would actually do with it</h2>
     <p class="intro">Every example on this page was run against the current release before it was pasted in. The output is what you get.</p>
     <div class="examples">
 
@@ -258,11 +312,11 @@ INSERT INTO "users" ("id", "name", "email") VALUES
       </div>
 
     </div>
-  </div>
+  
 </section>
 
 <section class="section" id="formats">
-  <div class="wrap two-col">
+  <div class="two-col">
     <div>
       <h2>Formats</h2>
       <dl class="formats">
@@ -299,8 +353,7 @@ INSERT INTO "users" ("id", "name", "email") VALUES
 </section>
 
 <section class="section" id="pipelines">
-  <div class="wrap">
-    <h2>Chaining steps</h2>
+      <h2>Chaining steps</h2>
     <p class="intro">A pipeline is a JSON array of steps, run in order. Expressions are plain JavaScript with the current row as <code>item</code>. Here a cart is joined with stock levels from a second data set, then filtered and counted:</p>
 <pre><code><span class="p">$</span> transmute cart.json --pipe '[
   {"op":"join","on":"sku","keep":"left","with":[{"sku":"A1","stock":42},{"sku":"B2","stock":0}]},
@@ -313,11 +366,11 @@ INSERT INTO "users" ("id", "name", "email") VALUES
   }
 ]</span></code></pre>
     <p>To join against a whole file instead of inline rows, splice it in from the shell: <code>--pipe "[{\"op\":\"join\",\"on\":\"sku\",\"with\":$(cat stock.json)}]"</code>. The <a href="/guides/join-two-files/">join guide</a> walks through it.</p>
-  </div>
+  
 </section>
 
 <section class="section" id="install">
-  <div class="wrap two-col">
+  <div class="two-col">
     <div>
       <h2>Install the CLI</h2>
       <p>Needs Node.js 18 or newer. No other dependencies.</p>
@@ -337,8 +390,7 @@ INSERT INTO "users" ("id", "name", "email") VALUES
 </section>
 
 <section class="section" id="guides">
-  <div class="wrap">
-    <h2>Guides</h2>
+      <h2>Guides</h2>
     <p class="intro">Longer walkthroughs of specific jobs, each with commands you can paste and the output they produce.</p>
     <ul class="guide-list">
       <li><a href="/guides/json-to-csv-pipeline/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M9 10v9"/></svg><span class="t">JSON to CSV with filters<span>Clean spreadsheets from API data: pick columns, filter rows, sort, dedupe.</span></span></a></li>
@@ -352,41 +404,40 @@ INSERT INTO "users" ("id", "name", "email") VALUES
       <li><a href="/guides/json-to-xml/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span class="t">JSON to XML<span>Well-formed XML from a JSON array, plus the Python equivalent.</span></span></a></li>
       <li><a href="/guides/csv-to-xml/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span class="t">CSV to XML<span>Spreadsheet exports as XML, with filtering on the way.</span></span></a></li>
     </ul>
-  </div>
+  
 </section>
 
 <section class="section faq" id="faq">
-  <div class="wrap">
-    <h2>Questions</h2>
-    <details>
+      <h2>Questions</h2>
+    <details id="faq-does-it-work-offline">
       <summary><span>Does it work offline?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>Yes. Neither the CLI nor the desktop app makes a network request. Once installed you can pull the cable out.</p>
     </details>
-    <details>
+    <details id="faq-where-does-my-data-go">
       <summary><span>Where does my data go?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>Nowhere. Files are read from disk or stdin, transformed in memory and written to stdout. There is no telemetry, no account and no server side.</p>
     </details>
-    <details>
+    <details id="faq-what-is-the-licence">
       <summary><span>What is the licence?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>The CLI and engine are MIT licensed; the source is on GitHub. The desktop app is a paid product (19 USD one-time) once checkout is live. Until then it is free to download with the limit described above.</p>
     </details>
-    <details>
+    <details id="faq-what-is-the-difference-between-the-cli-and-the-desktop-app">
       <summary><span>What is the difference between the CLI and the desktop app?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>They share the same engine and produce the same output. The CLI is for scripts, cron jobs, CI and anyone comfortable in a terminal. The desktop app is for building a pipeline interactively and seeing the result while you do it. If you only ever need one, the CLI is the one to start with.</p>
     </details>
-    <details>
+    <details id="faq-how-do-i-quote-the-pipeline-on-windows">
       <summary><span>How do I quote the pipeline on Windows?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>With difficulty, honestly. In Git Bash or WSL the single-quote form on this page works as written, and that is the recommended route. In PowerShell you can use the stop-parsing token and write inner quotes as <code>\"</code>: <code>transmute --% orders.json --pipe "[{\"op\":\"filter\",\"expr\":\"item.status === 'shipped'\"}]" -o csv</code>. That breaks as soon as the pipeline contains <code>&lt;</code> or <code>&gt;</code>, because cmd.exe reads them as redirects, so comparisons are best run from Git Bash or WSL.</p>
     </details>
-    <details>
+    <details id="faq-can-i-use-the-engine-from-my-own-code">
       <summary><span>Can I use the engine from my own code?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>Yes. <code>require('@mahope/transmute')</code> exposes <code>run(text, inputFormat, pipeline, outputFormat)</code> together with the parsers, serializers and operations. It is one file with no dependencies.</p>
     </details>
-  </div>
+  
 </section>
 
 <section class="section" id="maker">
-  <div class="wrap maker">
+  <div class="maker">
     <div>
       <h2>Who makes this</h2>
       <p>Transmute is made by <a href="https://mahoje.dk">Mads Holst Jensen</a>, a developer and technical partner based in Odense, Denmark. He builds and runs software for small companies and their teams, and this tool grew out of that work.</p>
@@ -400,21 +451,46 @@ INSERT INTO "users" ("id", "name", "email") VALUES
 </main>
 
 <footer class="site-footer">
-  <div class="wrap">
-    <div>
-      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen, mahoje.dk</a>, Odense, Denmark.</p>
-      <p>CLI released under the MIT licence.</p>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <a class="brand" href="/"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v3.2h-4.4V19H10.4V9.2H6z"/></svg><span>transmute</span></a>
+        <p>Transmute converts JSON, CSV, YAML, XML and SQL offline, from the terminal or a small desktop app.</p>
+        <ul>
+          <li><a href="/#install">Install the CLI</a></li>
+          <li><a href="https://github.com/mahope/transmute/releases">Desktop app</a></li>
+          <li><a href="/cheatsheet/">Cheat sheet</a></li>
+          <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+          <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h2>Family</h2>
+        <ul><li><a href="https://eucomplypro.com">EUComply</a></li><li><a href="https://cleancopy.tools">Clean Copy</a></li><li><a href="https://deskuptime.com">DeskUptime</a></li><li><a href="https://transmute.run" aria-current="true">Transmute</a></li><li><a href="https://bugbottle.dev">BugBottle</a></li><li><a href="https://mahope.tools">All tools</a></li></ul>
+      </div>
+      <div class="footer-col">
+        <h2>Site</h2>
+        <ul>
+          <li><a href="/privacy/">Privacy</a></li>
+          <li><a href="/.well-known/security.txt">Security</a></li>
+          <li><a href="/llms.txt">llms.txt</a></li>
+          <li><a href="/sitemap.xml">Sitemap</a></li>
+          <li><a class="report-bug" href="https://github.com/mahope/transmute/issues"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9a4 4 0 0 1 8 0v6a4 4 0 0 1-8 0z"/><path d="M12 15v6M4 12h4M16 12h4M5 6l3 2M19 6l-3 2M5 19l3-2M19 19l-3-2"/></svg>Report a bug</a></li>
+        </ul>
+        <p class="bb-badge">Feedback powered by <a href="https://bugbottle.dev">BugBottle</a></p>
+      </div>
+      <div class="footer-col">
+        <p>Built by Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — developer and technical partner for small businesses, Odense, Denmark.</p>
+        <p>No cookies, no trackers — only an anonymous page-view counter we run ourselves.</p>
+      </div>
     </div>
-    <ul>
-      <li><a href="/#guides">Guides</a></li>
-      <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
-      <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
-      <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
-      <li><a href="/.well-known/security.txt">Security</a></li>
-      <li><a href="/da/" lang="da" hreflang="da">Dansk</a></li>
-    </ul>
+    <div class="footer-bottom">
+      <p>© 2026 Mads Holst Jensen · CLI and engine under the MIT licence.</p>
+      <a class="lang-switch lang-switch-footer" href="/da/" lang="da" hreflang="da" aria-label="Dansk">DA</a>
+    </div>
   </div>
 </footer>
-
+<button class="to-top" type="button" aria-label="Back to top" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+<script src="https://cdn.jsdelivr.net/npm/bugbottle@0.5.0/dist/bugbottle.js" data-endpoint="https://mahope.tools/api/bugreport" data-locale="en" data-primary="#0f7b6c" data-brand="Transmute" data-position="bottom-right" data-scrub defer></script>
 </body>
 </html>

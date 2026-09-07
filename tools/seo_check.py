@@ -26,6 +26,8 @@ def pages() -> list[tuple[str, Path]]:
     out = []
     for p in sorted(SITE.rglob("*.html")):
         rel = p.relative_to(SITE).as_posix()
+        if rel == "try.html":
+            continue
         if rel == "404.html":
             url = "/404.html"
         else:
@@ -54,6 +56,7 @@ def check(url: str, text: str) -> list[str]:
     body = re.search(r"<body[^>]*>(.*)</body>", text, flags=re.S)
     body = body.group(1) if body else text
     is_404 = url.endswith("404.html")
+    noindex = 'name="robots" content="noindex"' in text
     full = BASE + url
 
     lang = re.search(r'<html lang="([a-z]{2})"', text)
@@ -91,7 +94,7 @@ def check(url: str, text: str) -> list[str]:
             f.append("missing hreflang x-default")
         if "en" not in hl:
             f.append("missing hreflang en")
-        if url in ("/", "/da/") and "da" not in hl:
+        if url in ("/", "/da/", "/privacy/", "/da/privacy/") and "da" not in hl:
             f.append("missing hreflang da")
 
     for prop in ("og:title", "og:description", "og:url", "og:type", "og:image", "og:site_name", "og:locale", "og:image:alt"):
@@ -113,7 +116,7 @@ def check(url: str, text: str) -> list[str]:
             f.append(f"missing link rel={rel}")
 
     ld = attr(r'<script type="application/ld\+json">(.*?)</script>', head)
-    if not is_404:
+    if not is_404 and not noindex:
         if not ld:
             f.append("missing JSON-LD")
         for block in ld:
@@ -147,9 +150,15 @@ def check(url: str, text: str) -> list[str]:
         f.append("missing <nav>")
     if "nav-toggle" not in body:
         f.append("missing mobile nav toggle")
+    if url not in ("/", "/da/") and not is_404 and 'class="crumbs"' not in body:
+        f.append("subpage without breadcrumb")
+    if 'class="family-bar"' not in body:
+        f.append("missing family bar")
+    if 'class="search-open"' not in body:
+        f.append("missing search button")
+    if "bugbottle" not in body:
+        f.append("missing BugBottle tag")
     if url.startswith("/guides/"):
-        if 'class="crumbs"' not in body:
-            f.append("guide without breadcrumb")
         if 'class="guide-nav"' not in body:
             f.append("guide without previous/next navigation")
     for a in re.findall(r'<a ([^>]*)>', body):

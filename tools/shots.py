@@ -19,7 +19,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-PAGES = ["/", "/da/", "/guides/json-to-sql/", "/404.html"]
+PAGES = ["/", "/da/", "/guides/json-to-sql/", "/cheatsheet/", "/search/?q=join", "/404.html"]
 WIDTHS = [360, 768, 1280]
 
 
@@ -55,7 +55,7 @@ def main() -> int:
             for url in PAGES:
                 page.goto(base + url, wait_until="networkidle")
                 page.wait_for_timeout(700)
-                name = url.strip("/").replace("/", "-") or "home"
+                name = url.strip("/").replace("/", "-").split("?")[0] or "home"
                 sw, cw = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
                 if sw > cw:
                     problems += 1
@@ -74,6 +74,15 @@ def main() -> int:
                     page.wait_for_timeout(300)
                     print("aria-expanded after Escape:", btn.get_attribute("aria-expanded"))
                     print("copy buttons:", page.locator("pre .copy").count())
+                if url == "/":
+                    page.keyboard.press("Control+K")
+                    page.wait_for_timeout(200)
+                    page.keyboard.type("flatten")
+                    page.wait_for_timeout(400)
+                    print(f"palette results at {w}:", page.locator(".palette li[role=option]").count())
+                    page.screenshot(path=str(out / f"palette-{w}.png"))
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(200)
             errors = [e for e in errors if "fonts.g" not in e and "ERR_" not in e]
             if errors:
                 problems += 1
