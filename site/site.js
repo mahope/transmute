@@ -221,7 +221,7 @@
   /* ---------- Search: shared matcher for the palette, /search/ and the 404 page ---------- */
   var indexPromise = null;
   function loadIndex() {
-    if (!indexPromise) indexPromise = fetch('/search-index.json').then(function (r) { return r.json(); }).catch(function () { indexPromise = null; return []; });
+    if (!indexPromise) indexPromise = fetch(($('.search-open') && $('.search-open').getAttribute('data-index')) || '/search-index.json').then(function (r) { return r.json(); }).catch(function () { indexPromise = null; return []; });
     return indexPromise;
   }
   function norm(s) { return String(s || '').toLowerCase().replace(/[æ]/g, 'ae').replace(/[ø]/g, 'o').replace(/[å]/g, 'a'); }

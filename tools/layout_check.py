@@ -36,6 +36,10 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):  # noqa: D102
         pass
 
+    def translate_path(self, path):  # Cloudflare Pages serves try.html at /try
+        p = super().translate_path(path)
+        return p + ".html" if path.split("?")[0] == "/try" else p
+
 
 def serve() -> str:
     handler = lambda *a, **k: Quiet(*a, directory=str(SITE), **k)  # noqa: E731

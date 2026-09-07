@@ -10,6 +10,7 @@ again after editing a page's content and the chrome is regenerated in place.
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
@@ -155,7 +156,7 @@ def header(lang: str, current: str, alt_url: str | None) -> str:
       </ul>
     </nav>
     <div class="header-tools">
-      <a class="search-open" href="{search}" aria-keyshortcuts="Control+K" title="{s["search_hint"]}">{icon("search")}<span>{s["search"]}</span><kbd>⌘K</kbd></a>
+      <a class="search-open" href="{search}" aria-keyshortcuts="Control+K" title="{s["search_hint"]}" data-index="{INDEX_URL}">{icon("search")}<span>{s["search"]}</span><kbd>⌘K</kbd></a>
       {lang_switch(lang, alt_url)}
       <button class="theme-toggle" type="button" aria-label="{s["theme"]}" data-light="{s["theme_light"]}" data-dark="{s["theme_dark"]}" data-system="{s["theme_system"]}">{icon("sun", "icon sun")}{icon("moon", "icon moon")}</button>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="{s["menu"]}">
@@ -220,6 +221,12 @@ def bugbottle(lang: str) -> str:
             f'data-scrub defer></script>')
 
 
+def asset(path: str) -> str:
+    """Versioned asset URL, so the 24h edge cache never serves a stale stylesheet or script with new HTML."""
+    digest = hashlib.md5((SITE / path.lstrip("/")).read_bytes()).hexdigest()[:8]
+    return f"{path}?v={digest}"
+
+
 def head_common(url: str, lang: str, og_image: str, og_type: str, og_alt: str) -> str:
     locale = "da_DK" if lang == "da" else "en_US"
     return f'''<meta name="theme-color" content="{ACCENT}">
@@ -241,9 +248,9 @@ def head_common(url: str, lang: str, og_image: str, og_type: str, og_alt: str) -
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="{FONTS}">
-<link rel="stylesheet" href="/style.css">
-<script src="/theme.js"></script>
-<script src="/site.js" defer></script>'''
+<link rel="stylesheet" href="{asset("/style.css")}">
+<script src="{asset("/theme.js")}"></script>
+<script src="{asset("/site.js")}" defer></script>'''
 
 
 def strip_head(head: str) -> str:
@@ -257,7 +264,7 @@ def strip_head(head: str) -> str:
         r'<meta name="twitter:[^"]*"[^>]*>\n?',
         r'<link rel="preconnect"[^>]*>\n?',
         r'<link rel="stylesheet"[^>]*>\n?',
-        r'<script src="/(?:site|theme).js"[^>]*></script>\n?',
+        r'<script src="/(?:site|theme).js[^"]*"[^>]*></script>\n?',
         r'<script type="application/ld\+json">.*?</script>\n?',
     ]
     for p in patterns:
@@ -468,6 +475,7 @@ def doc_layout(inner: str, lang: str, crumbs: list[tuple[str, str]], modified: s
 
 
 INDEX: list[dict] = []
+INDEX_URL = "/search-index.json"
 
 
 def excerpt(s: str, n: int = 400) -> str:
@@ -645,10 +653,18 @@ def write_index() -> None:
 
 
 def main() -> int:
+    global INDEX_URL
     # The browser playground runs the real engine; keep site/engine.js a byte-for-byte copy of src/engine.js.
     shutil.copyfile(ROOT / "src" / "engine.js", SITE / "engine.js")
+    tp = SITE / "try.html"
+    tp.write_text(re.sub(r'src="/engine\.js[^"]*"', f'src="{asset("/engine.js")}"', tp.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
     pages = sorted(SITE.rglob("*.html"))
-    # Guides and the cheat sheet first so their index entries come before the front pages.
+    # Two passes: the first builds the search index, the second stamps its hash into every header.
+    for path in pages:
+        process(path)
+    write_index()
+    INDEX_URL = asset("/search-index.json")
+    INDEX.clear()
     for path in pages:
         process(path)
     write_sitemap(pages)
