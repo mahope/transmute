@@ -4,6 +4,23 @@
    everything that runs, one teal accent, dark terminal blocks in both themes.
    Layout tokens are shared by header, main and footer so nothing moves between pages. */
 
+/* Fonts are served from here (latin subset, covers Danish), so no third-party request blocks rendering. */
+@font-face {
+  font-family: "IBM Plex Sans"; font-style: normal; font-weight: 100 700; font-display: swap;
+  src: url(/fonts/plex-sans-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url(/fonts/plex-mono-400-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url(/fonts/plex-mono-500-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /* Layout */
   --w-page: 1200px;
@@ -147,14 +164,14 @@ svg.icon { width: 1em; height: 1em; vertical-align: -0.15em; fill: none; stroke:
 
 /* Family bar: the one piece of navigation shared with the other Mahope sites */
 
-.family-bar { height: var(--family-h); font-size: 0.75rem; line-height: var(--family-h); color: var(--ink-3); background: var(--surface-2); border-bottom: 1px solid var(--line); overflow: hidden; }
+.family-bar { height: var(--family-h); font-size: 0.75rem; line-height: var(--family-h); color: var(--ink-2); background: var(--surface-2); border-bottom: 1px solid var(--line); overflow: hidden; }
 .family-bar nav { display: flex; align-items: center; gap: 0.75rem; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
 .family-bar nav::-webkit-scrollbar { display: none; }
 .family-bar span { flex-shrink: 0; }
 .family-bar ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.9rem; max-width: none; }
 .family-bar li { margin: 0; max-width: none; }
 .family-bar li.all { margin-left: auto; padding-left: 0.9rem; }
-.family-bar a { color: var(--ink-3); text-decoration: none; }
+.family-bar a { color: var(--ink-2); text-decoration: none; }
 .family-bar a:hover { color: var(--ink); }
 .family-bar a[aria-current] { color: var(--accent); font-weight: 600; }
 
@@ -254,7 +271,7 @@ svg.icon { width: 1em; height: 1em; vertical-align: -0.15em; fill: none; stroke:
 .site-footer a[aria-current] { color: var(--ink); font-weight: 500; }
 .report-bug .icon { margin-right: 0.35em; }
 .bb-badge { font-size: 0.8rem; color: var(--ink-3); margin-top: 0.9em; }
-.bb-badge a { color: var(--ink-2); }
+.bb-badge a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 0.15em; }
 .footer-bottom { margin-top: 2.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: 0.85rem; color: var(--ink-3); }
 .footer-bottom p { margin: 0; max-width: none; }
 .lang-switch-footer { height: 2rem; }
@@ -380,7 +397,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .try-presets li { margin: 0; }
 .try-presets button { font: 500 0.825rem/1 var(--sans); padding: 0.5em 0.85em; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background-color var(--t) var(--ease); }
 .try-presets button:hover { border-color: var(--ink-3); color: var(--ink); }
-.try-presets button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.try-presets button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hover); }
 .try-command { margin: 1rem 0 0; font-size: 0.9rem; color: var(--ink-2); max-width: none; display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; }
 .try-command code { color: var(--ink); }
 .try-static-note { color: var(--ink-2); font-size: 0.925rem; }

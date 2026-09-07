@@ -27,7 +27,6 @@ TODAY = date.today().isoformat()
 PUBLISHED = "2026-09-06"
 ACCENT = "#0f7b6c"
 
-FONTS = "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
 BUGBOTTLE_SRC = "https://cdn.jsdelivr.net/npm/bugbottle@0.5.0/dist/bugbottle.js"
 
 # Order matters: it is the order on the front page and for previous/next links.
@@ -245,9 +244,7 @@ def head_common(url: str, lang: str, og_image: str, og_type: str, og_alt: str) -
 <meta property="og:image:alt" content="{html.escape(og_alt, quote=True)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="{og_image}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="{FONTS}">
+<link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{asset("/style.css")}">
 <script src="{asset("/theme.js")}"></script>
 <script src="{asset("/site.js")}" defer></script>'''
@@ -263,6 +260,7 @@ def strip_head(head: str) -> str:
         r'<meta property="article:[^"]*"[^>]*>\n?',
         r'<meta name="twitter:[^"]*"[^>]*>\n?',
         r'<link rel="preconnect"[^>]*>\n?',
+        r'<link rel="preload"[^>]*>\n?',
         r'<link rel="stylesheet"[^>]*>\n?',
         r'<script src="/(?:site|theme).js[^"]*"[^>]*></script>\n?',
         r'<script type="application/ld\+json">.*?</script>\n?',
