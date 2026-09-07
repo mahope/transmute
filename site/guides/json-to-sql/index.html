@@ -3,40 +3,134 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How to Convert JSON to SQL INSERT Statements (CLI, Python, No Upload) – Transmute</title>
+<title>JSON to SQL INSERT Statements (CLI, Python, No Upload) – Transmute</title>
 <meta name="description" content="Turn JSON, CSV or YAML data into ready-to-run SQL INSERT statements from the terminal. Free CLI with filtering, correct escaping and custom table names.">
+<link rel="alternate" hreflang="en" href="https://transmute.run/guides/json-to-sql/">
+<link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/json-to-sql/">
 <link rel="canonical" href="https://transmute.run/guides/json-to-sql/">
 <meta property="og:title" content="How to Convert JSON to SQL INSERT Statements (CLI, Python, No Upload)">
 <meta property="og:description" content="Turn JSON, CSV or YAML data into ready-to-run SQL INSERT statements from the terminal. Free CLI with filtering, correct escaping and custom table names.">
-<meta property="og:url" content="https://transmute.run/guides/json-to-sql/">
+<meta property="article:published_time" content="2026-09-06">
+<meta property="article:modified_time" content="2026-09-07">
+<meta property="article:author" content="https://mahoje.dk">
+<meta property="article:published_time" content="2026-09-06">
+<meta property="article:modified_time" content="2026-09-07">
+<meta property="article:author" content="https://mahoje.dk">
+<meta property="article:published_time" content="2026-09-06">
+<meta property="article:modified_time" content="2026-09-07">
+<meta property="article:author" content="https://mahoje.dk">
+<meta name="theme-color" content="#0f7b6c">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:site_name" content="Transmute">
+<meta property="og:locale" content="en_US">
 <meta property="og:type" content="article">
+<meta property="og:url" content="https://transmute.run/guides/json-to-sql/">
+<meta property="og:image" content="https://transmute.run/og/json-to-sql.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="How to Convert JSON to SQL INSERT Statements – Transmute guide">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://transmute.run/og/json-to-sql.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/style.css">
+<script src="/site.js"></script>
+<meta property="article:published_time" content="2026-09-06">
+<meta property="article:modified_time" content="2026-09-07">
+<meta property="article:author" content="https://mahoje.dk">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "TechArticle",
-  "headline": "How to Convert JSON to SQL INSERT Statements (CLI, Python, No Upload)",
-  "description": "Turn JSON, CSV or YAML data into ready-to-run SQL INSERT statements from the terminal. Free CLI with filtering, correct escaping and custom table names.",
-  "url": "https://transmute.run/guides/json-to-sql/",
-  "author": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"},
-  "publisher": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"}
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://transmute.run/guides/json-to-sql/#article",
+      "headline": "How to Convert JSON to SQL INSERT Statements",
+      "name": "JSON to SQL INSERT statements",
+      "description": "Turn JSON, CSV or YAML data into ready-to-run SQL INSERT statements from the terminal. Free CLI with filtering, correct escaping and custom table names.",
+      "url": "https://transmute.run/guides/json-to-sql/",
+      "mainEntityOfPage": "https://transmute.run/guides/json-to-sql/",
+      "inLanguage": "en",
+      "proficiencyLevel": "Beginner",
+      "image": "https://transmute.run/og/json-to-sql.png",
+      "datePublished": "2026-09-06",
+      "dateModified": "2026-09-07",
+      "author": {
+        "@id": "https://mahoje.dk/#person"
+      },
+      "publisher": {
+        "@id": "https://mahoje.dk/#org"
+      },
+      "about": {
+        "@id": "https://transmute.run/#app"
+      },
+      "isPartOf": {
+        "@id": "https://transmute.run/#website"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Transmute",
+          "item": "https://transmute.run/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Guides",
+          "item": "https://transmute.run/#guides"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "JSON to SQL INSERT statements",
+          "item": "https://transmute.run/guides/json-to-sql/"
+        }
+      ]
+    },
+    {
+      "@type": "Person",
+      "@id": "https://mahoje.dk/#person",
+      "name": "Mads Holst Jensen",
+      "url": "https://mahoje.dk"
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://mahoje.dk/#org",
+      "name": "mahoje.dk",
+      "url": "https://mahoje.dk",
+      "founder": {
+        "@id": "https://mahoje.dk/#person"
+      },
+      "logo": "https://transmute.run/icon-512.png"
+    }
+  ]
 }
 </script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-
 <header class="site-header">
   <div class="wrap">
-    <a class="wordmark" href="/">transmute</a>
-    <nav class="site-nav" aria-label="Site">
-      <a href="/">Home</a>
-      <a href="/#guides" aria-current="page">Guides</a>
-      <a href="https://github.com/mahope/transmute">GitHub</a>
-      <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a>
+    <a class="wordmark" href="/"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v3.2h-4.4V19H10.4V9.2H6z"/></svg><span>transmute</span></a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line class="l1" x1="4" y1="6" x2="20" y2="6"/><line class="l2" x1="4" y1="12" x2="20" y2="12"/><line class="l3" x1="4" y1="18" x2="20" y2="18"/></svg>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="Site">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/#guides" aria-current="page">Guides</a></li>
+        <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
+        <li><a href="/da/" lang="da" hreflang="da">Dansk</a></li>
+      </ul>
     </nav>
   </div>
 </header>
@@ -44,8 +138,8 @@
 <main id="main" class="prose">
 <div class="wrap">
 <article>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Transmute</span></a><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></li><li><a href="/#guides">Guides</a><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></li><li><span aria-current="page">JSON to SQL INSERT statements</span></li></ol></nav>
 <h1>How to Convert JSON to SQL INSERT Statements</h1>
-
 
 <p>You have a JSON export and need it in a database: seed data, a migration, test fixtures for staging. Pasting values by hand doesn't scale, and most online converters want you to upload data you'd rather keep local. Here's the terminal-first path.</p>
 
@@ -136,6 +230,14 @@ cols = list(rows[0])
   </ul>
 </aside>
 
+<nav class="guide-nav" aria-label="Guide navigation">
+  <a class="prev" href="/guides/csv-to-sql/"><small><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Previous guide</small><strong>CSV to SQL INSERT statements</strong></a>
+  <a class="next" href="/guides/flatten-nested-json/"><small>Next guide<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></small><strong>Flatten nested JSON arrays</strong></a>
+</nav>
+
+
+
+
 </article>
 </div>
 </main>
@@ -143,7 +245,7 @@ cols = list(rows[0])
 <footer class="site-footer">
   <div class="wrap">
     <div>
-      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen · mahoje.dk</a>, Odense, Denmark.</p>
+      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen, mahoje.dk</a>, Odense, Denmark.</p>
       <p>CLI released under the MIT licence.</p>
     </div>
     <ul>
@@ -151,7 +253,8 @@ cols = list(rows[0])
       <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
       <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
       <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
-      <li><a href="/da/" lang="da">Dansk</a></li>
+      <li><a href="/.well-known/security.txt">Security</a></li>
+      <li><a href="/da/" lang="da" hreflang="da">Dansk</a></li>
     </ul>
   </div>
 </footer>

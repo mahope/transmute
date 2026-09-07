@@ -11,37 +11,181 @@
 <link rel="alternate" hreflang="x-default" href="https://transmute.run/">
 <meta property="og:title" content="Transmute – convert JSON, CSV, YAML, XML and SQL from the terminal">
 <meta property="og:description" content="Offline CLI and desktop app for converting data files and running small pipelines. Nothing leaves your machine.">
-<meta property="og:url" content="https://transmute.run/">
+<meta name="theme-color" content="#0f7b6c">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:site_name" content="Transmute">
+<meta property="og:locale" content="en_US">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://transmute.run/">
+<meta property="og:image" content="https://transmute.run/og/home.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Transmute – convert JSON, CSV, YAML, XML and SQL from the terminal">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://transmute.run/og/home.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/style.css">
+<script src="/site.js"></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Transmute",
-  "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "macOS, Windows, Linux",
-  "url": "https://transmute.run/",
-  "license": "https://opensource.org/licenses/MIT",
-  "author": {"@type": "Person", "name": "Mads Holst Jensen", "url": "https://mahoje.dk"}
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://transmute.run/#app",
+      "name": "Transmute",
+      "url": "https://transmute.run/",
+      "description": "Transmute is an offline command-line tool and desktop app that converts between JSON, CSV, YAML, XML and SQL and runs filter, sort, join and flatten pipelines. MIT licensed, made in Odense by Mads Holst Jensen (mahoje.dk).",
+      "inLanguage": "en",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Data conversion",
+      "operatingSystem": "macOS, Windows, Linux",
+      "softwareVersion": "0.2.1",
+      "downloadUrl": "https://www.npmjs.com/package/@mahope/transmute",
+      "installUrl": "https://www.npmjs.com/package/@mahope/transmute",
+      "softwareHelp": {
+        "@type": "CreativeWork",
+        "url": "https://transmute.run/#guides"
+      },
+      "license": "https://opensource.org/licenses/MIT",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@id": "https://mahoje.dk/#person"
+      },
+      "publisher": {
+        "@id": "https://mahoje.dk/#org"
+      },
+      "image": "https://transmute.run/og/home.png"
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://mahoje.dk/#org",
+      "name": "mahoje.dk",
+      "url": "https://mahoje.dk",
+      "founder": {
+        "@id": "https://mahoje.dk/#person"
+      },
+      "logo": "https://transmute.run/icon-512.png"
+    },
+    {
+      "@type": "Person",
+      "@id": "https://mahoje.dk/#person",
+      "name": "Mads Holst Jensen",
+      "url": "https://mahoje.dk"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://transmute.run/#website",
+      "url": "https://transmute.run/",
+      "name": "Transmute",
+      "inLanguage": [
+        "en",
+        "da"
+      ],
+      "publisher": {
+        "@id": "https://mahoje.dk/#org"
+      }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://transmute.run/",
+      "url": "https://transmute.run/",
+      "name": "Transmute – convert JSON, CSV, YAML, XML and SQL from the terminal",
+      "description": "Transmute is an offline command-line tool and desktop app that converts between JSON, CSV, YAML, XML and SQL and runs filter, sort, join and flatten pipelines. MIT licensed, made in Odense by Mads Holst Jensen (mahoje.dk).",
+      "inLanguage": "en",
+      "isPartOf": {
+        "@id": "https://transmute.run/#website"
+      },
+      "about": {
+        "@id": "https://transmute.run/#app"
+      },
+      "primaryImageOfPage": "https://transmute.run/og/home.png",
+      "dateModified": "2026-09-07"
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://transmute.run/#faq",
+      "inLanguage": "en",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does it work offline?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Neither the CLI nor the desktop app makes a network request. Once installed you can pull the cable out."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Where does my data go?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Nowhere. Files are read from disk or stdin, transformed in memory and written to stdout. There is no telemetry, no account and no server side."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the licence?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The CLI and engine are MIT licensed; the source is on GitHub. The desktop app is a paid product (19 USD one-time) once checkout is live. Until then it is free to download with the limit described above."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the difference between the CLI and the desktop app?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "They share the same engine and produce the same output. The CLI is for scripts, cron jobs, CI and anyone comfortable in a terminal. The desktop app is for building a pipeline interactively and seeing the result while you do it. If you only ever need one, the CLI is the one to start with."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I quote the pipeline on Windows?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "With difficulty, honestly. In Git Bash or WSL the single-quote form on this page works as written, and that is the recommended route. In PowerShell you can use the stop-parsing token and write inner quotes as \\\": transmute --% orders.json --pipe \"[{\\\"op\\\":\\\"filter\\\",\\\"expr\\\":\\\"item.status === 'shipped'\\\"}]\" -o csv. That breaks as soon as the pipeline contains < or >, because cmd.exe reads them as redirects, so comparisons are best run from Git Bash or WSL."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use the engine from my own code?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. require('@mahope/transmute') exposes run(text, inputFormat, pipeline, outputFormat) together with the parsers, serializers and operations. It is one file with no dependencies."
+          }
+        }
+      ]
+    }
+  ]
 }
 </script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-
 <header class="site-header">
   <div class="wrap">
-    <a class="wordmark" href="/">transmute</a>
-    <nav class="site-nav" aria-label="Site">
-      <a href="/" aria-current="page">Home</a>
-      <a href="#guides">Guides</a>
-      <a href="https://github.com/mahope/transmute">GitHub</a>
-      <a href="https://www.npmjs.com/package/@mahope/transmute">npm</a>
-      <a href="/da/" lang="da" hreflang="da">Dansk</a>
+    <a class="wordmark" href="/"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v3.2h-4.4V19H10.4V9.2H6z"/></svg><span>transmute</span></a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line class="l1" x1="4" y1="6" x2="20" y2="6"/><line class="l2" x1="4" y1="12" x2="20" y2="12"/><line class="l3" x1="4" y1="18" x2="20" y2="18"/></svg>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="Site">
+      <ul>
+        <li><a href="/" aria-current="page">Home</a></li>
+        <li><a href="#guides">Guides</a></li>
+        <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
+        <li><a href="/da/" lang="da" hreflang="da">Dansk</a></li>
+      </ul>
     </nav>
   </div>
 </header>
@@ -52,6 +196,7 @@
   <div class="wrap">
     <h1>Convert JSON, CSV, YAML, XML and SQL from the terminal. Nothing leaves your machine.</h1>
     <p class="lede">Transmute is a small command-line tool for developers, analysts and anyone else who gets handed a data file in the wrong format. Point it at a file, say what you want out, and optionally filter, sort, join or flatten on the way.</p>
+    <ul class="formats-row" aria-label="Formats"><li>json</li><li>csv</li><li>yaml</li><li>xml</li><li>sql</li><li>table</li></ul>
     <div class="install">
       <code>npm i -g @mahope/transmute</code>
       <a class="btn btn-quiet" href="#install">Other ways to install</a>
@@ -196,16 +341,16 @@ INSERT INTO "users" ("id", "name", "email") VALUES
     <h2>Guides</h2>
     <p class="intro">Longer walkthroughs of specific jobs, each with commands you can paste and the output they produce.</p>
     <ul class="guide-list">
-      <li><a href="/guides/json-to-csv-pipeline/">JSON to CSV with filters</a><span>Clean spreadsheets from API data: pick columns, filter rows, sort, dedupe.</span></li>
-      <li><a href="/guides/csv-to-sql/">CSV to SQL INSERT statements</a><span>Seed Postgres, MySQL or SQLite from a spreadsheet export.</span></li>
-      <li><a href="/guides/json-to-sql/">JSON to SQL INSERT statements</a><span>Shape rows first, then generate statements with correct escaping and NULLs.</span></li>
-      <li><a href="/guides/flatten-nested-json/">Flatten nested JSON arrays</a><span>One row per array element, ready for CSV.</span></li>
-      <li><a href="/guides/join-two-files/">Join two files by a shared key</a><span>A left join from the terminal, without Python or SQLite.</span></li>
-      <li><a href="/guides/add-computed-fields/">Add computed fields</a><span>Totals, tax and derived flags from existing columns.</span></li>
-      <li><a href="/guides/jq-alternative/">Filtering JSON without learning jq</a><span>Named steps instead of jq syntax, with format conversion built in.</span></li>
-      <li><a href="/guides/xml-to-json/">XML to JSON</a><span>From the command line or in Python, with the caveats spelled out.</span></li>
-      <li><a href="/guides/json-to-xml/">JSON to XML</a><span>Well-formed XML from a JSON array, plus the Python equivalent.</span></li>
-      <li><a href="/guides/csv-to-xml/">CSV to XML</a><span>Spreadsheet exports as XML, with filtering on the way.</span></li>
+      <li><a href="/guides/json-to-csv-pipeline/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M9 10v9"/></svg><span class="t">JSON to CSV with filters<span>Clean spreadsheets from API data: pick columns, filter rows, sort, dedupe.</span></span></a></li>
+      <li><a href="/guides/csv-to-sql/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span class="t">CSV to SQL INSERT statements<span>Seed Postgres, MySQL or SQLite from a spreadsheet export.</span></span></a></li>
+      <li><a href="/guides/json-to-sql/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span class="t">JSON to SQL INSERT statements<span>Shape rows first, then generate statements with correct escaping and NULLs.</span></span></a></li>
+      <li><a href="/guides/flatten-nested-json/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h16"/><path d="M17 10l3 2-3 2"/></svg><span class="t">Flatten nested JSON arrays<span>One row per array element, ready for CSV.</span></span></a></li>
+      <li><a href="/guides/join-two-files/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/></svg><span class="t">Join two files by a shared key<span>A left join from the terminal, without Python or SQLite.</span></span></a></li>
+      <li><a href="/guides/add-computed-fields/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 9v6M9 12h6"/></svg><span class="t">Add computed fields<span>Totals, tax and derived flags from existing columns.</span></span></a></li>
+      <li><a href="/guides/jq-alternative/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5z"/></svg><span class="t">Filtering JSON without learning jq<span>Named steps instead of jq syntax, with format conversion built in.</span></span></a></li>
+      <li><a href="/guides/xml-to-json/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4c-2 0-3 1-3 3v3c0 1-1 2-2 2 1 0 2 1 2 2v3c0 2 1 3 3 3M16 4c2 0 3 1 3 3v3c0 1 1 2 2 2-1 0-2 1-2 2v3c0 2-1 3-3 3"/></svg><span class="t">XML to JSON<span>From the command line or in Python, with the caveats spelled out.</span></span></a></li>
+      <li><a href="/guides/json-to-xml/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span class="t">JSON to XML<span>Well-formed XML from a JSON array, plus the Python equivalent.</span></span></a></li>
+      <li><a href="/guides/csv-to-xml/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span class="t">CSV to XML<span>Spreadsheet exports as XML, with filtering on the way.</span></span></a></li>
     </ul>
   </div>
 </section>
@@ -214,27 +359,27 @@ INSERT INTO "users" ("id", "name", "email") VALUES
   <div class="wrap">
     <h2>Questions</h2>
     <details>
-      <summary>Does it work offline?</summary>
+      <summary><span>Does it work offline?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>Yes. Neither the CLI nor the desktop app makes a network request. Once installed you can pull the cable out.</p>
     </details>
     <details>
-      <summary>Where does my data go?</summary>
+      <summary><span>Where does my data go?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>Nowhere. Files are read from disk or stdin, transformed in memory and written to stdout. There is no telemetry, no account and no server side.</p>
     </details>
     <details>
-      <summary>What is the licence?</summary>
+      <summary><span>What is the licence?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>The CLI and engine are MIT licensed; the source is on GitHub. The desktop app is a paid product (19 USD one-time) once checkout is live. Until then it is free to download with the limit described above.</p>
     </details>
     <details>
-      <summary>What is the difference between the CLI and the desktop app?</summary>
+      <summary><span>What is the difference between the CLI and the desktop app?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>They share the same engine and produce the same output. The CLI is for scripts, cron jobs, CI and anyone comfortable in a terminal. The desktop app is for building a pipeline interactively and seeing the result while you do it. If you only ever need one, the CLI is the one to start with.</p>
     </details>
     <details>
-      <summary>How do I quote the pipeline on Windows?</summary>
+      <summary><span>How do I quote the pipeline on Windows?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>With difficulty, honestly. In Git Bash or WSL the single-quote form on this page works as written, and that is the recommended route. In PowerShell you can use the stop-parsing token and write inner quotes as <code>\"</code>: <code>transmute --% orders.json --pipe "[{\"op\":\"filter\",\"expr\":\"item.status === 'shipped'\"}]" -o csv</code>. That breaks as soon as the pipeline contains <code>&lt;</code> or <code>&gt;</code>, because cmd.exe reads them as redirects, so comparisons are best run from Git Bash or WSL.</p>
     </details>
     <details>
-      <summary>Can I use the engine from my own code?</summary>
+      <summary><span>Can I use the engine from my own code?</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary>
       <p>Yes. <code>require('@mahope/transmute')</code> exposes <code>run(text, inputFormat, pipeline, outputFormat)</code> together with the parsers, serializers and operations. It is one file with no dependencies.</p>
     </details>
   </div>
@@ -257,7 +402,7 @@ INSERT INTO "users" ("id", "name", "email") VALUES
 <footer class="site-footer">
   <div class="wrap">
     <div>
-      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen · mahoje.dk</a>, Odense, Denmark.</p>
+      <p>Transmute is developed by <a href="https://mahoje.dk">Mads Holst Jensen, mahoje.dk</a>, Odense, Denmark.</p>
       <p>CLI released under the MIT licence.</p>
     </div>
     <ul>
@@ -265,7 +410,8 @@ INSERT INTO "users" ("id", "name", "email") VALUES
       <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
       <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
       <li><a href="https://github.com/mahope/transmute/releases">Releases</a></li>
-      <li><a href="/da/" lang="da">Dansk</a></li>
+      <li><a href="/.well-known/security.txt">Security</a></li>
+      <li><a href="/da/" lang="da" hreflang="da">Dansk</a></li>
     </ul>
   </div>
 </footer>
