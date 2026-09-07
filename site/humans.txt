@@ -1,0 +1,12 @@
+/* TEAM */
+Developer: Mads Holst Jensen
+Site: https://mahoje.dk
+Location: Odense, Denmark
+
+/* SITE */
+Last update: 2026-09-07
+Language: English, Danish
+Standards: HTML5, CSS, vanilla JavaScript
+Components: IBM Plex Sans, IBM Plex Mono
+Hosting: Cloudflare Pages
+Source: https://github.com/mahope/transmute

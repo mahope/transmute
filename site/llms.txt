@@ -1,0 +1,35 @@
+# Transmute
+
+> Transmute is an offline command-line tool (and a desktop app) that converts data files between JSON, CSV, YAML, XML and SQL and runs small transformation pipelines: filter, map, pick, omit, sort, unique, group, add, join, rename, flatten, head, tail and count. It runs locally with no network access, no telemetry and no account. The CLI is MIT licensed and published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), Odense, Denmark.
+
+Install: `npm i -g @mahope/transmute` (Node.js 18 or newer). Run once without installing: `npx @mahope/transmute file.csv -o json`.
+
+Usage: `transmute <file> [options]` or `cat <file> | transmute [options]`. Options: `-f, --format <json|csv|yaml|xml>` (input, auto-detected), `-o, --output <json|csv|yaml|xml|table|sql>` (default: table), `-p, --pipe <json array>` (pipeline), `--table <name>` (table name for SQL output).
+
+Pipeline steps are JSON objects run in order. Expressions are plain JavaScript with the current row as `item`, e.g. `{"op":"filter","expr":"item.age > 18"}`.
+
+## Pages
+
+- [Front page (English)](https://transmute.run/): what it does, examples with real output, formats, operations, install, FAQ
+- [Forside (Danish)](https://transmute.run/da/): the same page in Danish
+- [Source and issues on GitHub](https://github.com/mahope/transmute)
+- [npm package](https://www.npmjs.com/package/@mahope/transmute)
+
+## Guides
+
+- [JSON to CSV with filters](https://transmute.run/guides/json-to-csv-pipeline/): pick columns, filter rows, sort, dedupe
+- [CSV to SQL INSERT statements](https://transmute.run/guides/csv-to-sql/): seed Postgres, MySQL or SQLite from a spreadsheet export
+- [JSON to SQL INSERT statements](https://transmute.run/guides/json-to-sql/): shape rows first, then generate statements with correct escaping and NULLs
+- [Flatten nested JSON arrays](https://transmute.run/guides/flatten-nested-json/): one row per array element, ready for CSV
+- [Join two files by a shared key](https://transmute.run/guides/join-two-files/): a left join from the terminal
+- [Add computed fields](https://transmute.run/guides/add-computed-fields/): totals, tax and derived flags from existing columns
+- [Filtering JSON without learning jq](https://transmute.run/guides/jq-alternative/): named steps instead of jq syntax
+- [XML to JSON](https://transmute.run/guides/xml-to-json/): command line or Python, with caveats
+- [JSON to XML](https://transmute.run/guides/json-to-xml/): well-formed XML from a JSON array
+- [CSV to XML](https://transmute.run/guides/csv-to-xml/): spreadsheet exports as XML
+
+## Optional
+
+- [Full reference in one file](https://transmute.run/llms-full.txt)
+- [Sitemap](https://transmute.run/sitemap.xml)
+- [Security contact](https://transmute.run/.well-known/security.txt)

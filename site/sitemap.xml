@@ -2,24 +2,76 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://transmute.run/</loc>
+    <lastmod>2026-09-07</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/"/>
     <xhtml:link rel="alternate" hreflang="da" href="https://transmute.run/da/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/"/>
   </url>
   <url>
     <loc>https://transmute.run/da/</loc>
+    <lastmod>2026-09-07</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/"/>
     <xhtml:link rel="alternate" hreflang="da" href="https://transmute.run/da/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/"/>
   </url>
-  <url><loc>https://transmute.run/guides/add-computed-fields/</loc></url>
-  <url><loc>https://transmute.run/guides/csv-to-sql/</loc></url>
-  <url><loc>https://transmute.run/guides/csv-to-xml/</loc></url>
-  <url><loc>https://transmute.run/guides/flatten-nested-json/</loc></url>
-  <url><loc>https://transmute.run/guides/join-two-files/</loc></url>
-  <url><loc>https://transmute.run/guides/jq-alternative/</loc></url>
-  <url><loc>https://transmute.run/guides/json-to-csv-pipeline/</loc></url>
-  <url><loc>https://transmute.run/guides/json-to-sql/</loc></url>
-  <url><loc>https://transmute.run/guides/json-to-xml/</loc></url>
-  <url><loc>https://transmute.run/guides/xml-to-json/</loc></url>
+  <url>
+    <loc>https://transmute.run/guides/json-to-csv-pipeline/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/json-to-csv-pipeline/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/json-to-csv-pipeline/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/csv-to-sql/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/csv-to-sql/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/csv-to-sql/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/json-to-sql/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/json-to-sql/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/json-to-sql/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/flatten-nested-json/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/flatten-nested-json/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/flatten-nested-json/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/join-two-files/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/join-two-files/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/join-two-files/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/add-computed-fields/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/add-computed-fields/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/add-computed-fields/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/jq-alternative/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/jq-alternative/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/jq-alternative/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/xml-to-json/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/xml-to-json/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/xml-to-json/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/json-to-xml/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/json-to-xml/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/json-to-xml/"/>
+  </url>
+  <url>
+    <loc>https://transmute.run/guides/csv-to-xml/</loc>
+    <lastmod>2026-09-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/csv-to-xml/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/guides/csv-to-xml/"/>
+  </url>
 </urlset>

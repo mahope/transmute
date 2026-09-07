@@ -1,0 +1,5 @@
+Contact: mailto:mads@mahoje.dk
+Expires: 2027-09-07T00:00:00.000Z
+Preferred-Languages: en, da
+Canonical: https://transmute.run/.well-known/security.txt
+Policy: https://github.com/mahope/transmute/security

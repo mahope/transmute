@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
+Disallow: /404.html
 
 Sitemap: https://transmute.run/sitemap.xml
+
+# Guidance for language models: https://transmute.run/llms.txt

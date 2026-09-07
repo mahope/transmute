@@ -1,0 +1,87 @@
+# Transmute — full reference for language models
+
+Transmute is an offline command-line tool and desktop app for converting data files between JSON, CSV, YAML, XML and SQL, with an optional transformation pipeline run on the way. Everything runs locally: no network requests, no telemetry, no account, no server side. The CLI and engine are MIT licensed. Published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), a developer based in Odense, Denmark. Website: https://transmute.run (English) and https://transmute.run/da/ (Danish). Source and issues: https://github.com/mahope/transmute.
+
+## Install
+
+- Global install: `npm i -g @mahope/transmute` (requires Node.js 18 or newer, no other dependencies)
+- Run once without installing: `npx @mahope/transmute data.yaml -o json`
+- Desktop app (macOS, Windows, Linux, built with Tauri): https://github.com/mahope/transmute/releases. Planned as a one-time purchase of 19 USD; while checkout is not connected it is free to download and allows three transformations per launch until a licence is entered. The CLI has no limits.
+
+## Usage
+
+    transmute <file> [options]
+    cat <file> | transmute [options]
+
+Options:
+
+- `-f, --format <type>` input format: json, csv, yaml, xml. Auto-detected from the file extension or content.
+- `-o, --output <type>` output format: json, csv, yaml, xml, table, sql. Default: table (an aligned table in the terminal).
+- `-p, --pipe <json>` transformation pipeline as a JSON array of steps.
+- `--table <name>` table name for SQL output (default: my_table).
+- `-h, --help` show help.
+
+Running `transmute file.csv` with no options prints a table preview of the file.
+
+## Formats
+
+Reads: JSON (array of objects, or a single object), CSV, YAML, XML.
+Writes: JSON, CSV, YAML, XML, SQL INSERT statements, table.
+
+Worth knowing:
+
+- CSV values are coerced the way a spreadsheet would: `32` becomes a number, `true`/`false` become booleans, empty cells stay empty strings. Values with leading zeros (zip codes, "007") stay strings.
+- XML values come through as strings, so wrap them in `Number()` when filtering on them: `Number(item.age) > 26`.
+- The YAML parser handles lists of flat records and simple key–value documents, not anchors or multi-line strings.
+- SQL output: numbers are unquoted, strings are single-quoted with `'` doubled (`O'Brien` becomes `'O''Brien'`), JSON null, missing fields and empty strings become `NULL`, booleans become TRUE/FALSE. Column names are double-quoted. Column set is the union of keys across rows. Works for PostgreSQL, MySQL (ANSI_QUOTES for quoted identifiers) and SQLite.
+- Everything is read into memory; suited for files up to a few hundred megabytes rather than multi-gigabyte logs.
+
+## Pipeline operations
+
+A pipeline is a JSON array of steps run in order. Expressions are plain JavaScript evaluated with the current row as `item` (and its index as the second argument).
+
+- filter: `{"op":"filter","expr":"item.age > 18"}` keep rows where the expression is truthy
+- map: `{"op":"map","expr":"({...item, active: true})"}` replace each row with the expression result
+- pick: `{"op":"pick","fields":["name","email"]}` keep only these fields
+- omit: `{"op":"omit","fields":["password"]}` drop these fields
+- sort: `{"op":"sort","by":"name","dir":"asc"}` dir is asc or desc
+- unique: `{"op":"unique","by":"email"}` first row per key wins
+- group: `{"op":"group","by":"city"}` returns rows of `{key, count, items}`
+- add: `{"op":"add","fields":{"total":"item.price * item.qty"}}` add computed fields; an expression that throws yields null
+- join: `{"op":"join","on":"id","keep":"left","with":[...]}` merge fields from `with` rows by key; `keep: "left"` (or "all") keeps rows without a match, otherwise unmatched rows are dropped; `prefix` prefixes joined field names; existing fields are never overwritten
+- rename: `{"op":"rename","mapping":{"qty":"quantity"}}`
+- flatten: `{"op":"flatten","field":"items"}` one output row per array element; object elements are merged into the parent row, scalar elements replace the field
+- head: `{"op":"head","n":5}`; tail: `{"op":"tail","n":5}`; count: `{"op":"count"}` returns `[{"count": N}]`
+
+Example, joined and counted:
+
+    transmute cart.json --pipe '[
+      {"op":"join","on":"sku","keep":"left","with":[{"sku":"A1","stock":42},{"sku":"B2","stock":0}]},
+      {"op":"filter","expr":"item.stock > 0"},
+      {"op":"count"}
+    ]' --output json
+
+To join against a whole file, splice it in from the shell: `--pipe "[{\"op\":\"join\",\"on\":\"sku\",\"with\":$(cat stock.json)}]"`.
+
+Windows: in Git Bash or WSL the single-quote form works as written. In PowerShell use the stop-parsing token and `\"` for inner quotes; pipelines containing `<` or `>` are best run from Git Bash or WSL because cmd.exe reads them as redirects.
+
+## Using the engine from code
+
+`require('@mahope/transmute')` exposes `run(text, inputFormat, pipeline, outputFormat)` together with the parsers, serializers and operations. It is one file with no dependencies.
+
+## Guides (all in English)
+
+- https://transmute.run/guides/json-to-csv-pipeline/ JSON to CSV with filters: pick columns, filter rows, sort, dedupe
+- https://transmute.run/guides/csv-to-sql/ CSV to SQL INSERT statements for MySQL, PostgreSQL, SQLite
+- https://transmute.run/guides/json-to-sql/ JSON to SQL INSERT statements with correct escaping and NULLs
+- https://transmute.run/guides/flatten-nested-json/ Flatten nested JSON arrays and export to CSV
+- https://transmute.run/guides/join-two-files/ Join two JSON or CSV files by a shared key
+- https://transmute.run/guides/add-computed-fields/ Add computed fields without writing a script
+- https://transmute.run/guides/jq-alternative/ A simpler jq alternative
+- https://transmute.run/guides/xml-to-json/ XML to JSON from the CLI or Python
+- https://transmute.run/guides/json-to-xml/ JSON to XML from the CLI or code
+- https://transmute.run/guides/csv-to-xml/ CSV to XML from the CLI or Python
+
+## Contact
+
+Bug reports and feature requests: https://github.com/mahope/transmute/issues. Security: https://transmute.run/.well-known/security.txt. Anything else: https://mahoje.dk.
