@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://transmute.run/</loc></url>
+  <url><loc>https://transmute.run/guides/add-computed-fields/</loc></url>
+  <url><loc>https://transmute.run/guides/csv-to-sql/</loc></url>
+  <url><loc>https://transmute.run/guides/csv-to-xml/</loc></url>
+  <url><loc>https://transmute.run/guides/flatten-nested-json/</loc></url>
+  <url><loc>https://transmute.run/guides/join-two-files/</loc></url>
+  <url><loc>https://transmute.run/guides/jq-alternative/</loc></url>
+  <url><loc>https://transmute.run/guides/json-to-csv-pipeline/</loc></url>
+  <url><loc>https://transmute.run/guides/json-to-sql/</loc></url>
+  <url><loc>https://transmute.run/guides/json-to-xml/</loc></url>
+  <url><loc>https://transmute.run/guides/xml-to-json/</loc></url>
+</urlset>

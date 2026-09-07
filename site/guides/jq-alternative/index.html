@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Simpler jq Alternative: Filter JSON Without Learning jq Syntax</title>
+<meta name="description" content="jq is powerful but has a notoriously steep syntax. Filter, sort and reshape JSON with readable pipeline steps instead.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔁</text></svg>">
+<meta property="og:title" content="A Simpler jq Alternative: Filter JSON Without Learning jq Syntax">
+<meta property="og:description" content="jq is powerful but has a notoriously steep syntax. Filter, sort and reshape JSON with readable pipeline steps instead.">
+<meta property="og:type" content="article">
+<style>
+:root{--ink:#101828;--muted:#4a5a6a;--line:#dde3ea;--bg:#fff;--soft:#f5f7fa;--accent:#7c3aed;--accent-dark:#6023d0;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+header{border-bottom:1px solid var(--line);padding:14px 0}
+header .wrap{display:flex;align-items:center;justify-content:space-between}
+.logo{font-weight:800;font-size:18px;text-decoration:none;color:var(--ink)}
+.logo span{color:var(--accent)}
+nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
+nav a:hover{color:var(--accent)}
+h1{font-size:34px;line-height:1.2;margin:40px 0 8px;letter-spacing:-.02em}
+.meta{color:var(--muted);font-size:14px;margin-bottom:32px;display:flex;gap:16px;flex-wrap:wrap}
+h2{font-size:24px;margin:36px 0 10px;letter-spacing:-.01em;padding-top:8px}
+h3{font-size:18px;margin:24px 0 8px}
+p{margin-bottom:16px}
+code{background:var(--soft);padding:2px 6px;border-radius:4px;font-size:14px;font-family:'SF Mono','Fira Code','Consolas',monospace}
+pre{background:#17122b;color:#e6e2f5;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:16px 0;font-family:'SF Mono','Fira Code','Consolas',monospace}
+pre .kw{color:#b79bf5}pre .str{color:#a8d88a}pre .cm{color:#7d7699}pre .nm{color:#e6e2f5}pre .prompt{color:#7d7699}
+.table-wrap{overflow-x:auto;margin:16px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--soft);font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
+blockquote{border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;background:var(--soft);border-radius:0 6px 6px 0}
+blockquote p{margin:0;color:var(--muted);font-size:14px}
+ul,ol{margin:12px 0 16px;padding-left:24px}
+li{margin-bottom:6px}
+.cta-box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center;margin:32px 0}
+.cta-box h3{font-size:18px;margin-bottom:6px}
+.cta-box p{font-size:14px;color:var(--muted);margin-bottom:16px}
+.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:10px 22px;border-radius:6px;font-size:14px;transition:background .12s}
+.btn:hover{background:var(--accent-dark)}
+.btn.green{background:#1a7a44}
+footer{text-align:center;padding:32px 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:48px}
+footer a{color:var(--accent);text-decoration:none}
+@media(max-width:600px){h1{font-size:26px}h2{font-size:20px}}
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "A Simpler jq Alternative: Filter JSON Without Learning jq Syntax",
+  "description": "jq is powerful but has a notoriously steep syntax. Filter, sort and reshape JSON with readable pipeline steps instead.",
+  "url": "https://transmute.run/guides/jq-alternative/",
+  "author": {"@type": "Organization", "name": "Mahope"},
+  "publisher": {"@type": "Organization", "name": "Mahope"}
+}
+</script>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a href="/" class="logo">Trans<span>mute</span></a>
+    <nav>
+      <a href="/">Free Demo</a>
+      <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a>
+      <a href="/">Web Converter</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<h1>Filtering JSON Without Learning jq Syntax</h1>
+<p class="meta">📅 September 2026 · 5 min read · <a href="/">Try it in your browser →</a></p>
+
+
+<p><code>jq</code> is brilliant once you know it — and famously opaque if you don't. Getting "the names of users over 25, sorted by age" shouldn't require memorizing <code>.[] | select(.age &gt; 25) | .name</code>.</p>
+
+<h2>The same query as named steps</h2>
+<p>With the free Transmute CLI, a transformation is a list of steps with plain names:</p>
+
+<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute users.json --pipe <span class="str">'[
+  {"op":"filter","expr":"item.age > 25"},
+  {"op":"sort","by":"age"},
+  {"op":"pick","fields":["name","age"]}
+]'</span></pre>
+
+<p>Each step does one obvious thing:</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Step</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>filter</code></td><td>Keep rows where an expression is true (<code>item.age > 25</code>)</td></tr>
+<tr><td><code>map</code></td><td>Transform each row (<code>item.price * 1.25</code>)</td></tr>
+<tr><td><code>sort</code></td><td>Order by a key, ascending or descending</td></tr>
+<tr><td><code>unique</code></td><td>Deduplicate by a key (or whole rows)</td></tr>
+<tr><td><code>group</code></td><td>Group rows by a key, with counts</td></tr>
+<tr><td><code>pick</code> / <code>omit</code></td><td>Select or drop fields</td></tr>
+<tr><td><code>rename</code></td><td>Rename columns via a mapping</td></tr>
+<tr><td><code>head</code> / <code>tail</code></td><td>First/last N rows</td></tr>
+<tr><td><code>count</code></td><td>Row count</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>When jq is still the right answer</h2>
+<ul>
+<li>You already know jq well — switching has no upside for you.</li>
+<li>Deeply recursive transformations over arbitrary tree shapes.</li>
+<li>You're inside a constrained environment where adding any tool is off-limits anyway (then neither helps).</li>
+</ul>
+
+<blockquote><p>Honest take: if your queries fit in the table above, named steps are easier to write, easier to read six months later, and easier to explain to a teammate. If they don't, learn jq properly — it pays off.</p></blockquote>
+
+<h2>Chaining formats too</h2>
+<p>Steps compose freely with format conversion, so CSV in → filtered YAML out is one command, not three tools glued together in shell:</p>
+
+<pre><span class="prompt">$</span> <span class="kw">cat</span> events.csv | <span class="kw">npx</span> github:mahope/transmute --pipe <span class="str">'[{"op":"unique","by":"user"},{"op":"head","n":10}]'</span> --output yaml</pre>
+
+
+<div class="cta-box">
+  <h3>Pipelines like this — without writing a script</h3>
+  <p>The Transmute CLI is free (<code>npx github:mahope/transmute</code>). The desktop app adds an interactive pipeline builder, live preview and batch processing — one-time $19, no subscription.</p>
+  <a href="/" class="btn green">Try the live demo →</a>
+  &nbsp;
+  <a href="/#pricing" class="btn">See pricing</a>
+</div>
+
+<div class="cta-box" style="background:#fff">
+  <p style="margin-bottom:8px"><strong>More guides:</strong> <a href="https://eucomplypro.com/guides/xml-to-json/">XML to JSON</a> · <a href="https://eucomplypro.com/guides/json-to-csv-pipeline/">JSON to CSV pipelines</a></p>
+</div>
+
+</div>
+
+<footer>
+  <p><a href="/">Transmute</a> · <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a> · <a href="/">Free Web Converter</a> · <a href="https://eucomplypro.com/privacy/">Privacy</a> · <a href="https://eucomplypro.com/terms/">Terms</a></p>
+  <p style="margin-top:8px">© 2026 Mahope. All transformations run locally on your machine.</p>
+</footer>
+
+</body>
+</html>

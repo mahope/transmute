@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How to Convert XML to JSON (CLI, Python and Online Tools)</title>
+<meta name="description" content="Convert XML to JSON from the command line or in code. Free CLI examples you can paste today, plus Python and browser options.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔁</text></svg>">
+<meta property="og:title" content="How to Convert XML to JSON (CLI, Python and Online Tools)">
+<meta property="og:description" content="Convert XML to JSON from the command line or in code. Free CLI examples you can paste today, plus Python and browser options.">
+<meta property="og:type" content="article">
+<style>
+:root{--ink:#101828;--muted:#4a5a6a;--line:#dde3ea;--bg:#fff;--soft:#f5f7fa;--accent:#7c3aed;--accent-dark:#6023d0;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+header{border-bottom:1px solid var(--line);padding:14px 0}
+header .wrap{display:flex;align-items:center;justify-content:space-between}
+.logo{font-weight:800;font-size:18px;text-decoration:none;color:var(--ink)}
+.logo span{color:var(--accent)}
+nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
+nav a:hover{color:var(--accent)}
+h1{font-size:34px;line-height:1.2;margin:40px 0 8px;letter-spacing:-.02em}
+.meta{color:var(--muted);font-size:14px;margin-bottom:32px;display:flex;gap:16px;flex-wrap:wrap}
+h2{font-size:24px;margin:36px 0 10px;letter-spacing:-.01em;padding-top:8px}
+h3{font-size:18px;margin:24px 0 8px}
+p{margin-bottom:16px}
+code{background:var(--soft);padding:2px 6px;border-radius:4px;font-size:14px;font-family:'SF Mono','Fira Code','Consolas',monospace}
+pre{background:#17122b;color:#e6e2f5;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:16px 0;font-family:'SF Mono','Fira Code','Consolas',monospace}
+pre .kw{color:#b79bf5}pre .str{color:#a8d88a}pre .cm{color:#7d7699}pre .nm{color:#e6e2f5}pre .prompt{color:#7d7699}
+.table-wrap{overflow-x:auto;margin:16px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--soft);font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
+blockquote{border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;background:var(--soft);border-radius:0 6px 6px 0}
+blockquote p{margin:0;color:var(--muted);font-size:14px}
+ul,ol{margin:12px 0 16px;padding-left:24px}
+li{margin-bottom:6px}
+.cta-box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center;margin:32px 0}
+.cta-box h3{font-size:18px;margin-bottom:6px}
+.cta-box p{font-size:14px;color:var(--muted);margin-bottom:16px}
+.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:10px 22px;border-radius:6px;font-size:14px;transition:background .12s}
+.btn:hover{background:var(--accent-dark)}
+.btn.green{background:#1a7a44}
+footer{text-align:center;padding:32px 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:48px}
+footer a{color:var(--accent);text-decoration:none}
+@media(max-width:600px){h1{font-size:26px}h2{font-size:20px}}
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "How to Convert XML to JSON (CLI, Python and Online Tools)",
+  "description": "Convert XML to JSON from the command line or in code. Free CLI examples you can paste today, plus Python and browser options.",
+  "url": "https://transmute.run/guides/xml-to-json/",
+  "author": {"@type": "Organization", "name": "Mahope"},
+  "publisher": {"@type": "Organization", "name": "Mahope"}
+}
+</script>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a href="/" class="logo">Trans<span>mute</span></a>
+    <nav>
+      <a href="/">Free Demo</a>
+      <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a>
+      <a href="/">Web Converter</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<h1>How to Convert XML to JSON</h1>
+<p class="meta">📅 September 2026 · 4 min read · <a href="/">Try it in your browser →</a></p>
+
+
+<p>Legacy APIs, RSS feeds, SOAP responses, Maven and .NET config files — XML is still everywhere, and almost every modern tool wants JSON. Here's how to convert it without hand-writing a parser.</p>
+
+<h2 id="cli">Option 1: The Transmute CLI (free)</h2>
+<p><code>transmute</code> parses XML records into JSON directly. Given this file (<code>users.xml</code>):</p>
+
+<pre><span class="prompt">&lt;</span><span class="nm">data</span><span class="prompt">&gt;</span>
+  <span class="prompt">&lt;</span><span class="nm">user</span><span class="prompt">&gt;&lt;</span><span class="nm">name</span><span class="prompt">&gt;</span>Alice<span class="prompt">&lt;/</span><span class="nm">name</span><span class="prompt">&gt;&lt;</span><span class="nm">age</span><span class="prompt">&gt;</span>32<span class="prompt">&lt;/</span><span class="nm">age</span><span class="prompt">&gt;&lt;/</span><span class="nm">user</span><span class="prompt">&gt;</span>
+  <span class="prompt">&lt;</span><span class="nm">user</span><span class="prompt">&gt;&lt;</span><span class="nm">name</span><span class="prompt">&gt;</span>Bob<span class="prompt">&lt;/</span><span class="nm">name</span><span class="prompt">&gt;&lt;</span><span class="nm">age</span><span class="prompt">&gt;</span>25<span class="prompt">&lt;/</span><span class="nm">age</span><span class="prompt">&gt;&lt;/</span><span class="nm">user</span><span class="prompt">&gt;</span>
+<span class="prompt">&lt;/</span><span class="nm">data</span><span class="prompt">&gt;</span></pre>
+
+<p>run:</p>
+
+<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute users.xml --format xml --pipe <span class="str">'[{"op":"head","n":10}]'</span> --output json
+<span class="cm">[
+  {
+    "name": "Alice",
+    "age": "32"
+  },
+  {
+    "name": "Bob",
+    "age": "25"
+  }
+]</span></pre>
+
+<p>You can chain operations in the same pass — here filtering and reshaping before output:</p>
+
+<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute users.xml --format xml     --pipe <span class="str">'[{"op":"filter","expr":"Number(item.age) > 26"},{"op":"pick","fields":["name"]}]'</span>     --output json
+<span class="cm">[
+  {
+    "name": "Alice"
+  }
+]</span></pre>
+
+<h2 id="python">Option 2: Python</h2>
+
+<pre><span class="kw">import</span> xmltodict, json
+<span class="kw">with open</span>(<span class="str">"users.xml"</span>) <span class="kw">as</span> f:
+    data = xmltodict.parse(f.read())
+print(json.dumps(data, indent=2))</pre>
+
+<p><code>pip install xmltodict</code>. Solid, but it's another dependency to pin, and attributes get <code>@</code>-prefixed keys you often have to clean up afterwards.</p>
+
+<h2 id="browser">Option 3: In your browser</h2>
+<p>For a quick one-off, the <a href="/">live demo on the Transmute page</a> converts between formats entirely client-side — nothing is uploaded.</p>
+
+<h2>Caveats worth knowing</h2>
+<ul>
+<li><strong>XML has no types.</strong> Everything arrives as strings; use a pipeline step like <code>Number(item.age)</code> when you need real numbers.</li>
+<li><strong>Attributes vs elements.</strong> Converters differ on whether <code>&lt;user id="7"&gt;</code> becomes an <code>"id"</code> field. Check the output once before trusting it in bulk.</li>
+<li><strong>Mixed content</strong> (text plus child elements in one node) doesn't map cleanly to JSON in any tool.</li>
+</ul>
+
+
+<div class="cta-box">
+  <h3>Pipelines like this — without writing a script</h3>
+  <p>The Transmute CLI is free (<code>npx github:mahope/transmute</code>). The desktop app adds an interactive pipeline builder, live preview and batch processing — one-time $19, no subscription.</p>
+  <a href="/" class="btn green">Try the live demo →</a>
+  &nbsp;
+  <a href="/#pricing" class="btn">See pricing</a>
+</div>
+
+<div class="cta-box" style="background:#fff">
+  <p style="margin-bottom:8px"><strong>More guides:</strong> <a href="https://eucomplypro.com/guides/json-to-xml/">JSON to XML</a> · <a href="https://eucomplypro.com/guides/jq-alternative/">A simple jq alternative</a></p>
+</div>
+
+</div>
+
+<footer>
+  <p><a href="/">Transmute</a> · <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a> · <a href="/">Free Web Converter</a> · <a href="https://eucomplypro.com/privacy/">Privacy</a> · <a href="https://eucomplypro.com/terms/">Terms</a></p>
+  <p style="margin-top:8px">© 2026 Mahope. All transformations run locally on your machine.</p>
+</footer>
+
+</body>
+</html>

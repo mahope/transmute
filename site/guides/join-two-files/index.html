@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How to Join Two JSON or CSV Files by a Shared Key (CLI)</title>
+<meta name="description" content="Merge two data files on a common key — like SQL JOIN, but from the terminal. Free CLI with hash-join pipelines.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔁</text></svg>">
+<meta property="og:title" content="How to Join Two JSON or CSV Files by a Shared Key (CLI)">
+<meta property="og:description" content="Merge two data files on a common key — like SQL JOIN, but from the terminal. Free CLI with hash-join pipelines.">
+<meta property="og:type" content="article">
+<style>
+:root{--ink:#101828;--muted:#4a5a6a;--line:#dde3ea;--bg:#fff;--soft:#f5f7fa;--accent:#7c3aed;--accent-dark:#6023d0;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+header{border-bottom:1px solid var(--line);padding:14px 0}
+header .wrap{display:flex;align-items:center;justify-content:space-between}
+.logo{font-weight:800;font-size:18px;text-decoration:none;color:var(--ink)}
+.logo span{color:var(--accent)}
+nav a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:14px}
+nav a:hover{color:var(--accent)}
+h1{font-size:34px;line-height:1.2;margin:40px 0 8px;letter-spacing:-.02em}
+.meta{color:var(--muted);font-size:14px;margin-bottom:32px;display:flex;gap:16px;flex-wrap:wrap}
+h2{font-size:24px;margin:36px 0 10px;letter-spacing:-.01em;padding-top:8px}
+h3{font-size:18px;margin:24px 0 8px}
+p{margin-bottom:16px}
+code{background:var(--soft);padding:2px 6px;border-radius:4px;font-size:14px;font-family:'SF Mono','Fira Code','Consolas',monospace}
+pre{background:#17122b;color:#e6e2f5;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;margin:16px 0;font-family:'SF Mono','Fira Code','Consolas',monospace}
+pre .kw{color:#b79bf5}pre .str{color:#a8d88a}pre .cm{color:#7d7699}pre .nm{color:#e6e2f5}pre .prompt{color:#7d7699}
+.table-wrap{overflow-x:auto;margin:16px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--soft);font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
+blockquote{border-left:3px solid var(--accent);padding:12px 16px;margin:16px 0;background:var(--soft);border-radius:0 6px 6px 0}
+blockquote p{margin:0;color:var(--muted);font-size:14px}
+ul,ol{margin:12px 0 16px;padding-left:24px}
+li{margin-bottom:6px}
+.cta-box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:24px;text-align:center;margin:32px 0}
+.cta-box h3{font-size:18px;margin-bottom:6px}
+.cta-box p{font-size:14px;color:var(--muted);margin-bottom:16px}
+.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:10px 22px;border-radius:6px;font-size:14px;transition:background .12s}
+.btn:hover{background:var(--accent-dark)}
+.btn.green{background:#1a7a44}
+footer{text-align:center;padding:32px 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:48px}
+footer a{color:var(--accent);text-decoration:none}
+@media(max-width:600px){h1{font-size:26px}h2{font-size:20px}}
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "How to Join Two JSON or CSV Files by a Shared Key (CLI)",
+  "description": "Merge two data files on a common key — like SQL JOIN, but from the terminal. Free CLI with hash-join pipelines.",
+  "url": "https://transmute.run/guides/join-two-files/",
+  "author": {"@type": "Organization", "name": "Mahope"},
+  "publisher": {"@type": "Organization", "name": "Mahope"}
+}
+</script>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a href="/" class="logo">Trans<span>mute</span></a>
+    <nav>
+      <a href="/">Free Demo</a>
+      <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a>
+      <a href="/">Web Converter</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<h1>How to Join Two Files by a Shared Key</h1>
+<p class="meta">📅 September 2026 · 5 min read · <a href="/">Try it in your browser →</a></p>
+
+
+<p>Orders in one file, customers in another. Inventory counts in one export, product names in another. Merging them usually means opening Python or loading both into SQLite. Here's the one-command version.</p>
+
+<h2 id="cli">The Transmute CLI (free)</h2>
+<p>The <code>join</code> operation merges a second row set into your data on a shared key — like a left SQL join. Given <code>cart.json</code>:</p>
+
+<pre><span class="cm">[
+  { "sku": "A1", "qty": 2 },
+  { "sku": "B2", "qty": 1 }
+]</span></pre>
+
+<p>and warehouse stock arriving inline (or from a second file via shell substitution):</p>
+
+<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute cart.json \
+    --pipe <span class="str">'[{"op":"join","on":"sku","keep":"left","prefix":"stock_","with":[{"sku":"A1","warehouse":"EU","stock":42},{"sku":"B2","warehouse":"US","stock":7}]}]'</span> \
+    --output json
+<span class="cm">[
+ {
+  "sku": "A1",
+  "qty": 2,
+  "stock_warehouse": "EU",
+  "stock_stock": 42
+ },
+ {
+  "sku": "B2",
+  "qty": 1,
+  "stock_warehouse": "US",
+  "stock_stock": 7
+ }
+]</span></pre>
+
+<p>What the options mean:</p>
+<div class="table-wrap">
+<table>
+<tr><th>Option</th><th>Effect</th></tr>
+<tr><td><code>on</code></td><td>The shared key. Matching is string-compared, so <code>"A1"</code> matches <code>A1</code>.</td></tr>
+<tr><td><code>keep:"left"</code></td><td>Rows without a match are kept (SQL LEFT JOIN). Default drops them (INNER JOIN).</td></tr>
+<tr><td><code>prefix</code></td><td>Joined fields get this prefix so they can't collide with existing column names.</td></tr>
+<tr><td><code>with</code></td><td>The rows to merge in. Pass a bigger dataset via shell substitution: <code>--pipe "[{\"op\":\"join\",\"on\":\"id\",\"with\":$(cat stock.json)}]"</code></td></tr>
+</table>
+</div>
+
+<p>Chain it like anything else — enrich, then filter and count in one pass:</p>
+
+<pre><span class="prompt">$</span> <span class="kw">npx</span> github:mahope/transmute cart.json \
+    --pipe <span class="str">'[{"op":"join","on":"sku","keep":"left","with":[...]},{"op":"filter","expr":"item.stock_stock > 0"},{"op":"count"}]'</span> \
+    --output json</pre>
+
+<h2 id="sql">Compared to the alternatives</h2>
+<ul>
+<li><strong>SQLite:</strong> <code>sqlite3 :memory: '.import cart.csv c' ...</code> is powerful but it's five steps of schema wrangling for what is conceptually one lookup.</li>
+<li><strong>Python/pandas:</strong> <code>df.merge()</code> is the right tool at scale; for files under a few MB, startup cost exceeds the whole job.</li>
+<li><strong>jq:</strong> possible with <code>--slurpfile</code>, but the expression syntax for joins is famously hard to get right from memory.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Duplicate keys in the right side:</strong> only the last row per key wins — dedupe first if that matters.</li>
+<li><strong>Type coercion:</strong> numeric-looking keys in CSV become numbers on the left but matching is by string, so joins still line up.</li>
+</ul>
+
+
+<div class="cta-box">
+  <h3>Pipelines like this — without writing a script</h3>
+  <p>The Transmute CLI is free (<code>npx github:mahope/transmute</code>). The desktop app adds an interactive pipeline builder, live preview and batch processing — one-time $19, no subscription.</p>
+  <a href="/" class="btn green">Try the live demo →</a>
+  &nbsp;
+  <a href="/#pricing" class="btn">See pricing</a>
+</div>
+
+<div class="cta-box" style="background:#fff">
+  <p style="margin-bottom:8px"><strong>More guides:</strong> <a href="https://eucomplypro.com/guides/add-computed-fields/">Adding computed fields</a> · <a href="https://eucomplypro.com/guides/json-to-csv-pipeline/">JSON to CSV pipelines</a></p>
+</div>
+
+</div>
+
+<footer>
+  <p><a href="/">Transmute</a> · <a href="https://eucomplypro.com/deskuptime/">DeskUptime</a> · <a href="/">Free Web Converter</a> · <a href="https://eucomplypro.com/privacy/">Privacy</a> · <a href="https://eucomplypro.com/terms/">Terms</a></p>
+  <p style="margin-top:8px">© 2026 Mahope. All transformations run locally on your machine.</p>
+</footer>
+
+</body>
+</html>
