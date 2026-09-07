@@ -1,0 +1,44 @@
+name: deploy-site
+
+# Deployer site/ til Cloudflare Pages (projekt "transmute-run" -> transmute.run)
+# ved push på main. Statisk site — intet build-trin.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages-transmute-run
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy til Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name transmute-run --branch main --commit-dirty=true
+
+      - name: Tjek produktion
+        run: |
+          url="https://transmute.run/"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sS -o body.html -w '%{http_code}' "$url" || echo 000)
+            if [ "$code" = "200" ] && grep -q "mahoje.dk" body.html; then
+              echo "OK: $url svarer 200 og indeholder mahoje.dk"
+              exit 0
+            fi
+            echo "Forsøg $i: status $code — venter 10s"
+            sleep 10
+          done
+          echo "FEJL: $url gav status $code eller manglede 'mahoje.dk'"
+          exit 1
