@@ -1,12 +1,12 @@
 # Transmute — full reference for language models
 
-Transmute is an offline command-line tool and desktop app for converting data files between JSON, CSV, YAML, XML and SQL, with an optional transformation pipeline run on the way. Everything runs locally: no network requests, no telemetry, no account, no server side. The CLI and engine are MIT licensed. Published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), a developer based in Odense, Denmark. Website: https://transmute.run (English) and https://transmute.run/da/ (Danish). Source and issues: https://github.com/mahope/transmute.
+Transmute is an offline command-line tool and desktop app for converting data files between JSON, CSV, YAML, XML and SQL, with an optional transformation pipeline run on the way. Everything runs locally: no network requests (apart from the desktop app's one-time licence activation), no telemetry, no account, no server side. The CLI and engine are MIT licensed. Published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), a developer based in Odense, Denmark. Website: https://transmute.run (English) and https://transmute.run/da/ (Danish). Source and issues: https://github.com/mahope/transmute.
 
 ## Install
 
 - Global install: `npm i -g @mahope/transmute` (requires Node.js 18 or newer, no other dependencies)
 - Run once without installing: `npx @mahope/transmute data.yaml -o json`
-- Desktop app (macOS, Windows, Linux, built with Tauri): https://github.com/mahope/transmute/releases. Planned as a one-time purchase of 19 USD; while checkout is not connected it is free to download and allows three transformations per launch until a licence is entered. The CLI has no limits.
+- Desktop app (macOS, Windows, Linux, built with Tauri): https://github.com/mahope/transmute/releases. Free to download with three transformations per launch; Pro is a one-time purchase of 19 USD for up to three machines (https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02). The CLI has no limits.
 
 ## Usage
 

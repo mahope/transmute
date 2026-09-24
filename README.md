@@ -9,7 +9,7 @@ Cross-platform CLI data transformer — JSON, CSV, YAML, XML. Filter, sort, map,
 [![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Transmute** is also a cross-platform **desktop app** (macOS, Windows, Linux) with a visual pipeline builder — free tier: 3 transformations per launch, [$19 one-time license](https://github.com/mahope/transmute).
+**Transmute** is also a cross-platform **desktop app** (macOS, Windows, Linux) with a visual pipeline builder — free tier: 3 transformations per launch, [$19 one-time Pro license](https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02) for up to 3 machines.
 
 ## Install / run
 
@@ -91,4 +91,6 @@ CI publishes to npm and creates the GitHub release.
 
 ## License
 
-MIT
+MIT (CLI and engine). The desktop app's Pro license is sold via Stripe; activation goes through the Mahope license server at `mahope.tools`.
+
+Like the project? [Support open source](https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c).

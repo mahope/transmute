@@ -493,7 +493,7 @@ const licenseFree = document.getElementById('licenseFree');
 const licenseForm = document.getElementById('licenseForm');
 const licenseActive = document.getElementById('licenseActive');
 
-const BUY_URL = 'https://auditedwp.pages.dev/transmute/#pricing';
+const BUY_URL = 'https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02';
 ['buyLink', 'buyLink2'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.href = BUY_URL;
@@ -506,7 +506,7 @@ function renderLicense() {
   if (licensed) {
     invoke('get_license_state').then(lic => {
       document.getElementById('licensedAs').textContent =
-        '✓ Pro activated' + (lic.email ? ' · ' + lic.email : '');
+        '✓ Pro activated' + (lic.plan ? ' · ' + lic.plan : '');
     }).catch(() => {});
   }
   updateRunsLeft();
