@@ -18,3 +18,13 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
       - run: npm pack --dry-run
+
+  rust-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit Cargo.lock
+        working-directory: desktop/src-tauri
+        run: cargo audit --deny warnings
