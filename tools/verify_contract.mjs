@@ -310,13 +310,19 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   // nobody reads. T10 therefore walks one major per commit so a breaking major
   // can be rolled back alone; raise each floor here in the same commit as the
   // bump it locks in, and never lower one.
+  //
+  // Raising a floor does not stop the workflows from drifting apart again:
+  // site-gate.yml sat on checkout v7 while ci.yml and publish.yml were walked
+  // through v5 and v6, so each was above the floor and no gate complained. The
+  // check therefore also requires one major per action across all workflows.
   const floors = {
-    'actions/checkout': 6,
+    'actions/checkout': 7,
     'actions/setup-node': 6,
     'actions/setup-python': 7,
   };
   const workflows = join(root, '.github', 'workflows');
   const seen = new Map();
+  const pinnedIn = new Map();
   for (const entry of readdirSync(workflows, { withFileTypes: true })) {
     if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) {
       continue;
@@ -333,8 +339,22 @@ check('no workflow pins an action major GitHub has deprecated', () => {
       assert(major, `${entry.name} pins ${action}@${ref}; pin a major tag (v7) or a full commit SHA, not a branch or a range`);
       const pinned = Number(major[1]);
       assert(pinned >= floors[action], `${entry.name} pins ${action}@${ref}; GitHub has deprecated everything below v${floors[action]}`);
+      if (!pinnedIn.has(action)) {
+        pinnedIn.set(action, new Map());
+      }
+      pinnedIn.get(action).set(pinned, (pinnedIn.get(action).get(pinned) ?? new Set()).add(entry.name));
       seen.set(action, pinned);
     }
+  }
+  for (const [action, perMajor] of pinnedIn) {
+    if (perMajor.size < 2) {
+      continue;
+    }
+    const written = [...perMajor.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([major, names]) => `v${major} in ${[...names].sort().join(', ')}`)
+      .join(' and ');
+    assert(false, `workflows disagree on ${action}: ${written}. They run from the same runner with the same credentials, so a split pin means the checkout one workflow gets is not the checkout the other was reviewed against. Bump every workflow to one major in the same commit.`);
   }
   for (const [action, floor] of Object.entries(floors)) {
     assert(seen.has(action), `no workflow uses ${action}, so the v${floor} floor is asserted against nothing; remove the entry or pin the action`);
