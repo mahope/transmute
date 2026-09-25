@@ -32,5 +32,6 @@ Pipeline steps are JSON objects run in order. Expressions are plain JavaScript w
 ## Optional
 
 - [Full reference in one file](https://transmute.run/llms-full.txt)
+- [Full CLI reference on GitHub](https://github.com/mahope/transmute/blob/main/docs/cli.md): every operation with a fixture and its exact output, coercion rules, exit codes, script examples
 - [Sitemap](https://transmute.run/sitemap.xml)
 - [Security contact](https://transmute.run/.well-known/security.txt)
