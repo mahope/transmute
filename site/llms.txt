@@ -12,6 +12,7 @@ Pipeline steps are JSON objects run in order. Expressions are plain JavaScript w
 
 - [Front page (English)](https://transmute.run/): what it does, examples with real output, formats, operations, install, FAQ
 - [Forside (Danish)](https://transmute.run/da/): the same page in Danish
+- [Support and licence](https://transmute.run/support/): buying Desktop Pro, activating the key on three machines, troubleshooting, contact
 - [Source and issues on GitHub](https://github.com/mahope/transmute)
 - [npm package](https://www.npmjs.com/package/@mahope/transmute)
 

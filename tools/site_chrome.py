@@ -89,7 +89,7 @@ STRINGS = {
                family="Mahope tools:", family_label="Mahope tools",
                f_product="Transmute converts JSON, CSV, YAML, XML and SQL offline, from the terminal or a small desktop app.",
                f_install="Install the CLI", f_desktop="Desktop app", f_releases="Releases", f_cheatsheet="Cheat sheet",
-               f_family="Family", f_site="Site", f_privacy="Privacy", f_security="Security", f_sitemap="Sitemap",
+                f_family="Family", f_site="Site", f_privacy="Privacy", f_support="Support", f_security="Security", f_sitemap="Sitemap",
                f_report="Report a bug", f_badge="Feedback powered by",
                f_built='Built by Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — developer and technical partner for small businesses, Odense, Denmark.',
                f_cookies="No cookies, no trackers — only an anonymous page-view counter we run ourselves.",
@@ -104,7 +104,7 @@ STRINGS = {
                family="Mahope tools:", family_label="Mahope tools",
                f_product="Transmute konverterer JSON, CSV, YAML, XML og SQL offline, fra terminalen eller en lille desktop-app.",
                f_install="Installér CLI'en", f_desktop="Desktop-app", f_releases="Udgivelser", f_cheatsheet="Cheat sheet",
-               f_family="Familie", f_site="Site", f_privacy="Privatliv", f_security="Sikkerhed", f_sitemap="Sitemap",
+                f_family="Familie", f_site="Site", f_privacy="Privatliv", f_support="Support", f_security="Sikkerhed", f_sitemap="Sitemap",
                f_report="Meld en fejl", f_badge="Feedback drevet af",
                f_built='Lavet af Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — udvikler og teknisk partner for små virksomheder, Odense.',
                f_cookies="Ingen cookies, ingen trackere — kun en anonym sidevisningstæller, vi selv kører.",
@@ -172,6 +172,7 @@ def footer(lang: str, alt_url: str | None) -> str:
     fam = "".join(f'<li><a href="{u}"{" aria-current=\"true\"" if u == BASE else ""}>{n}</a></li>' for n, u in FAMILY)
     fam += f'<li><a href="{FAMILY_ALL[1]}">{FAMILY_ALL[0]}</a></li>'
     privacy = "/da/privacy/" if lang == "da" else "/privacy/"
+    support = "/support/"
     return f'''<footer class="site-footer">
   <div class="container">
     <div class="footer-grid">
@@ -193,6 +194,7 @@ def footer(lang: str, alt_url: str | None) -> str:
       <div class="footer-col">
         <h2>{s["f_site"]}</h2>
         <ul>
+          <li><a href="{support}">{s["f_support"]}</a></li>
           <li><a href="{privacy}">{s["f_privacy"]}</a></li>
           <li><a href="/.well-known/security.txt">{s["f_security"]}</a></li>
           <li><a href="/llms.txt">llms.txt</a></li>

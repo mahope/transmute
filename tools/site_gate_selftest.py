@@ -43,9 +43,14 @@ def edit(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-def expect(condition: bool, message: str) -> None:
+def expect(condition: bool, message: str, out: str = "") -> None:
+    # Uden out ved en fejl er en rød gate ufortolkelig: exit-koden alene kan
+    # ikke skelne mellem "kontrollen fangede regressionen" og "kontrollen gik
+    # i stykker". Derfor hægtes checkerens egen output altid på fejlen.
     print(("  ok   " if condition else "  FEJL ") + message)
     if not condition:
+        if out:
+            print("\n".join("      | " + line for line in out.rstrip().splitlines()[-25:]))
         raise SystemExit(1)
 
 
@@ -61,16 +66,16 @@ def main() -> int:
 
         edit(home, CANONICAL, "<!-- canonical fjernet af selftesten -->")
         code, out = run("seo_check.py", site)
-        expect(code != 0 and "canonical" in out, f"SEO-regression fanges (exit {code})")
+        expect(code != 0 and "canonical" in out, f"SEO-regression fanges (exit {code})", out)
         edit(home, "<!-- canonical fjernet af selftesten -->", CANONICAL)
 
         edit(guide, "</body>", f"{WIDE}</body>")
         code, out = run("layout_check.py", site)
-        expect(code != 0 and "overflow" in out, f"layout-regression fanges (exit {code})")
+        expect(code != 0 and "overflow" in out, f"layout-regression fanges (exit {code})", out)
         edit(guide, WIDE, "")
 
-        code, _ = run("layout_check.py", site)
-        expect(code == 0, f"repareret site består layoutkontrollen igen (exit {code})")
+        code, out = run("layout_check.py", site)
+        expect(code == 0, f"repareret site består layoutkontrollen igen (exit {code})", out)
 
     print("Site-gatens selftest er grøn.")
     return 0

@@ -223,7 +223,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ### 7. [ ] Skab en komplet support- og købsside
 
-**Status:** TODO
+**Status:** I GANG — 2026-09-25, `ceo/support-page`
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Købere mangler tydelig hjælp til nøgle, maskiner og kontakt, og det offentlige site mangler den påkrævede `/support`.
 

@@ -18,11 +18,16 @@ import socketserver
 import threading
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = Path(os.environ.get("TRANSMUTE_SITE") or (ROOT / "site"))
 WIDTHS = [360, 768, 1280]
+# A local static page loads in milliseconds. A short timeout turns a hang into a
+# reported finding instead of a 30 s stall per page, so one bad load cannot make
+# the gate flake or quietly skip the rest of the run.
+GOTO_TIMEOUT = 20000
 BOXES = {
     "family": ".family-bar",
     "header": ".site-header",
@@ -83,26 +88,39 @@ def main() -> int:
         browser = p.chromium.launch()
         for w in WIDTHS:
             ctx = browser.new_context(viewport={"width": w, "height": 900}, device_scale_factor=1)
-            page = ctx.new_page()
-            page.route("**/bugbottle.js", lambda route: route.abort())
             rows = {}
             for url in urls:
-                page.goto(base + url, wait_until="load")
-                page.wait_for_timeout(150)
-                rows[url] = page.evaluate(JS, BOXES)
+                # One page per URL: a failed load then cannot poison the next one.
+                page = ctx.new_page()
+                page.route("**/bugbottle.js", lambda route: route.abort())
+                try:
+                    page.goto(base + url, wait_until="load", timeout=GOTO_TIMEOUT)
+                    page.wait_for_timeout(150)
+                    rows[url] = page.evaluate(JS, BOXES)
+                except PlaywrightError as e:
+                    print(f"  FEJL {url}: {str(e).splitlines()[0]}")
+                    rows[url] = None
+                finally:
+                    page.close()
             ctx.close()
             ref_url = urls[0]
             ref = rows[ref_url]
             print(f"\n== {w}px  (reference {ref_url}) ==")
+            if ref is None:
+                problems += 1
+                print(f"  DEVIATION {ref_url}: reference page could not be measured")
+                continue
             for k in BOXES:
                 b = ref[k]
                 print(f"  {k:11s} left={b['left']:5d} width={b['width']:5d} top={b['top']:5d} height={b['height']:4d}" if b else f"  {k:11s} MISSING")
             for url, r in rows.items():
                 bad = []
-                if r["overflow"] > 0:
+                if r is None:
+                    bad.append("page could not be measured")
+                if r and r["overflow"] > 0:
                     bad.append(f"horizontal overflow {r['overflow']}px")
                 for k in BOXES:
-                    a, b = ref[k], r[k]
+                    a, b = ref[k], r[k] if r else None
                     if not b:
                         bad.append(f"{k} missing")
                         continue
