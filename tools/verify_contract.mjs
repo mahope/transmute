@@ -256,6 +256,54 @@ check('the checked-in lockfile is present, honest and reproducible', () => {
   }
 });
 
+check('the declared runtime is the runtime CI actually tests', () => {
+  // Node's even majors are LTS lines and odd majors are non-LTS, so an odd
+  // major is end-of-life within months of release. A release must never be
+  // gated or published from one. The floor is Node 22 because Node 20 left
+  // support in April 2026; raise it here and in the docs together.
+  const floor = 22;
+  const engines = String(packageJson.engines?.node ?? '');
+  const declared = engines.match(/^>=\s*(\d+)/);
+  assert(declared, `engines.node is "${engines || '(unset)'}"; declare the supported floor as ">=${floor}" so the build server cannot silently pick a runtime nobody tests`);
+  assert(Number(declared[1]) === floor, `engines.node allows Node ${declared[1]}, but the supported floor is ${floor} (Node 20 reached end of life in April 2026)`);
+
+  const nvmrc = join(root, '.nvmrc');
+  assert(existsSync(nvmrc), '.nvmrc is missing, so a build server picks the Node version at random');
+  const pinned = readFileSync(nvmrc, 'utf8').trim();
+  assert(/^\d+$/.test(pinned), `.nvmrc is "${pinned}"; pin one major, not a range or a comment`);
+
+  const workflows = join(root, '.github', 'workflows');
+  const sources = new Map();
+  for (const entry of readdirSync(workflows, { withFileTypes: true })) {
+    if (entry.isFile() && /\.ya?ml$/.test(entry.name)) {
+      sources.set(entry.name, readFileSync(join(workflows, entry.name), 'utf8'));
+    }
+  }
+  const ci = sources.get('ci.yml') ?? '';
+  const matrix = ci.match(/node:\s*\[([\d,\s]+)\]/);
+  assert(matrix, 'ci.yml has no "node: [...]" matrix, so the supported runtimes are not tested on every release');
+  const tested = matrix[1].split(',').map(value => value.trim()).filter(Boolean);
+  assert(tested.length > 0, 'ci.yml tests no Node version');
+  for (const major of tested) {
+    assert(Number(major) >= floor, `ci.yml tests Node ${major}, which is below the supported floor of ${floor} and end-of-life`);
+    assert(Number(major) % 2 === 0, `ci.yml tests Node ${major}, an odd non-LTS major that is end-of-life within months of release; gate on LTS lines only`);
+  }
+  assert(tested.includes(String(floor)), `ci.yml tests ${tested.join(', ')} but not the declared floor ${floor}; engines promises a runtime nothing tests`);
+  assert(tested.includes(pinned), `.nvmrc pins Node ${pinned}, which no ci.yml leg tests; a build server would run an untested runtime`);
+
+  for (const [name, source] of sources) {
+    for (const [, version] of source.matchAll(/node-version:\s*['"]?(\d+)\b/g)) {
+      assert(tested.includes(version), `${name} pins node-version ${version}, which the ci.yml matrix (${tested.join(', ')}) does not test`);
+    }
+  }
+
+  for (const file of claimed) {
+    for (const [, claim] of readFileSync(file, 'utf8').matchAll(/Node\.?js?\s+(\d+)\s*(?:or (?:newer|higher)|eller nyere|\+)/gi)) {
+      assert(Number(claim) === floor, `${label(file)} tells readers it needs Node ${claim} or newer, but the supported floor is ${floor}`);
+    }
+  }
+});
+
 for (const [file, messages] of failuresByFile) {
   for (const message of messages) {
     failures.push(`${label(file)}: ${message}`);

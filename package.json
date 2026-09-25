@@ -41,6 +41,6 @@
   "homepage": "https://github.com/mahope/transmute",
   "bugs": "https://github.com/mahope/transmute/issues",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

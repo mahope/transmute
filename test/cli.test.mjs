@@ -178,7 +178,11 @@ test('--version prints the npm version', () => {
 });
 
 test('engines requirement matches the CI matrix', () => {
-  assert.equal(pkg.engines.node, '>=18', 'engines.node must state the supported runtime');
+  const ci = readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8');
+  const matrix = ci.match(/node:\s*\[([\d,\s]+)\]/);
+  assert.ok(matrix, 'ci.yml has no "node: [...]" matrix to compare engines against');
+  const oldest = Math.min(...matrix[1].split(',').map(version => Number(version.trim())));
+  assert.equal(pkg.engines.node, `>=${oldest}`, `engines.node must state the oldest runtime ci.yml tests (Node ${oldest})`);
 });
 
 test('fixtures referenced by the docs exist', () => {

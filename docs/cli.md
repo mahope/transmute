@@ -17,7 +17,7 @@ away from the code — see [Keeping this page honest](#keeping-this-page-honest)
 
 ## Install and run
 
-Requires Node 18 or newer. No accounts, no configuration, no network calls.
+Requires Node 22 or newer (tested on 22 and 24). No accounts, no configuration, no network calls.
 
 ```bash
 npx @mahope/transmute people.csv --output json

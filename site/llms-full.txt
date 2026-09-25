@@ -4,7 +4,7 @@ Transmute is an offline command-line tool and desktop app for converting data fi
 
 ## Install
 
-- Global install: `npm i -g @mahope/transmute` (requires Node.js 18 or newer, no other dependencies)
+- Global install: `npm i -g @mahope/transmute` (requires Node.js 22 or newer, no other dependencies)
 - Run once without installing: `npx @mahope/transmute data.yaml -o json`
 - Desktop app (macOS, Windows, Linux, built with Tauri): https://github.com/mahope/transmute/releases. Free to download with three transformations per launch; Pro is a one-time purchase of 19 USD for up to three machines (https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02). The CLI has no limits.
 

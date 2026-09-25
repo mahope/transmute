@@ -2,7 +2,7 @@
 
 > Transmute is an offline command-line tool (and a desktop app) that converts data files between JSON, CSV, YAML, XML and SQL and runs small transformation pipelines: filter, map, pick, omit, sort, unique, group, add, join, rename, flatten, head, tail and count. It runs locally with no network access, no telemetry and no account. The CLI is MIT licensed and published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), Odense, Denmark.
 
-Install: `npm i -g @mahope/transmute` (Node.js 18 or newer). Run once without installing: `npx @mahope/transmute file.csv -o json`.
+Install: `npm i -g @mahope/transmute` (Node.js 22 or newer). Run once without installing: `npx @mahope/transmute file.csv -o json`.
 
 Usage: `transmute <file> [options]` or `cat <file> | transmute [options]`. Options: `-f, --format <json|csv|yaml|xml>` (input, auto-detected), `-o, --output <json|csv|yaml|xml|table|sql>` (default: table), `-p, --pipe <json array>` (pipeline), `--table <name>` (table name for SQL output).
 
