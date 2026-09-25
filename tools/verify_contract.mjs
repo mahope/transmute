@@ -312,7 +312,7 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   // bump it locks in, and never lower one.
   const floors = {
     'actions/checkout': 5,
-    'actions/setup-node': 4,
+    'actions/setup-node': 5,
     'actions/setup-python': 7,
   };
   const workflows = join(root, '.github', 'workflows');
