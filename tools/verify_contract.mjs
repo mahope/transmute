@@ -311,7 +311,7 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   // can be rolled back alone; raise each floor here in the same commit as the
   // bump it locks in, and never lower one.
   const floors = {
-    'actions/checkout': 5,
+    'actions/checkout': 6,
     'actions/setup-node': 5,
     'actions/setup-python': 7,
   };

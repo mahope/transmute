@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-25
+Opdateret: 2026-09-26
 
 ## Mission
 
@@ -8,9 +8,9 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T8 og T9 er lukket. T10 er i gang med slice 1 i `14dce0b`, slice 2 i `599ca4f`, slice 3 i `a4114ca` og slice 4 i dette commit; næste opgave er slice 5, `actions/checkout` v5 → v6. Dependabot-PR #4 er lukket med vilje.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T8 og T9 er lukket. T10 er i gang med slice 1 i `14dce0b`, slice 2 i `599ca4f`, slice 3 i `a4114ca`, slice 4 i `8a161fb` og slice 5 i dette commit; næste opgave er slice 6, `actions/setup-node` v5 → v6. Dependabot-PR #4 er lukket med vilje.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-25 ca. 23:0x CEST):** uændret. `https://transmute.run/sitemap.xml` har stadig `lastmod 2026-09-08` på alle entries og `https://transmute.run/support/` svarer stadig 404. Siden T5 fjernede `deploy-site.yml` er den eneste påståede deploymekanisme den eksterne batchdeployer, og den har tilsyneladende ikke kørt siden 2026-09-08. Se `❓ Til Mads` punkt 1 — det er en beslutning, loopet ikke kan tage selv.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 00:1x CEST):** uændret. `https://transmute.run/sitemap.xml` har stadig `lastmod 2026-09-08` på alle entries og `https://transmute.run/support/` svarer stadig 404. Siden T5 fjernede `deploy-site.yml` er den eneste påståede deploymekanisme den eksterne batchdeployer, og den har tilsyneladende ikke kørt siden 2026-09-08. Se `❓ Til Mads` punkt 1 — det er en beslutning, loopet ikke kan tage selv.
 
 ## Kvalitetsgate
 
@@ -347,7 +347,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ### 10. [ ] Opdatér runtime og afhængigheder kontrolleret
 
-**Status:** I GANG — slice 1, 2, 3 og 4 færdige (`14dce0b`, `599ca4f`, `a4114ca` og slice 4 i dette commit). Slice 5+ er de resterende fire action-majors, én pr. commit.
+**Status:** I GANG — slice 1, 2, 3, 4 og 5 færdige (`14dce0b`, `599ca4f`, `a4114ca`, `8a161fb` og slice 5 i dette commit). Slice 6+ er de resterende tre action-majors, én pr. commit.
 **Mislykkede forsøg:** 0/2
 
 **Slice 1 — `14dce0b`, lockfil og `npm ci`:**
@@ -374,7 +374,7 @@ Research fra `https://nodejs.org/dist/index.json` den 2026-09-25 (fra → til):
 - **Kontrollen fandt 13 driftede claims ved første kørsel:** 11 sider, `llms.txt`, `llms-full.txt` og `docs/cli.md` lovede "Node.js 18 or newer", og `site/da/index.html` lovede "Node.js 18 eller nyere". Den danske formulering er nu også dækket af regex'en.
 - Fund: `test/cli.test.mjs` havde en test der hed "engines requirement matches the CI matrix", men hardcodede `>=18` og læste aldrig matrixen. Den læser nu den ældste version i `ci.yml` og kræver, at `engines` følger den, så testens navn er sandt.
 
-**Slice 3 — dette commit, `actions/checkout` v4 → v5 alene:**
+**Slice 3 — `a4114ca`, `actions/checkout` v4 → v5 alene:**
 
 - `ci.yml` og `publish.yml` bruger nu `actions/checkout@v5`. `setup-node` står urørt på v4, så en brydende `checkout`-major kan rulles tilbage uden at rive Node-opsætningen med.
 - Migrationsnoter for `v5.0.0` (`gh api repos/actions/checkout/releases/tags/v5.0.0`, 2026-09-25): kernen skifter til Node 24 og kræver runner `v2.327.1` eller nyere. Ingen kodeændring nødvendig; GitHosts egne runners er altid nyere end runnerens minimum.
@@ -383,7 +383,7 @@ Research fra `https://nodejs.org/dist/index.json` den 2026-09-25 (fra → til):
 - Dependabot-PR #4 er lukket med en kommentar, der peger på sliceopdelingen, i stedet for at blive merget. Den er grøn i CI, men den tager tre majors i én diff.
 - `ubuntu-latest` → `ubuntu-26.04` er bevidst ikke rørt her; det er en runtime-migrering, ikke en action-major, og tages i en senere slice med egen commit.
 
-**Slice 4 — dette commit, `actions/setup-node` v4 → v5 alene:**
+**Slice 4 — `8a161fb`, `actions/setup-node` v4 → v5 alene:**
 
 - `ci.yml` og `publish.yml` bruger nu `actions/setup-node@v5`; `checkout` står urørt på v5 fra slice 3, så de to majors stadig kan rulles tilbage uafhængigt af hinanden.
 - Migrationsnoter for `v5.0.0` (`gh api repos/actions/setup-node/releases/tags/v5.0.0`, læst 2026-09-25 ca. 22:5x CEST) har **én reel brydende ændring**: setup-node cacher nu automatisk, når `package.json` har et gyldigt `packageManager`-felt (PR #1348), og kernen kører på Node 24 med krav om runner `v2.327.1`+ (PR #1325).
@@ -392,14 +392,23 @@ Research fra `https://nodejs.org/dist/index.json` den 2026-09-25 (fra → til):
 - Dependabot holder `setup-node` på v4, fordi dependabot-PR'en lukkede blev afvist på sliceopdelingen. Den bør ikke genåbnes før slice 8 er færdig, ellers springer den majors over.
 - Adskillelsen er bevidst: `publish.yml` kører fra Node 22, som T10 slice 2 fastlagde som laveste publicerede linje. `setup-node` styrer den Node, handlingen *kører på*; matrixen styrer hvilke linjer der testes. De er to forskellige løsner og må ikke slås sammen.
 
+**Slice 5 — dette commit, `actions/checkout` v5 → v6 alene:**
+
+- `ci.yml` og `publish.yml` bruger nu `actions/checkout@v6`; `setup-node` står urørt på v5 fra slice 4, så de to majors stadig kan rulles tilbage uafhængigt af hinanden.
+- Migrationsnoter for `v6.0.0` (`gh api repos/actions/checkout/releases/tags/v6.0.0` og `README.md` på `ref=v6`, læst 2026-09-26) har **én reel adfærdsændring**: `persist-credentials` gemmer nu tokenet i en separat fil under `$RUNNER_TEMP` i stedet for i `.git/config` (PR #2286). `action.yml` på `v6` har de samme inputs som `v5` — ingen er fjernet, omdøbt eller gjort påkrævede — så ingen workflow skal ændres. READMEen siger eksplicit "No workflow changes required — `git fetch`, `git push`, etc. continue to work automatically".
+- **Den nye runner-krav er kun relevant for container-actions:** v6 kræver runner `v2.329.0`+ *kun* til autentificerede git-kommandoer fra en Docker container action. Ingen af de tre workflows har container-steps, så kravet er ikke en arbejdsændring. `v6` arver desuden `node24`-kernen fra `v5`, så der er ingen ny runtime at erklære.
+- **Adfærden er verificeret som uberørt her, ikke antaget:** ingen workflow sætter `persist-credentials`, bruger `submodules` eller laver et `git push`. `publish.yml`'e eneste skriveadgang til GitHub er `gh release create` med `GH_TOKEN: ${{ github.token }}`, som er et API-kald og ikke en autentificeret git-operation — den nye credential-fil rører den ikke. `npm ci` og `npm test` læser kun det udcheckede arbejdsbibliotek, som `tokenen` før lå i `.git/config` og nu ligger uden for det.
+- `checkout`-gulvet hævet fra 5 til 6 i `verify_contract.mjs` i samme commit. Verificeret med tænder: sætte `ci.yml` tilbage på `checkout@v5` giver præcis 1 fejl med det navngivne gulv; reversionen er rullet tilbage.
+- `site-gate.yml` har brugt `checkout@v7` hele vejen, så de tre workflows står nu på hver sin major (v6, v6, v7) indtil slice 7. Gulvet på 6 dækker alle tre, og slice 7 slutter på den pin `site-gate.yml` bruger i dag.
+
 **Slice 4+ — otte action-majors, én pr. commit, ikke blandet med hinanden:**
 
 | # | Fra → til | Filer | Noter |
 |---|---|---|---|
 | 3 | `actions/checkout` v4 → v5 | `ci.yml`, `publish.yml` | **Færdig** (`a4114ca`). `homebrew-bump.yml` bruger ingen actions |
-| 4 | `actions/setup-node` v4 → v5 | `ci.yml`, `publish.yml` | **Færdig** (dette commit). Gulvet hævet til 5; brydende `packageManager`-autocaching er inert og kontrolleret |
-| 5 | `actions/checkout` v5 → v6 | samme | Næste iteration. Hæv `checkout`-gulvet til 6 i samme commit |
-| 6 | `actions/setup-node` v5 → v6 | samme | |
+| 4 | `actions/setup-node` v4 → v5 | `ci.yml`, `publish.yml` | **Fændig** (`8a161fb`). Gulvet hævet til 5; brydende `packageManager`-autocaching er inert og kontrolleret |
+| 5 | `actions/checkout` v5 → v6 | samme | **Færdig** (dette commit). Gulvet hævet til 6; credential-filen er en adfærdsændring uden workflow-krav |
+| 6 | `actions/setup-node` v5 → v6 | samme | Næste iteration. Hæv `setup-node`-gulvet til 6 i samme commit |
 | 7 | `actions/checkout` v6 → v7 | samme | Slut på samme pin som `site-gate.yml` bruger i dag |
 | 8 | `actions/setup-node` v6 → v7 | samme | Sidste slice; hermed er alle actions på en pin, ingen workflow bruger |
 
@@ -547,3 +556,4 @@ Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") er **lukket, ikke merged*
 - 2026-09-25 ca. 22:0x CEST: T10 slice 3 gennemført på `ceo/actions-checkout-v5`. `actions/checkout` v4 → v5 i `ci.yml` og `publish.yml`, `setup-node` bevidst urørt på v4 så majorerne kan rulles tilbage uafhængigt. Migrationsnoter for v5.0.0 læst via `gh api` (kernen skifter til Node 24, kræver runner v2.327.1+; ingen kodeændring nødvendig, GitHosts runners er nyere). Ny kontrol "no workflow pins an action major GitHub has deprecated" i `verify_contract.mjs` (164 checks): gulv checkout 5, setup-node 4, setup-python 7, pin skal være major-tag eller fuld 40-tegns SHA, og et gulv på en action ingen workflow bruger fejler. Verificeret med tænder to gange — checkout tilbage på v4 gav 1 fejl med nævnt gulv, `setup-node@main` på en branch-ref gav 1 fejl om ref-formen — begge reversioner rullet tilbage. Dependabot-PR #4 lukket med kommentar, ikke merged. `ubuntu-latest` → `ubuntu-26.04` bevidst ikke rørt, det er en runtime-migrering og tages i egen slice. Lokalt grøn: `npm test` 38+45+49+6+39+4+164, `npm pack --dry-run` 5 filer, `npm audit --omit=dev` 0 fund. Deploy genverificeret før merge: sitemap `lastmod 2026-09-08`, `/support/` 404, uændret siden sidste check, så `DEPLOY-MISSING` står ved og der oprettes ingen `VERIFICÉR DEPLOY`-note (ingen sitefil rørt). T10 slice 4 (`actions/setup-node` v4 → v5 alene) er næste iteration.
 - 2026-09-25 ca. 22:2x CEST: T10 slice 3 merged fast-forward til `main` som `a4114ca` og pushet til `main` samt `ceo/actions-checkout-v5`. CI-run `36186116700` (`CI`) sluttede `success` på alle otte testtrin (38+45+49+6+39+4+164) og `npm pack --dry-run`. `Site gate` blev korrekt ikke udløst, fordi diffen rører hverken `site/**` eller nogen af site-gatens path-grupper. Ingen deploy-run findes at oprette, siden `deploy-site.yml` er fjernet. T10 slice 4 (`actions/setup-node` v4 → v5 alene) er næste iteration.
 - 2026-09-25 ca. 23:0x CEST: T10 slice 4 gennemfört på `ceo/actions-setup-node-v5`. `actions/setup-node` v4 → v5 i `ci.yml` og `publish.yml` (checkout urørt på v5), `setup-node`-gulvet hævet 4 → 5 i `verify_contract.mjs` i samme commit. Migrationsnoter for v5.0.0 læst via `gh api`: kernen kører på Node 24 og kræver runner v2.327.1+, og den ene brydende ændring er automatisk caching ved et `packageManager`-felt i `package.json` — kontrolleret fraværende (`rg '"packageManager"' package.json` → ingen match), så ingen kodeændring nødvendig. Verificeret med tænder: `ci.yml` tilbage på `setup-node@v4` gav præcis 1 fejl med det navngivne gulv, reversionen rullet tilbage. Lokalt grøn: `npm test` 38+45+49+6+39+4+164, `npm pack --dry-run` 5 filer, `npm audit --omit=dev` 0 fund. Deploy genverificeret før merge: `/support/` stadig 404, sitemap `lastmod` stadig 2026-09-08 — uændret siden sidste check, `DEPLOY-MISSING` står ved og der oprettes ingen `VERIFICÉR DEPLOY`-note, fordi diffen rører ingen `site/`-fil. T10 slice 5 (`actions/checkout` v5 → v6 alene) er næste iteration.
+- 2026-09-26 ca. 00:1x CEST: T10 slice 5 gennemført på `ceo/actions-checkout-v6`. `actions/checkout` v5 → v6 i `ci.yml` og `publish.yml` (setup-node urørt på v5), `checkout`-gulvet hævet 5 → 6 i `verify_contract.mjs` i samme commit. Migrationsnoter for v6.0.0 læst via `gh api` (releases/tags/v6.0.0 + `README.md` og `action.yml` på `ref=v6`): den ene reelle ændring er, at `persist-credentials` gemmer tokenet i en separat fil under `$RUNNER_TEMP` i stedet for i `.git/config` (PR #2286); `action.yml` på v6 har identiske inputs som v5, så ingen workflow skal ændres, og READMEen siger "No workflow changes required". Runner-kravet v2.329.0+ gælder kun autentificerede git-kommandoer fra en Docker container action, og ingen af de tre workflows har container-steps; v6 arver desuden node24-kernen fra v5. Verificeret frem for antaget, at adfærden er uberørt: ingen workflow sætter `persist-credentials`, bruger submodules eller laver `git push`, og `publish.yml`s eneste skriveadgang til GitHub er `gh release create` med `GH_TOKEN` — et API-kald, ikke en autentificeret git-operation. Verificeret med tænder: `ci.yml` tilbage på `checkout@v5` gav præcis 1 fejl med det navngivne gulv, reversionen rullet tilbage. Fund undervejs: `site-gate.yml` har brugt `checkout@v7` hele vejen, så de tre workflows står nu på hver sin major indtil slice 7 — gulvet på 6 dækker alle tre. Lokalt grøn: `npm test` 38+45+49+6+39+4+164, `npm pack --dry-run` 5 filer, `npm audit --omit=dev` 0 fund, `npm run check:site` `0 finding(s) across 19 pages` + fire grønne selvtesttrin. Deploy genverificeret før merge: `/support/` stadig 404, sitemap `lastmod` stadig 2026-09-08 — uændret siden sidste check, `DEPLOY-MISSING` står ved og der oprettes ingen `VERIFICÉR DEPLOY`-note, fordi diffen rører ingen `site/`-fil. T10 slice 6 (`actions/setup-node` v5 → v6 alene) er næste iteration.
