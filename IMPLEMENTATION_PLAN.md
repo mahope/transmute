@@ -346,4 +346,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ## Iterationlog
 
-- 2026-09-25: Research-iteration gennemført på `ceo/transmute-roadmap`; plan oprettet ud fra repo, mission, Stripe-kontrakt og afhængighedsstatus. Commit-ref udfyldes efter commit.
+- 2026-09-25: Research-iteration gennemført på `ceo/transmute-roadmap` med plan-commit `b46b1e2`; planen er oprettet ud fra repo, mission, Stripe-kontrakt og afhængighedsstatus.
