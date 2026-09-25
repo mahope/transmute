@@ -8,7 +8,7 @@ Transmute er et gratis, lokalt og open source værktøj til at transformere JSON
 
 ## Iterationsstatus
 
-Denne iteration afsluttede T2, fordi produktreglen fra 24. september eksplicit prioriterede købsflow-reparationen før T1. T1 forbliver TODO og skal stadig udføres med RustSec-baseline, advarselshåndtering og Dependabot; ingen senere TODO må starte, før T1 er `FÆRDIG` eller `BLOCKED`.
+T1 er `I GANG` efter ét mislykket forsøg. Den strenge RustSec-gate er fortsat rød på syv upstream-fund, så ingen senere TODO må starte, før T1 er `FÆRDIG` eller `BLOCKED`. CI- og Dependabot-ændringerne er isoleret på `ceo/rustsec-baseline` og er ikke merged.
 
 ## Kvalitetsgate
 
@@ -62,10 +62,12 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ### 1. [ ] Etablér grøn RustSec-baseline før nye Rust-afhængigheder
 
-**Status:** TODO
-**Mislykkede forsøg:** 0/2
-**Sikkerhedsstop:** Produktfasen giver T2 en enkelt undtagelse som første prioritet; T1’s resterende Dependabot/CI-arbejde skal færdiggøres, før T3 eller senere opgaver starter. Hvis T1 bliver `BLOCKED`, stopper resten af køen.
+**Status:** I GANG
+**Mislykkede forsøg:** 1/2
+**Sikkerhedsstop:** Produktfasen giver T2 en enkelt undtagelse som første prioritet; T1’s resterende Dependabot/CI-arbejde skal færdiggøres, før T3 eller senere opgaver starter. Efter to mislykkede iterationer markeres T1 `BLOCKED: <RustSec-ID'er og årsag>`, hvorefter næste TODO i køen kan fortsætte.
 **Begrundelse:** Sikkerhedshuller skal ordnes før andet. Den nye opener-plugin må ikke føjes til en ubedømt afhængighedsgraf.
+
+**Forsøg 1 (2026-09-25):** `cargo-audit 0.22.2` er installeret lokalt. Nul vulnerabilities og nul yanked, men `cargo audit --deny warnings` fejler korrekt på syv upstream-fund: seks unmaintained-crates gennem Tauri Utils’ `urlpattern 0.3.0` samt `glib 0.18.5` med RUSTSEC-2024-0429 gennem Tauri 2’s Linux/GTK3-kæde. Nyeste stabile Tauri 2.11.6 blev testet i en isoleret lockfile og fjerner ingen af dem. Tauri Utils 2.9.3 kræver `urlpattern ^0.3`, mens 0.6.0 ikke kan bruges som patch, og GTK3/glib har ingen patch i 0.18. Der bruges derfor ingen baseline, ignore-liste, versionsspoofing eller lokal fork. CI- og Dependabot-ændringerne ligger på `ceo/rustsec-baseline` (`7e34c0f`), men merges ikke, fordi den strenge gate er rød. Næste iteration skal genkontrollere upstream; hvis fundene er uændrede, markeres T1 `BLOCKED` med RustSec-ID'erne, og resten af køen kan fortsætte.
 
 **Scope:**
 
@@ -355,3 +357,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25: Research-iteration gennemført på `ceo/transmute-roadmap` med plan-commit `b46b1e2`; planen er oprettet ud fra repo, mission, Stripe-kontrakt og afhængighedsstatus.
 - 2026-09-25 03:11 UTC: T2 gennemført på `ceo/desktop-opener`; rustls advisory-fix isoleret i `4d1a828`, opener-plugin, ACL, frontend-handler, fire headless checks og debug `.app`-build gennemført. Implementationscommit: `2c3b6c2`. GUI-smoke afventer Orca/computer-use.
 - 2026-09-25 03:29 UTC: `6e89d13` mergeret fast-forward til `main` og pushet til `main` samt `ceo/desktop-opener`; CI-run `36090507215` sluttede `success`, og ingen deploy-site-run blev udløst.
+- 2026-09-25 05:37 UTC: T1-forsøg 1 gemt på `ceo/rustsec-baseline` som `7e34c0f` og pushet uden merge. Root-test/pack, Cargo check/test og YAML-parsning er grønne; `cargo audit --deny warnings` fejler korrekt på syv upstream-fund. Næste iteration skal genkontrollere dem.
