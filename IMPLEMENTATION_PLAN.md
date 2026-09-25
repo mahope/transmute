@@ -295,6 +295,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Opret `package-lock.json`, skift CI/publish-kontrol til `npm ci`, og verificér, at den checked-in lock ikke tilføjer unødige runtime-afhængigheder.
 - Fastlæg den understøttede Node-, npm- og Rust-version i `engines`, `.nvmrc`/package-manager-pin og Rust-toolchainfil i samme commit som et framework, der kræver den.
 - Opdatér GitHub Actions pin-for-pin og undgå samtidige major-opgraderinger i samme commit.
+- Erstat deprecation-aktiverede `actions/checkout@v4` og `actions/setup-node@v4` én major ad gangen; verificér `ubuntu-latest`-migreringen til Ubuntu 26 senest før 19. oktober 2026.
 
 **Acceptkriterier:**
 
@@ -339,6 +340,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Gratis desktop skal ifølge strategien være fuldt brugbar; den nuværende tredobbeltige demofris er ikke en gyldig langsigtigfri/Pro-grænse.
 - Den private/public-grænse er låst: betalt implementation lever i privat repo, mens public repo er en god gratisvare.
 - Fund undervej skal blive prioriterede planopgaver, ikke sidespor i en igangværende opgave.
+- CI-run `36099345814` for planstatuscommitten `c9ba6b9` sluttede `success` og udløste ingen deploy-site-run. GitHub advarede om, at `actions/checkout@v4` og `actions/setup-node@v4` er deprecation-aktiverede og køres på Node 24; opgraderingen og Ubuntu 26-migreringen er nu eksplicit del af T10.
 
 ## Navneforslag
 
@@ -358,3 +360,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 03:11 UTC: T2 gennemført på `ceo/desktop-opener`; rustls advisory-fix isoleret i `4d1a828`, opener-plugin, ACL, frontend-handler, fire headless checks og debug `.app`-build gennemført. Implementationscommit: `2c3b6c2`. GUI-smoke afventer Orca/computer-use.
 - 2026-09-25 03:29 UTC: `6e89d13` mergeret fast-forward til `main` og pushet til `main` samt `ceo/desktop-opener`; CI-run `36090507215` sluttede `success`, og ingen deploy-site-run blev udløst.
 - 2026-09-25 05:37 UTC: T1-forsøg 1 gemt på `ceo/rustsec-baseline` som `7e34c0f` og pushet uden merge. Root-test/pack, Cargo check/test og YAML-parsning er grønne; `cargo audit --deny warnings` fejler korrekt på syv upstream-fund. Næste iteration skal genkontrollere dem.
+- 2026-09-25 05:38 UTC: Planstatuscommitten `c9ba6b9` pushet til `main`; CI-run `36099345814` sluttede `success`, og ingen deploy-site-run blev udløst.
