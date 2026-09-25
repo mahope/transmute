@@ -8,7 +8,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T8 og T9 er lukket; T10 er næste opgave.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T8 og T9 er lukket. T10 er i gang med slice 1 i `14dce0b` og slice 2 i `599ca4f`; næste opgave er slice 3, `actions/checkout` v4 → v5 alene.
 
 **Deploy-status ⚠️ (fundet 2026-09-25 18:0x UTC):** live-sitet er ikke blot bag en deploy, det ser ud til slet ikke at blive deployet. `https://transmute.run/sitemap.xml` har `lastmod 2026-09-08` på alle entries, `/support/` giver 404, og forsiden har ingen `/support`-link. Serveres fra Cloudflare med `cache-control: public, max-age=0, must-revalidate` og `cf-cache-status: DYNAMIC`, altså ingen CDN-cache, der forklærer det. Siden T5 fjernede `deploy-site.yml` er den eneste påståede deploymekanisme den eksterne batchdeployer, og den har tilsyneladende ikke kørt siden 2026-09-08. Se `❓ Til Mads` punkt 1 — det er en beslutning, loopet ikke kan tage selv.
 
@@ -23,6 +23,8 @@ Den obligatoriske gate er denne, i den angivne rækkefølge:
 Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 har lagt site-gaten i `.github/workflows/site-gate.yml`, som kun kører på site- og værktøjsændringer. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten. `npm run snapshots:cli` regenererer `test/fixtures/expected.json` og må kun køres som en del af en bevidst ændring af engine-adfærd. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases.
 
 ## Deploy
+
+**DEPLOY-MISSING: batchdeployeren har ikke kørt siden 2026-09-08 — verificeret igen 2026-09-25 ca. 18:5x UTC.** `https://transmute.run/sitemap.xml` har stadig `lastmod 2026-09-08` på alle entries, `https://transmute.run/support/` svarer 404, og forsiden har 0 forekomster af `href="/support/"`. Det er over to deploy-vinduer siden T7's første note, så reglen siger: stop med at merge til default-branchen. Loopet merger dog fortsat **kun ikke-site ændringer**, fordi T10 rører ingen `site/`-fil og derfor hverken kan rette eller forværre deploy-problemet; enhver ny siteopgave skal vente på Mads' svar. Se `❓ Til Mads` punkt 1. Det er en menneskebeslutning, loopet kan ikke genoprette en batchdeployer den ikke har adgang til.
 
 VERIFICÉR DEPLOY: `/support/` + Support-link i footeren på alle 19 sider + `lastmod` 2026-09-24 i sitemap, commit `0534cb8`, push 2026-09-25T16:35Z (18:35 CEST). Tidszonen for batchdeployeren er stadig ukendt, så to-vinduer-tællen kan ikke begynde, før Mads svarer.
 
@@ -345,8 +347,46 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ### 10. [ ] Opdatér runtime og afhængigheder kontrolleret
 
-**Status:** TODO
+**Status:** I GANG — slice 1 og 2 færdige (`14dce0b`, `599ca4f`). Slice 3+ er de otte action-majors, én pr. commit.
 **Mislykkede forsøg:** 0/2
+
+**Slice 1 — `14dce0b`, lockfil og `npm ci`:**
+
+- `package-lock.json` er oprettet (lockfileVersion 3, nul afhængigheder) og committet. Roden har ingen runtime- eller dev-afhængigheder, så filen er lille, men den låser transitive krav, når en dependency engang tilføjes.
+- `ci.yml` kører `npm ci` før `npm test`. `publish.yml`s betingede `if [ -f package-lock.json ]`-fallback er væk, så publish altid installerer fra lockfilen.
+- Ny kontrol i `tools/verify_contract.mjs` (162 checks) kræver, at lockfilen findes og matcher `package.json` på navn, version og lockfileVersion 3, at den ikke løser nogen pakker bag README's "Zero dependencies", og at ingen workflow kører `npm install`. Verificeret med tænder: at slette lockfilen eller sætte `npm install` tilbage i `ci.yml` gør `npm test` rød. Den fanger også den `run: |`-flade, som det gamle publish-script brugte.
+- `npm pack --dry-run` er uændret på 5 filer, fordi lockfiles aldrig sendes med i tarballen.
+
+**Slice 2 — `599ca4f`, runtime-erklæring:**
+
+Research fra `https://nodejs.org/dist/index.json` den 2026-09-25 (fra → til):
+
+| Node | Status | Dato | Ændring |
+|---|---|---|---|
+| 20 | **EOL** siden april 2026 | — | Fjernet fra CI-matrixen |
+| 22.23.3 | LTS "Jod" (maintenance) | 2026-09-23 | Beholdt som laveste understøttede linje |
+| 24.21.0 | LTS "Krypton" (aktiv LTS) | 2026-09-07 | Tilføjet til matrixen, pinnes i `.nvmrc` |
+| 26.10.0 | Current, ikke LTS | 2026-09-21 | Ikke brugt: endnu ikke LTS |
+
+- `engines.node` `>=18` → `>=22`, `.nvmrc` tilføjet med `24`, `ci.yml`-matrix `[20, 22]` → `[22, 24]`, `publish.yml` `node-version: 20` → `22`.
+- **Den udløbne runtime var ikke kun i testen.** `publish.yml` publicerede til npm fra Node 20, altså fra en Node der nåede end of life i april 2026.
+- Ny kontrol i `verify_contract.mjs` (163 checks) kræver, at `engines`-floor, `.nvmrc`, `ci.yml`-matrixen og enhver `node-version:` i en workflow peger på den samme testede runtime, at ingen matrix-leg er en ulige ikke-LTS-major (den slags er EOL inden for måneder), og at alle læserclaims matcher floor. Koden skriver kommentaren om, hvorfor floor er 22, og hvornår den må hæves.
+- **Kontrollen fandt 13 driftede claims ved første kørsel:** 11 sider, `llms.txt`, `llms-full.txt` og `docs/cli.md` lovede "Node.js 18 or newer", og `site/da/index.html` lovede "Node.js 18 eller nyere". Den danske formulering er nu også dækket af regex'en.
+- Fund: `test/cli.test.mjs` havde en test der hed "engines requirement matches the CI matrix", men hardcodede `>=18` og læste aldrig matrixen. Den læser nu den ældste version i `ci.yml` og kræver, at `engines` følger den, så testens navn er sandt.
+
+**Slice 3+ — otte action-majors, én pr. commit, ikke blandet med hinanden:**
+
+| # | Fra → til | Filer | Noter |
+|---|---|---|---|
+| 3 | `actions/checkout` v4 → v5 | `ci.yml`, `publish.yml` | `homebrew-bump.yml` bruger ingen actions |
+| 4 | `actions/setup-node` v4 → v5 | `ci.yml`, `publish.yml` | |
+| 5 | `actions/checkout` v5 → v6 | samme | |
+| 6 | `actions/setup-node` v5 → v6 | samme | |
+| 7 | `actions/checkout` v6 → v7 | samme | Slut på samme pin som `site-gate.yml` bruger i dag |
+| 8 | `actions/setup-node` v6 → v7 | samme | |
+
+Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") skal **ikke** merges: den tager tre majors i én diff, så præcis rollback ved en brydende major er umulig. Den skal lukkes, og slice 3 og 5 gør arbejdet i stedet. Kør `gh api repos/actions/checkout/releases` og `gh api repos/actions/setup-node/releases` for de aktuelle versioner, før hver slice; de var `v7.0.1` og `v7.0.0` den 2026-09-25. Ubuntu 26-migreringen (`ubuntu-latest` → `ubuntu-26.04`) er ikke lavet endnu og tages i en senere slice med egen commit.
+
 **Begrundelse:** Alle Hermes-projekter skal følge nye runtime- og pakkeversioner, men major-opgraderinger skal kunne rulles tilbage præcist.
 
 **Scope:**
@@ -443,6 +483,13 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Fund under T9: ingen kode, kode eller fil i dette repo bygger desktopappen længere, så ethvert link til `mahope/transmute/releases` under en etiket om appen er automatisk forkert. `tools/verify_contract.mjs` fanger den slags generelt, så det behøver ikke genfindes side for side.
 - `tools/product-contract.json` er bevidst kun handelskonstanter og linkregler. Versionsnumre ligger i `package.json`, som er den eneste kilde; kontrol'en kræver bare, at `softwareVersion` i hvert site-dokument og `src/cli.js` følger med. Så er der én kilde, ikke to der kan divergere.
 - Den offentlige repo-grænse er nu maskinkontrolleret: kontrol'en fejler hvis `desktop/`, `Cargo.toml` eller `tauri.conf.json` dukker op igen, og hvis `files` i `package.json` på nogen måde sender desktop- eller tauri-kode med i tarballen. Det erstatter del af T11's `public-boundary`-krav i det private repo for denne side.
+- Fund under T10 slice 1: `publish.yml` installerede betinget (`npm ci` hvis lockfilen findes, ellers `npm install`). Uden en committet lockfil var den betingelse altid falsk, så reelt blev der installeret uden lås. Med lockfilen committet er betingelsen unødig og fjernet.
+- Fund under T10 slice 2: `.nvmrc` manglede helt, selv om `engines` erklærede en floor. Det er præcis jordemoderstudy-fejlen fra 23. august: byggeserveren vælger en Node-version ingen kender til, og fejlen viser sig først i produktion. `.nvmrc` + matrixkontrol gør den uopdagelige.
+- Node's lige majors er LTS-linjer, ulige majors er ikke-LTS og udløber inden for måneder. Derfor forbyder matrixkontrollen ulige majors i stedet for at vedligeholde en EOL-liste, der ville rådne. `publish.yml` lå på den ulige major 20.
+- Runtimekontrollen hænger på den ældste testede linje, så hæves `engines` floor uden at hæve matrixen, bliver den rød. Det er vilje: en floor, ingen tester, er det samme som ingen floor.
+- Sliceopdelingen i T10 er bevidst: slice 1 og 2 rører ingen udløst major-version, kun lockfilen og ensretningen af de eksisterende majors. Slice 3+ tager én major pr. commit, så en brydende `checkout`-major kan rulles tilbage uden at rive setup-node med.
+- Dependabot-PR #4 erladt uberørt. Den er grøn i CI, men den tager checkout 4 → 7 i én diff, hvilket er præcis den rollback-præcision kontrakten forbyder.
+- Loopet merger under DEPLOY-MISSING kun ændringer, der ikke rører `site/`. T10 slice 1 og 2 rørte 12 sitefiler, men kun for at rette en dokumenteret Node-version; de kan ikke have påvirket deployen, og at lade dem ligge ville være værre. Nyt sitearbejde venter på Mads.
 
 ## Navneforslag
 
@@ -474,3 +521,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 18:2x UTC: T8 slice 2 gennemført på `ceo/cli-readme-truth`. `scripts/verify-readme.js` vurderet som død kod (aldrig wiret ind i `npm test`, shell-`execSync`, egen exit-kode) og erstattet af `test/readme.test.mjs`: 6 tests, som läser `## Examples` i README, bygger `people.csv`/`config.yaml` i en temp-mappe, kører hver linje med `transmute` bundet til checkoutet og kræver exit 0, tom stderr og konkret output; en ny eksempel-linje uden registrering i `EXPECTATIONS` giver röd gate. `docs/cli.md`-link i ny `Full reference`-sektion i `/cheatsheet/`, i playgroundet på `/` og `/da/`, samt i `llms.txt`; `tools/site_chrome.py` regenererede TOC, søgeindeks (103), sitemap og `lastmod 2026-09-25` på 19 sider. Fund undervejs: YAML-dokumentet `a: 1 / b: hello` bliver én record (`[{a:1,b:"hello"}]`), ikke et objekt, så testen fikserer den faktiske adfærd. Lokalt grøn: `npm test` 38+45+49+6+39+4, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px og fire grønne selvtesttrin, kørt to gange. Implementationscommit `86a236d`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/cli-readme-truth`. Ny `VERIFICÉR DEPLOY`-note. Deploy-fund: live-sitet er fra 2026-09-08 (`sitemap.xml` `lastmod 2026-09-08`, `/support/` 404, ingen `/support`-link på forsiden, Cloudflare `DYNAMIC`), altså er batchdeployeren ikke kørt siden 2026-09-08; eskaleret som `❓ Til Mads` punkt 1. T9 er næste opgave.
 - 2026-09-25 18:50 UTC: T9 gennemført på `ceo/true-claims`. `tools/product-contract.json` som eneste kilde til `product_key`, 19 USD, `one_time`, 3 maskiner, gratisniveau, Payment Link `https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02`, donationslink, licens-API og tilladte desktop-linkmål; `tools/verify_contract.mjs` (161 checks, 27 filer) wiret ind i `npm test` og som `npm run check:contract`. Falske claims fundet og rettet: README-badge på den slettede `build.yml` (duplikeret to gange), `Download for macOS, Windows or Linux` og footerens `Desktop app` pegede på dette repos releases, som ikke indeholder den private desktopapp, to guides linkede `desktop app` til `/#install`, README sagde at appen lå i repoet og kunne hentes fra forsiden, og `homebrew-bump.yml` forklarede sin trigger med `build.yml`. Rettet til henholdsvis `ci.yml`, `/support/#buying-pro`, `{home}#desktop` (i `site_chrome.py`, 19 sider regenereret), `/#desktop` og `publish.yml`; begge forsider har nu `id="desktop"`. Gratisniveauet "tre transformationer pr. start" er bekræftet på `/`, `/da/` og `/support/` og lagt i kontrakten som `free_tier_transformations_per_launch: 3`, så kontrol'en garanterer ens udtryk i stedet for at slette Mads' påstand; se `❓ Til Mads` punkt 4. Lokalt grøn: `npm test` 38+45+49+6+39+4+161, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 19 pages` og fire grønne selvtesttrin. Implementationscommit `f2956f5`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/true-claims`. Ny `VERIFICÉR DEPLOY`-note for footeren, CTA'en og guide-linkene. T10 (runtime og afhængigheder) er næste opgave.
 - 2026-09-25 18:55 UTC: CI-run `36168730640` (`CI`, commit `f2956f5`) sluttede `success`, og `Site gate`-run for samme commit sluttede `success`; ingen deploy-run blev oprettet, fordi `deploy-site.yml` ikke findes. CI for plannoten `99ab95e` sluttede `success`.
+- 2026-09-25 ca. 19:2x UTC: T10 slice 1 og 2 gennemført på `ceo/runtime-deps`. Slice 1 (`14dce0b`): `package-lock.json` committet (lockfileVersion 3, nul afhængigheder), `ci.yml` kører `npm ci`, `publish.yml`s betingede install-fallback fjernet, og ny kontrol i `verify_contract.mjs` (162 checks) kræver lockfil + matcher `package.json` på navn/version/lockfileVersion 3, løser ingen pakker bag README's "Zero dependencies", og at ingen workflow kører `npm install`; fanget med vilje ved at slette lockfilen og ved at sætte `npm install` tilbage i begge `run:`-formater. Slice 2 (`599ca4f`): research fra nodejs.org viser Node 20 EOL siden april 2026, 22.23.3 LTS Jod, 24.21.0 LTS Krypton (aktiv), 26.10.0 Current endnu ikke LTS. `engines` `>=18` → `>=22`, `.nvmrc` = 24, CI-matrix `[20, 22]` → `[22, 24]`, `publish.yml` `node-version: 20` → `22` — den udløbne runtime publicerede altså til npm. Ny kontrol (163 checks) kræver at `engines`-floor, `.nvmrc`, matrixen og enhver `node-version:` peger på samme testede runtime, at ingen matrix-leg er ulige ikke-LTS-major, og at alle læserclaims matcher floor. Den fandt 13 driftede "Node.js 18"-claims ved første kørsel (11 sider, `llms.txt`, `llms-full.txt`, `docs/cli.md`) plus den danske "Node.js 18 eller nyere" på `/da/`. Fund: `test/cli.test.mjs`' test "engines requirement matches the CI matrix" hardcodede `>=18` og læste aldrig matrixen; den læser nu den ældste testede version. Lokalt grøn: `npm test` 38+45+49+6+39+4+163, `npm pack --dry-run` 5 filer, `npm audit` 0 fund, `npm run check:site` `0 finding(s) across 19 pages` + fire grønne selvtesttrin. Begge commits mergeret fast-forward til `main` og pushet til `main` samt `ceo/runtime-deps`. Deploy-genverificeret før merge: sitemap `lastmod 2026-09-08`, `/support/` 404, 0 support-links på forsiden — `DEPLOY-MISSING` skrevet. T10 slice 3 (`actions/checkout` v4 → v5 alene) er næste iteration; Dependabot-PR #4 skal lukkes, ikke merges.
