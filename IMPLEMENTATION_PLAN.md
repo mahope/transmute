@@ -8,21 +8,23 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65` og T7 med `0534cb8`. T8 er næste opgave.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8` og T8-slice 1 med `414eb8b`. T8 har to åbne punkter, se afsnittet under T8; T9 er næste opgave.
 
 ## Kvalitetsgate
 
 Den obligatoriske gate er denne, i den angivne rækkefølge:
 
-1. Root: `npm test && npm pack --dry-run`.
+1. Root: `npm test && npm pack --dry-run`. `npm test` kører fire suites i rækkefølge: `test/test.js` (38 engine-tests), `test/cli.test.mjs` (45 reelle CLI-kørsler), `test/conformance.test.mjs` (49 CLI-vs-site- og dokumentationskontroller) og workflow-kontrollen (39 + 4).
 2. Site: `npm run check:site` (opbygger `.venv-site` med Python 3.13.15, Playwright 1.60.0 og Chromium, kører SEO-, layout- og selftesten) og `npm run audit:site` (`pip-audit` på den hash-låste lockfil). Begge er T6 og kører med præcis samme kommando lokalt og i CI.
 3. Efter en ekstern batch-deploy: `.venv-site/bin/python tools/verify_live.py --no-report` plus indholdskontrol af den konkrete ændring. `--no-report` er obligatorisk, fordi live-scriptet ellers kan sende en outward BugBottle-rapport.
 
-Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 har lagt site-gaten i `.github/workflows/site-gate.yml`, som kun kører på site- og værktøjsændringer. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten.
+Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 har lagt site-gaten i `.github/workflows/site-gate.yml`, som kun kører på site- og værktøjsændringer. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten. `npm run snapshots:cli` regenererer `test/fixtures/expected.json` og må kun køres som en del af en bevidst ændring af engine-adfærd. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases.
 
 ## Deploy
 
 VERIFICÉR DEPLOY: `/support/` + Support-link i footeren på alle 19 sider + `lastmod` 2026-09-24 i sitemap, commit `0534cb8`, push 2026-09-25T16:35Z (18:35 CEST). Tidszonen for batchdeployeren er stadig ukendt, så to-vinduer-tællen kan ikke begynde, før Mads svarer.
+
+VERIFICÉR DEPLOY: `table`-output i `site/engine.js` viser nestede records som JSON i stedet for `[object Object]` (samme ændring som i `src/engine.js`), commit `414eb8b`, push 2026-09-25T18:07Z (20:07 CEST). Verificér ved at åbne https://transmute.run/ , indsætte to JSON-records med et array i felt `items`, bruge `group` og kontrollere, at cellen viser `[{"sku":…}]` og ikke `[object Object]`.
 
 Loopet må aldrig trigge deploy, webhook, Dokploy-API eller andre udadvendte writes. Den tidligere `.github/workflows/deploy-site.yml` deployed `site/**` ved push til `main` og blev fjernet i commit `28a06dd`. `tools/verify_workflows.mjs` er nu en del af `npm test` og afviser Cloudflare Pages eller kendte push-triggerede deploymekanismer. T5 rørte ingen sitefiler, så der forventes ingen ekstern batch-deploy og der er oprettet ingen `VERIFICÉR DEPLOY`-note.
 
@@ -259,9 +261,27 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ### 8. [ ] Gør den gratis CLI komplet, dokumenteret og ens sitets engine
 
-**Status:** TODO
+**Status:** I GANG — slice 1 merged i commit `414eb8b` (dokumentation, exit codes, CLI/site-conformance). Slice 2 står nedenfor.
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Efter desktopflytningen er CLI'en hele gratisproduktet i repoet. Den skal løse reelle opgaver fuldt ud, have tydelig fejlhåndtering og bruge samme transformationssemantik som det offentlige site.
+
+**Slice 1 — gjort i `414eb8b`:**
+
+- `docs/cli.md` er den nye reference: alle 14 operationer med fixture, kommando og eksakt output, coercion-regler for CSV/XML/YAML, exit codes, script- og batch-eksempler, samt en enkelt købsvej til Desktop Pro. Dokumentationen kan ikke lyve: `test/conformance.test.mjs` kræver, at hver kommando og hvert output-uddrag på siden findes i koden og i `test/fixtures/expected.json`.
+- `src/cli.js` har nu exit codes 0/1/2/3, `--out <fil>`, `--version`, præcis validering af `--format`/`--output`/`--pipe`, `add` og `join` i hjælpeteksten, tomt stdout ved fejl og exec-bit på filen. Før dette var alt exit 1, `--pipe '{'` crashede med en rå stacktrace, og `add`/`join` fandtes kun i README.
+- `test/cli.test.mjs` (45 tests) kører den rigtige CLI i en child process: alle 21 dokumenterede kommandoer, fire formater hver vej, stdin, `--out`, 50 rækker i én kørsel, alle exit codes og `stdout`/`stderr`-separation.
+- `test/conformance.test.mjs` (49 tests) indlæser `site/engine.js` i en `vm`-sandbox præcis som `site/try.html` gør, og kræver byte-identisk `text` og identiske data mellem CLI-engine og browser-engine for alle 21 fixtures, plus dækning af alle 14 operationer og alle 4 input- og 6 output-formater. Den håndhæver også, at engine-filen ikke indeholder `require(`, `fetch(`, `XMLHttpRequest` eller `process.`
+- Fund og rettelse: `serializers.table` skrev `[object Object]` for nestede records. Begge engine-kopier er rettet til at vise dem som kompakt JSON, så `group` og `join` er læsbare i CLI og på sitet.
+- `npm test` er nu fire suites: 38 + 45 + 49 + 39 og 4 workflows. `npm pack --dry-run` er uændret på 5 filer, fordi `files` kun indeholder `src/`, README og LICENSE.
+
+**Slice 2 — åben:**
+
+- `scripts/verify-readme.js` ligger i repoet uden at være wire ind i `npm test`; afklar om den er død kode eller skal genindlives, og fjern den ellers.
+- Tilføj en dedikeret reference til `docs/` i sitets `/cheatsheet/` og `/try/`, så brugere af browseren finder den fulde dokumentation (kræver en ny `VERIFICÉR DEPLOY`-note).
+- Overvej `--pretty`/compakt JSON-output og `--input-format`-auto-detektionsrapport, hvis en bruger beder om det; kun hvis det kan gøres uden at røre exit-code-kontrakten.
+
+**Verifikation slice 1:** `npm test` er grøn med 38 engine-, 45 CLI- og 49 conformance-tests samt 39 workflow-regressioner og 4 workflow-kontrakter. `npm pack --dry-run` er uændret på 5 filer. `npm run check:site` er grøn: `Python 3.13.15`, `playwright 1.60.0`, `chromium 148.0.7778.96`, `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px og fire grønne selvtesttrin inkl. de to fangede regressioner. CI-run `36166367170` (`CI`) og `36166367190` (`Site gate`) for `414eb8b` sluttede begge `success`, og ingen `deploy-site`-run findes.
+
 
 **Scope:**
 
@@ -388,6 +408,12 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Support-siden er på engelsk, fordi T7's scope kun navngavn `site/support/index.html`, og en tynk eller halvfærdig dansk side ville skade mere end den gavner. Den danske udgave er lagt som T12 med hreflang-krav.
 - Den røde site-gate i T7's første kørsel var en flake, ikke en reel regression. Layoutkontrollen fejler nu pr. side i stedet for at gå i stykker, og selftesten viser checkerens egen output ved fejl, så det samme kan ske igen uden at koste en hel iteration.
 - `site_chrome.py` er det eneste sted, der definerer fælles chrome. Support-linket i footeren, søgeindekset og sitemap'en er derfor ændret ét sted og regenereret af værktøjet, ikke ved håndredigering i 19 filer.
+- Exit-code-kontrakten for den gratis CLI er låst: 0 succes, 1 transformationsfejl, 2 usage-fejl, 3 inputfejl. Fejl går altid til stderr med `Error:`-præfiks, og stdout forbliver tomt ved fejl, så redirect aldrig efterlader en halvskrevet fil. Det gør CLI'en sikker i cron og CI, og det er den del af T8 Mads har mest brug for.
+- `site/engine.js` og `src/engine.js` er to kopier af den samme fil, og intet holdt dem sammen. `test/conformance.test.mjs` indlæser site-kopien i en `vm`-sandbox med samme `module.exports`-shim som `site/try.html` og kræver identisk output for alle fixtures. Det er bevidst en semantisk kontrol frem for en fil-identitetskontrol, så browseren kan få browser-specifik kode uden at miste pariteten.
+- `docs/cli.md` er skrevet som en reference, der selv er testet: hver kommando og hvert output-uddrag på siden skal findes i `test/fixtures/expected.json`, som regenereres med `npm run snapshots:cli`. En ny operation uden dokumentation eller en ændret engine-adfærd uden docs-opdatering gør derfor `npm test` rød.
+- `docs/` ligger uden for `files` i `package.json`, så referenceen ikke sendes i npm-tarballen; README linker til den på GitHub. Tarballen er derfor uændret på 5 filer trods den nye dokumentation.
+- Fund under T8 slice 1: `serializers.table` skrev `[object Object]` for nestede records, hvilket gjorde `group` og `join` ulæselige i CLI og på sitet. Rettelsen er lavet i begge engine-kopier og er en reel forbedring af den gratis vare; snapshots og docs er regenereret i samme commit.
+- Fund under T8 slice 1: `--help` nævnte ikke `add` eller `join`, selv om README gjorde det, og README nævnte hverken `--table` eller `sql`-output. CLI-help og README er nu ens, og conformance-testen kræver, at alle 14 operationer findes i begge.
 
 ## Navneforslag
 
@@ -413,3 +439,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 14:21 UTC: T5 merged til `main` i `28a06dd` og pushet til `main` samt `ceo/remove-auto-deploy`; CI-run `36146904851` sluttede `success`, og ingen ny `deploy-site`-run blev oprettet.
 - 2026-09-25 16:02 UTC: T6 gennemført på `ceo/site-gate-ci`. Hash-låst `tools/site-requirements.txt` (54 pakker, `playwright==1.60.0` + `pip-audit==2.9.0`), `tools/site_gate.sh`, `tools/site_gate_selftest.py`, `TRANSMUTE_SITE`-override i begge checkere, npm-scripts `check:site`, `audit:site` og `lock:site` samt `.github/workflows/site-gate.yml`. Lokalt grøn: 0 SEO-fund på 18 sider, 0 layout-afvigelser ved 360/768/1280, 4 grønne selvtesttrin, pip-audit uden fund, 38+39 tests og `npm pack --dry-run` grøn. Implementationscommit `d555f65`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/site-gate-ci`. CI-run `36158172199` (`CI`) sluttede `success`; `Site gate`-run `36158172198` sluttede `success` efter 1 min. 15 s med de fire grønne selvtesttrin i loggen. Ingen sitefil rørt, ingen deploy-note, ingen `deploy-site`-run. Næste opgave er T7 (`/support` og købsside).
 - 2026-09-25 ca. 11:20 lokal tid: T7 gennemført på `ceo/support-page`. `site/support/index.html` med køb via den officielle Payment Link, 32-tegns nøglen, tre maskiner, fejlfinding, nøglersikkerhed, kontakt og en kort donationstekst; Support-link i footeren på alle 19 sider via `site_chrome.py`; `llms.txt` opdateret; sitemap og søgeindeks regenereret (102 → 103 entries). En rød site-gate undervejs blev isoleret som flake og lukket: `layout_check.py` fejler nu pr. side med 20 s `goto`-timeout i stedet for at gå i stykker, og `site_gate_selftest.py` hæfter checkerens output på en fejl. Lokalt grøn: `npm test` (38 + 39), `npm pack --dry-run` (5 filer), `npm run audit:site` uden fund, `npm run check:site` med 0 SEO-fund på 19 sider, 0 layout-afvigelser ved 360/768/1280 px og fire grønne selvtesttrin; tre grønne site-gate-kørsler efter flake-fixen. Implementationscommit `0534cb8`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/support-page`. T8 er næste opgave; T12 (dansk support-side) er lagt til med hreflang-krav.
+- 2026-09-25 18:20 UTC: T8 slice 1 gennemført på `ceo/cli-conformance`. `docs/cli.md` med alle 14 operationer, coercion-regler, exit codes og script-eksempler; exit codes 0/1/2/3, `--out`, `--version`, præcis flag- og pipelinevalidering, tomt stdout ved fejl, exec-bit og `add`/`join` i CLI-help; `test/cli.test.mjs` (45 reelle CLI-kørsler) og `test/conformance.test.mjs` (49 CLI-vs-site- og dokumentationskontroller) wiret ind i `npm test` sammen med fire fixtures, 21 cases, `test/fixtures/expected.json` og `npm run snapshots:cli`. Fund: `serializers.table` skrev `[object Object]` for nestede records — rettet i begge engine-kopier, så `group`/`join` er læsbare i CLI og på sitet. Lokalt grøn: `npm test` 38+45+49+39+4, `npm pack --dry-run` 5 filer, `npm run check:site` 0 SEO-fund på 19 sider, 0 layout-afvigelser og fire grønne selvtesttrin. Implementationscommit `414eb8b`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/cli-conformance`. CI-run `36166367170` (`CI`) og `36166367190` (`Site gate`) sluttede begge `success`; ingen `deploy-site`-run. Ny `VERIFICÉR DEPLOY`-note for `site/engine.js`-ændringen. T8 slice 2 (død `scripts/verify-readme.js`, docs-link i sitets `/cheatsheet/` og `/try/`) står åben; T9 er næste fulde opgave.
