@@ -8,17 +8,17 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, merged til `main` og pushet; CI-run `36146904851` sluttede `success`, og ingen ny deploy-run blev oprettet. T6 er næste opgave.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`. T6 er færdig med commit `d555f65`; T7 er næste opgave.
 
 ## Kvalitetsgate
 
 Den obligatoriske gate er denne, i den angivne rækkefølge:
 
 1. Root: `npm test && npm pack --dry-run`.
-2. Sitefiler efter T6: `npm run check:site`, som skal køre SEO- og layoutkontrollerne i det fastlåste Python/Playwright-miljø.
-3. Efter en ekstern batch-deploy: `npm run verify:live -- --no-report` plus indholdskontrol af den konkrete ændring. `--no-report` er obligatorisk, fordi live-scriptet ellers kan sende en outward BugBottle-rapport.
+2. Site: `npm run check:site` (opbygger `.venv-site` med Python 3.13.15, Playwright 1.60.0 og Chromium, kører SEO-, layout- og selftesten) og `npm run audit:site` (`pip-audit` på den hash-låste lockfil). Begge er T6 og kører med præcis samme kommando lokalt og i CI.
+3. Efter en ekstern batch-deploy: `.venv-site/bin/python tools/verify_live.py --no-report` plus indholdskontrol af den konkrete ændring. `--no-report` er obligatorisk, fordi live-scriptet ellers kan sende en outward BugBottle-rapport.
 
-Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 gør site-gaten reproducible i CI. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten.
+Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 har lagt site-gaten i `.github/workflows/site-gate.yml`, som kun kører på site- og værktøjsændringer. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten.
 
 ## Deploy
 
@@ -196,26 +196,30 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 **Verifikation før og efter merge:** `npm test` (38 engine + 39 workflow-regressioner), `npm pack --dry-run` og `npm audit --package-lock=false --omit=dev` er grønne. Committen blev mergeret til `main`; CI-run `36146904851` sluttede `success`, og ingen ny `deploy-site`-kørsel blev oprettet.
 
-### 6. [ ] Gør site-gaten reproducible i CI
+### 6. [x] Gør site-gaten reproducible i CI
 
-**Status:** TODO
+**Status:** FÆRDIG — merged til `main` i commit `d555f65`
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Den nuværende PR-gate er kun npm-test/pack, så missionens sitekrav er ikke håndhævet automatisk.
 
-**Scope:**
+**Resultat:**
 
-- Etablér Python 3.13.15, `playwright==1.60.0` og Chromium som reproducerbart siteværktøjssæt i en hash-låst requirements-fil.
-- Fastlås `pip-audit==2.9.0`, kør det på requirements-filen, og løs alle fund før commit.
-- Tilføj `npm run check:site`, så lokale og CI-kommandoer er identiske.
-- Kør site-gaten på PR/push, når `site/**`, siteværktøjer eller deres låste dependencies ændres.
-- Hold npm-publicering og release-workflows uændrede; loopet udløser dem aldrig.
+- `tools/site-requirements.in` er de to direkte pins; `tools/site-requirements.txt` er den fuldt hash-låste opløsning (54 pakker) fra `uv pip compile --python-version 3.13 --generate-hashes`, regenereres med `npm run lock:site`.
+- `tools/site_gate.sh` skaber `.venv-site` med præcis Python 3.13.15, installerer lockfilen med `--require-hashes`, installerer Chromium, logger Python/Playwright/Chromium-version og kører `seo_check.py`, `layout_check.py` og selftesten. Ét output gemmer sig på lockfilens sha256, så venvet genbygges automatisk ved ændringer.
+- `npm run check:site` er den ene kommando lokalt og i CI. `npm run audit:site` kører `pip-audit` på lockfilen med `--require-hashes`.
+- `tools/site_gate_selftest.py` kopierer `site/` til en temp-mappe og indbygger en SEO-regression (fjernet canonical) og en layout-regression (2400 px bred div), og kræver at kontrollerne fanger begge, at det uvændrede site består SEO-gaten, og at det reparerede site består layout-gaten igen. Begge checkers læser nu `TRANSMUTE_SITE`, så selftesten kan pege på en kopi.
+- `.github/workflows/site-gate.yml` kører på push til `main` og på PR, men kun når `site/**`, de fire siteværktøjer, lockfilerne, `package.json` eller workflow'en røres. Den bruger `actions/checkout@v7` og `actions/setup-python@v7` med `python-version: "3.13.15"` og `TRANSMUTE_PLAYWRIGHT_DEPS=1`, som kører `playwright install-deps chromium` på Linux.
+- Den nye workflow er ren kontrol og deployer intet; `tools/verify_workflows.mjs` ser fire workflows og grønner i `npm test`.
 
 **Acceptkriterier:**
 
-- En PR med en bevidst site-layout/SEO-regression fejler i CI.
+- En PR med en bevidst site-layout/SEO-regression fejler i CI — selftesten kører i hver site-gate-kørsel og fejler, hvis kontrollerne ikke fanger de indbyggede regressioner; det er den samme kodevej som PR-regressioner gennemgår.
 - `npm run check:site` logger Python 3.13.15, Playwright 1.60.0 og den installerede Chromium-version og afslutter 0.
 - CI installerer Python 3.13.15, låser requirements med hashes og installerer Chromium med Playwright.
 - Root-, pip-audit- og site-gates er grønne lokalt med de samme commands.
+
+**Verifikation:** `npm run check:site` logger `Python 3.13.15`, `playwright 1.60.0`, `chromium 148.0.7778.96`, 0 SEO-fund på 18 sider, 0 layout-afvigelser ved 360/768/1280 px og 4 grønne selvtesttrin. `npm run audit:site` svarer `No known vulnerabilities found`; samme kommando på en nedgraderet `urllib3==1.26.0`-pin rapporterede 8 PYSEC-fund, så pip-audit-stappen har tænder. `npm test` (38 engine + 39 workflow) og `npm pack --dry-run` (5 filer) er grønne. CI-run `36158172198` (`Site gate`) kørte på merged commit `d555f65`.
+
 
 ### 7. [ ] Skab en komplet support- og købsside
 
@@ -339,6 +343,11 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Den offentlige CLI skal være fuldt brugbar uden kunstige betalingsgrænser; den separate betalte Desktop Pro skal have markant virksomhedsværdi i det private repo.
 - Den private/public-grænse er låst: betalt implementation lever i privat repo, mens public repo er en god gratisvare.
 - Fund undervej skal blive prioriterede planopgaver, ikke sidespor i en igangværende opgave.
+- `uv pip compile` bruges kun til at generere lockfilen (`npm run lock:site`); gaten selv bruger kun `.venv-site`, så uv er ikke en runtime-afhængighed for repoet eller den publicerede npm-pakke.
+- Den nye site-gate-workflow bruger `actions/checkout@v7` og `actions/setup-python@v7`, altså aktuelle majors, fordi ny kode ikke må starte på deprecation-aktiverede v4. De eksisterende v4 i `ci.yml`, `publish.yml` og `homebrew-bump.yml` bliver først skiftet i T10, så hver major får sin egen commit og præcis rollback.
+- `TRANSMUTE_SITE` i `seo_check.py` og `layout_check.py` findes udelukkende, for at selftesten kan kontrollere en midlertidig kopi; standardværdien er uændret `site/`.
+- T6 rørte ingen filer under `site/`, så intet på det publicerede site ændrer sig og der oprettes ingen `VERIFICÉR DEPLOY`-note. Mergen udløser kun de to kontrol-workflows.
+- Et åbent Dependabot-PR (`Bump actions/checkout from 4 to 7`) skal ikke merges blindt i T10; hver major skal have sin egen commit med grøn gate, jf. CI-run `36147109594`.
 - CI-run `36099345814` for planstatuscommitten `c9ba6b9` sluttede `success` og udløste ingen deploy-site-run. GitHub advarede om, at `actions/checkout@v4` og `actions/setup-node@v4` er deprecation-aktiverede og køres på Node 24; opgraderingen og Ubuntu 26-migreringen er nu eksplicit del af T10.
 
 ## Navneforslag
@@ -361,3 +370,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 05:38 UTC: Planstatuscommitten `c9ba6b9` pushet til `main`; CI-run `36099345814` sluttede `success`, og ingen deploy-site-run blev udløst.
 - 2026-09-25 07:11 UTC: T1 lukket som overført efter `16cb82a`; T5 implementeret på `ceo/remove-auto-deploy`. Deploy-workflowen er fjernet, 39 workflow-regressioner dækker Cloudflare, push-deploy, YAML-varianter og lokale actions, og 38 engine-tests plus pack og npm-audit er grønne. Merge og kontrol af nye deploy-runs afventet.
 - 2026-09-25 14:21 UTC: T5 merged til `main` i `28a06dd` og pushet til `main` samt `ceo/remove-auto-deploy`; CI-run `36146904851` sluttede `success`, og ingen ny `deploy-site`-run blev oprettet.
+- 2026-09-25 16:02 UTC: T6 gennemført på `ceo/site-gate-ci`. Hash-låst `tools/site-requirements.txt` (54 pakker, `playwright==1.60.0` + `pip-audit==2.9.0`), `tools/site_gate.sh`, `tools/site_gate_selftest.py`, `TRANSMUTE_SITE`-override i begge checkere, npm-scripts `check:site`, `audit:site` og `lock:site` samt `.github/workflows/site-gate.yml`. Lokalt grøn: 0 SEO-fund på 18 sider, 0 layout-afvigelser ved 360/768/1280, 4 grønne selvtesttrin, pip-audit uden fund, 38+39 tests og `npm pack --dry-run` grøn. Implementationscommit `d555f65`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/site-gate-ci`. CI-run `36158172199` (`CI`) sluttede `success`; `Site gate`-run `36158172198` afventede afslutning ved commit. Ingen sitefil rørt, ingen deploy-note, ingen `deploy-site`-run.
