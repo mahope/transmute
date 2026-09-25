@@ -4,28 +4,29 @@ Opdateret: 2026-09-25
 
 ## Mission
 
-Transmute er et gratis, lokalt og open source værktøj til at transformere JSON, CSV, YAML og XML via CLI, browser og desktop. Den betalte desktopudgave skal være markant bedre for teams, bureauer og virksomheder — især batch/automatisering, genbrugelige workflows, flere maskiner og prioriteret support. Hele udviklingen skal ske på `ceo/*`-branch og merges til `main`.
+Dette offentlige repo leverer den gratis, lokale og open source CLI til at transformere JSON, CSV, YAML og XML samt det offentlige site. Den betalte desktopudgave, licenslogikken og al Pro-implementation ligger i det private `mahope/transmute-desktop` og udvikles i loopet `transmute-desktop`. Her er målet at gøre CLI'en fuldt brugbar og gøre vejen til Desktop Pro tydelig. Hele udviklingen skal ske på `ceo/*`-branch og merges til `main`.
 
 ## Iterationsstatus
 
-T1 er `I GANG` efter ét mislykket forsøg. Den strenge RustSec-gate er fortsat rød på syv upstream-fund, så ingen senere TODO må starte, før T1 er `FÆRDIG` eller `BLOCKED`. CI- og Dependabot-ændringerne er isoleret på `ceo/rustsec-baseline` og er ikke merged.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafslutdede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er implementeret på `ceo/remove-auto-deploy` med grøn root-gate og afventer merge samt kontrol af workflow-kørsel. T6 er næste opgave.
 
 ## Kvalitetsgate
 
 Den obligatoriske gate er denne, i den angivne rækkefølge:
 
 1. Root: `npm test && npm pack --dry-run`.
-2. Rust-kode eller Rust-afhængigheder: derefter `cargo check && cargo test` i `desktop/src-tauri`.
-3. Sitefiler efter T6: `npm run check:site`, som skal køre SEO- og layoutkontrollerne i den fastlåste Python/Playwright-miljø.
-4. Efter en ekstern batch-deploy: `npm run verify:live -- --no-report` plus indholdskontrol af den konkrete ændring. `--no-report` er obligatorisk, fordi live-scriptet ellers kan sende en outward BugBottle-rapport.
+2. Sitefiler efter T6: `npm run check:site`, som skal køre SEO- og layoutkontrollerne i det fastlåste Python/Playwright-miljø.
+3. Efter en ekstern batch-deploy: `npm run verify:live -- --no-report` plus indholdskontrol af den konkrete ændring. `--no-report` er obligatorisk, fordi live-scriptet ellers kan sende en outward BugBottle-rapport.
 
-Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 gør Rust- og site-gatene reproducible i CI. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten.
+Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 gør site-gaten reproducible i CI. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten.
 
 ## Deploy
 
-Loopet må aldrig trigge deploy, webhook, Dokploy-API eller andre udadvendte writes. Kontrakten siger, at kun den eksterne batch-deployer må deploye, men repoet afviger: `.github/workflows/deploy-site.yml:6-12` deployer `site/**` ved push til `main`. Derfor må ingen `site/**`-ændring merges, før T5 har fjernet denne workflow. Denne research-iteration ændrer ikke sitefiler eller deploy-workflows og udløser ingen deploy.
+Loopet må aldrig trigge deploy, webhook, Dokploy-API eller andre udadvendte writes. Den tidligere `.github/workflows/deploy-site.yml` deployed `site/**` ved push til `main` og blev fjernet på `ceo/remove-auto-deploy`. `tools/verify_workflows.mjs` er nu en del af `npm test` og afviser Cloudflare Pages eller kendte push-triggerede deploymekanismer. T5 rører ingen sitefiler, så der forventes ingen ekstern batch-deploy og der oprettes ingen `VERIFICÉR DEPLOY`-note.
 
-Efter merge af en live-siteændring skal planen få `VERIFICÉR DEPLOY: <ændring> <commit-sha> <tidspunkt med UTC-offset>`. Den eksterne batchdeploy forventes ca. kl. 07:30, 12:30 og 17:30. Kildekontrakten angiver ikke tidszone, så to-vinduer-tællen må først begynde, når den faktiske offset er observeret og skrevet i noten. HTTP 200 er ikke tilstrækkelig; indholdet skal sammenlignes. Efter to dokumenterede deploy-vinduer uden den forventede live-ændring skrives `DEPLOY-MISSING: <detaljer>`, og yderligere merges til `main` stoppes. En uventet deploy fra repo-workflows skrives `DEPLOY-OOPS: <workflow og tidspunkt>` og stopper også merges. Aktuelle deploy-notes: ingen.
+Før T5-merge var seneste `deploy-site`-kørsel run `36062253130` med commit `3d90812ee423d61da7dc9096f5f9985da6e90a75`, oprettet `2026-09-24T21:33:38Z`. Efter merge skal der verificeres, at ingen ny deploy-run er oprettet; hvis det sker, skrives `DEPLOY-OOPS: <workflow og tidspunkt>` og alle merges stoppes.
+
+Efter merge af en fremtidig live-siteændring skal planen få `VERIFICÉR DEPLOY: <ændring> <commit-sha> <tidspunkt med UTC-offset>`. Den eksterne batchdeploy forventes ca. kl. 07:30, 12:30 og 17:30. Kildekontrakten angiver ikke tidszone, så to-vinduer-tællen må først begynde, når den faktiske offset er observeret og skrevet i noten. HTTP 200 er ikke tilstrækkelig; indholdet skal sammenlignes. Efter to dokumenterede deploy-vinduer uden den forventede live-ændring skrives `DEPLOY-MISSING: <detaljer>`, og yderligere merges til `main` stoppes. Aktuelle deploy-notes: ingen.
 
 ## Researchmetode og baseline
 
@@ -43,7 +44,13 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Lokalt: Node 22.23.2, npm 10.9.8, Rust 1.97.1, system-Python 3.9.6 med Playwright 1.60.0 og Python 3.13.15 uden Playwright.
 - `~/.local/oxloop/AFHAENGIGHEDER.md` er fra 2026-08-23 og indeholder ikke Transmute; den er derfor ikke en aktuel kilde til repoets afhængigheder.
 
-## Researchfund
+## Nuværende repoopdeling
+
+- Commit `16cb82a` fjernede `desktop/`, Tauri-buildworkflowen og desktop-testen fra det offentlige repo. Der findes ingen `Cargo.toml`, `Cargo.lock` eller `tauri.conf.json` på `main` efter committen.
+- T1, T3, T4 og den gamle del af T8 er derfor ikke længere opgaver i dette repo. T3 og T4 overføres som uændrede krav til `transmute-desktop`; T1's isolerede CI/Dependabot-ændringer på `ceo/rustsec-baseline` er historiske og skal ikke merges.
+- Den offentlige frie vare er CLI'en og sitet. Betalt implementation, desktopens købsflow, licenscache og Pro-funktioner skal udelukkende udvikles i det private Pro-repo.
+
+## Researchfund før desktopflytningen (historisk)
 
 - Desktop'en bruger Tauri 2.11.5 og har to købslinks, men ingen opener/shell-plugin. Runtime-klikket sætter Payment Link på begge anchors og falder derfor tilbage til navigation i appens egen WebView (`desktop/frontend/index.html:96-99`, `desktop/frontend/index.html:141-145`, `desktop/frontend/app.js:496-500`). Builderen registrerer ingen extern-link-plugin (`desktop/src-tauri/src/lib.rs:253-271`).
 - Desktop-frontenden forventer `window.__TAURI__`, men `withGlobalTauri` mangler i `desktop/src-tauri/tauri.conf.json:12-28`. Det betyder sandsynligvis, at både backend-kald og licenskontrol er deaktiverede i den pakkede app. Runtime-observation kræver en pakked app, men konfigurationsforskellet og fallback-koden er dokumenteret (`desktop/frontend/app.js:431-472`).
@@ -60,34 +67,25 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ## Prioriteret opgavekø
 
-### 1. [ ] Etablér grøn RustSec-baseline før nye Rust-afhængigheder
+### 1. [x] Afslut den gamle RustSec-baseline efter desktopflytningen
 
-**Status:** I GANG
-**Mislykkede forsøg:** 1/2
-**Sikkerhedsstop:** Produktfasen giver T2 en enkelt undtagelse som første prioritet; T1’s resterende Dependabot/CI-arbejde skal færdiggøres, før T3 eller senere opgaver starter. Efter to mislykkede iterationer markeres T1 `BLOCKED: <RustSec-ID'er og årsag>`, hvorefter næste TODO i køen kan fortsætte.
-**Begrundelse:** Sikkerhedshuller skal ordnes før andet. Den nye opener-plugin må ikke føjes til en ubedømt afhængighedsgraf.
+**Status:** FÆRDIG — ikke længere relevant i det offentlige repo
+**Mislykkede forsøg:** 1/2 historiske forsøg før repoopdelingen
+**Begrundelse:** Sikkerhed skal håndhæves, men en audit af kode, der ikke længere er en del af repoet, ville give en misvisende status.
 
-**Forsøg 1 (2026-09-25):** `cargo-audit 0.22.2` er installeret lokalt. Nul vulnerabilities og nul yanked, men `cargo audit --deny warnings` fejler korrekt på syv upstream-fund: seks unmaintained-crates gennem Tauri Utils’ `urlpattern 0.3.0` samt `glib 0.18.5` med RUSTSEC-2024-0429 gennem Tauri 2’s Linux/GTK3-kæde. Nyeste stabile Tauri 2.11.6 blev testet i en isoleret lockfile og fjerner ingen af dem. Tauri Utils 2.9.3 kræver `urlpattern ^0.3`, mens 0.6.0 ikke kan bruges som patch, og GTK3/glib har ingen patch i 0.18. Der bruges derfor ingen baseline, ignore-liste, versionsspoofing eller lokal fork. CI- og Dependabot-ændringerne ligger på `ceo/rustsec-baseline` (`7e34c0f`), men merges ikke, fordi den strenge gate er rød. Næste iteration skal genkontrollere upstream; hvis fundene er uændrede, markeres T1 `BLOCKED` med RustSec-ID'erne, og resten af køen kan fortsætte.
+**Resultat:**
 
-**Scope:**
-
-- Installér lokalt `cargo-audit` 0.22.2 med locked dependencies og kør `cargo audit` i `desktop/src-tauri` mod den nuværende `Cargo.lock`.
-- Føj Cargo til Dependabot og fastlås `cargo-audit` 0.22.2 i PR-auditen.
-- Ret alle fund som del af T1, én major-version pr. commit. Efter to mislykkede iterationsforsøg på samme advisory bliver T1 `BLOCKED: <advisory og årsag>`.
-
-**Acceptkriterier:**
-
-- Den kørende `cargo audit` har exit 0 og nul fund; der bruges ingen baseline, ignore-liste, unexposed-undtagelse eller “åben task”-undtagelse.
-- PR-workflowet installerer `cargo-audit` 0.22.2 med `--locked` og kører audit på den checked-in lockfil.
-- Dependabot dækker `desktop/src-tauri/Cargo.toml` uden at gruppere urelaterede majors.
-- `npm test && npm pack --dry-run`, `cargo check` og `cargo test` er grønne efter alle rettelser.
-- Hvert advisory-fix er en selvstændig commit med højst én major-version.
+- `16cb82a` fjernede hele Cargo/Tauri-afhængighedsgrafen fra det offentlige repo.
+- Den isolerede `ceo/rustsec-baseline` (`7e34c0f`) er ikke slået sammen med `main` og skal arkiveres uden merge.
+- Cargo-, Dependabot- og RustSec-krav er overført til det private `transmute-desktop`, hvor de skal håndhæves mod den aktuelle afhængighedsgraf.
 
 ### 2. [x] Reparer desktop-købsflow og åbn Stripe i systembrowseren
 
-**Status:** FÆRDIG
+**Status:** FÆRDIG før flytning; implementationen følger privat repo
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Et køb, der navigerer væk fra appen eller en deaktiveret licensbro, rammer købsflowet direkte. Dette er den første funktionelle opgave efter sikkerhedsbasen.
+
+**Efter flytningen:** Committene `4d1a828`, `2c3b6c2` og `6e89d13` ligger i historikken. Den videre forbedring og GUI-verifikation af den betalte app er offentlig-private og skal fortsætte i `mahope/transmute-desktop`.
 
 **Scope:**
 
@@ -108,10 +106,11 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 **Verifikation:** `npm test` (38+4), `npm pack --dry-run`, `cargo check`, `cargo test`, `cargo tauri build --debug --bundles app`, `npm audit` og `cargo audit` er grønne. GUI-smoke kunne ikke udføres, fordi `orca` ikke er installeret; dette er eksplicit noteret som en manuel release-kontrol.
 
-### 3. [ ] Gør licensstatus tidsbegrænset og robust mod licensserverfejl
+### 3. [x] Overfør robusl licensstatus til det private Pro-repo
 
-**Status:** TODO
+**Status:** MIGRERET TIL `mahope/transmute-desktop` — ikke implementeret her
 **Mislykkede forsøg:** 0/2
+**Ejerskab:** Det private repo overtager hele transitionstabellen, cache-reglen og acceptkriterierne uændret.
 **Begrundelse:** En licens, der enten låser en kunde ude eller giver evig Pro-adgang, er et direkte købsflow-problem. Denne opgave står derfor før produktspecet.
 
 **Gemt state:**
@@ -149,10 +148,11 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - En ny aktivering får aldrig Pro-status før et vellykket serversvar; en fejlet ny aktivering ødelægger ikke en eksisterende gyldig licens.
 - `npm test && npm pack --dry-run`, `cargo check` og `cargo test` er grønne; ingen test kalder produktionslicensserveren.
 
-### 4. [ ] Skriv spec for en reelt værdifuld betalt desktopudgave
+### 4. [x] Overfør Pro-specen til det private Pro-repo
 
-**Status:** TODO
+**Status:** MIGRERET TIL `mahope/transmute-desktop` — specen skal skrives dér
 **Mislykkede forsøg:** 0/2
+**Ejerskab:** Strategien og fri/Pro-kravfraaget er uændrede; intet betalt navn, kodelekanse eller produktkontrakt ændres i det offentlige repo.
 **Begrundelse:** Pro er i dag kun fjernelse af en tre-kørers grænse. Strategien kræver en markant bedre betalt oplevelse, og større funktioner må ikke bygges før den er specificeret.
 
 **Scope:**
@@ -176,7 +176,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ### 5. [ ] Fjern den uoverensstemmende automatiske site-deploy
 
-**Status:** TODO
+**Status:** IMPLEMENTERET — afventer merge og workflow-verifikation
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Nuværende push-workflow kan deploye mod kontrakten og gør det usikkert at merge de efterfølgende siteopgaver.
 
@@ -184,7 +184,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 - Fjern `.github/workflows/deploy-site.yml`, så den eksterne batch-deployer er eneste udgivelsesvej.
 - Tilføj `tools/verify_workflows.mjs`, wire den ind i `npm test`, og lad den fejle hvis en workflow indeholder Cloudflare Pages-deployment eller en push-trigger til en udadvendende deploy.
-- Lad CI fortsat validere kode og site, men udfør ingen Cloudflare-, npm-, GitHub-release- eller anden outward action fra agenten.
+- Lad CI fortsat validere kode; den reproducible site-gate bliver T6, og agenten udfører ingen Cloudflare-, npm-, GitHub-release- eller anden outward action.
 - Fjern eller deaktivér ingen workflow ved at skubbe et uvedkommende tag.
 
 **Acceptkriterier:**
@@ -194,27 +194,28 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Merge af sletningen logger ingen deploy-kørsel; hvis det alligevel sker, skrives `DEPLOY-OOPS: <workflow og tidspunkt>` og alle merges stoppes.
 - Ingen udadvendende action køres fra agenten.
 
-### 6. [ ] Gør Rust- og site-gatene reproducible i CI
+**Verifikation før merge:** `npm test` (38 engine + 39 workflow-regressioner), `npm pack --dry-run` og `npm audit --package-lock=false --omit=dev` er grønne. Den faktiske merge- og workflow-kontrol afsluttes i næste planstatuscommit.
+
+### 6. [ ] Gør site-gaten reproducible i CI
 
 **Status:** TODO
 **Mislykkede forsøg:** 0/2
-**Begrundelse:** Den nuværende PR-gate er kun npm-test/pack, så missionens Rust- og sitekrav er ikke håndhævet automatisk.
+**Begrundelse:** Den nuværende PR-gate er kun npm-test/pack, så missionens sitekrav er ikke håndhævet automatisk.
 
 **Scope:**
 
 - Etablér Python 3.13.15, `playwright==1.60.0` og Chromium som reproducerbart siteværktøjssæt i en hash-låst requirements-fil.
 - Fastlås `pip-audit==2.9.0`, kør det på requirements-filen, og løs alle fund før commit.
 - Tilføj `npm run check:site`, så lokale og CI-kommandoer er identiske.
-- Kør Rust-gaten på PR/push, når `desktop/**` eller Rust-afhængigheder ændres.
 - Kør site-gaten på PR/push, når `site/**`, siteværktøjer eller deres låste dependencies ændres.
-- Hold Tauri-appbuild til T2 og den eksisterende manualt udløste release-workflow; loopet udløser den aldrig.
+- Hold npm-publicering og release-workflows uændrede; loopet udløser dem aldrig.
 
 **Acceptkriterier:**
 
-- En PR med en bevidst Rust-regression fejler i CI; en PR med en bevidst site-layout/SEO-regression fejler i CI.
+- En PR med en bevidst site-layout/SEO-regression fejler i CI.
 - `npm run check:site` logger Python 3.13.15, Playwright 1.60.0 og den installerede Chromium-version og afslutter 0.
 - CI installerer Python 3.13.15, låser requirements med hashes og installerer Chromium med Playwright.
-- Root-, Rust-, pip-audit- og site-gates er grønne lokalt med de samme commands.
+- Root-, pip-audit- og site-gates er grønne lokalt med de samme commands.
 
 ### 7. [ ] Skab en komplet support- og købsside
 
@@ -238,48 +239,45 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - `npm run check:site` er grøn ved 360, 768 og 1280 px.
 - Donationen er tilgængelig, men kun i support/efter et lykket resultat.
 
-### 8. [ ] Gør den gratis desktop fuldt brugbar og ens alle klienter
+### 8. [ ] Gør den gratis CLI komplet, dokumenteret og ens sitets engine
 
 **Status:** TODO
 **Mislykkede forsøg:** 0/2
-**Begrundelse:** Gratisudgaven må være et godt værktøj, ikke en demo. Den nuværende paste-grænse og drift mellem CLI, browser og desktop svækker tillid og konvertering.
+**Begrundelse:** Efter desktopflytningen er CLI'en hele gratisproduktet i repoet. Den skal løse reelle opgaver fuldt ud, have tydelig fejlhåndtering og bruge samme transformationssemantik som det offentlige site.
 
 **Scope:**
 
-- Følg fri/Pro-matrixen fra T4.
-- Ret manglende `add`/`join` og ensret `group`-semantik.
-- Tilføj basal filåbning, filgemning/download og copy af output uden serverupload.
-- Definer én canonical engine eller en maskinlæsbar conformance-kontrakt for alle klienter.
+- Dokumentér alle understøttede operationer med konkrete fixtures og CLI-eksempler.
+- Ret eventuelle dokumenterede afvigelser mellem CLI-engine og site-browser, så samme input og pipeline giver samme output.
+- Tilføj file input/output, stdin/stdout-fejlhåndtering og maskinlæsbare eksitcodes uden netværksafhængighed.
+- Hold al databehandling lokal og tilføj en tydelig, enkelt købsvej til den private Desktop Pro uden at hæmme gratisworkflowet.
 
 **Acceptkriterier:**
 
-- Identiske fixtures for alle 14 dokumenterede operationer giver identisk output i CLI, browser og desktop.
-- En bruger kan åbne én lokal fil, transformere den i mindst tre steps, kopiere resultatet og gemme det uden konto eller internet.
-- Den frie desktop har ingen arbitrær run-grænse; et lokalt 50-run fixture gennemføres uden køb.
-- Nye frontend- og conformance-tests er wire ind i `npm test`; hele roottesten og pack-gaten er grønne.
+- Identiske fixtures for alle dokumenterede operationer giver identisk output i CLI'en og site-browseren.
+- En bruger kan transformere mindst tre filformater lokalt med fejlcodes, stderr og maskinlæsbart output uden konto eller internet.
+- En 50-run fixture gennemføres uden køb, kunstige run-grænser eller upload.
+- Nye conformance- og CLI-tests er wire ind i `npm test`; roottesten og pack-gaten er grønne.
 
 ### 9. [ ] Gør produkt-, platform- og versionsclaims sande
 
 **Status:** TODO
 **Mislykkede forsøg:** 0/2
-**Begrundelse:** Modstridende claims om Linux, fildåbning og fælles engine skader brugertillid og gør builds uforudsigelige.
+**Begrundelse:** Efter flytningen peger README stadig på den slettede buildworkflow og beskriver desktopens køfsmekanik som om kildekoden lå i repoet. Modstridende claims skader brugertillid og gør builds uforudsigelige.
 
 **Scope:**
 
-- Beslut om Linux skal understøttes reelt eller fjernes fra alle claims.
-- Opret `tools/product-contract.json` som maskinlæselig single source med `product_key: transmute-desktop`, `amount: 19`, `currency: USD`, `billing: one_time`, `machines: 3` og den officielle Payment Link; filen må ikke indeholde secrets.
-- Ret README/site/llms/privacy, så de kun beskriver eksisterende funktioner og korrekt licenspayload.
-- Synkronisér npm-, Cargo-, Tauri- og siteversion, inklusive siteens `softwareVersion`, gennem én kilde eller en CI-kontrol.
-- Tilføj dokumentation af SQL-output og tablenavn, som README mangler.
+- Ret README, site, llms og privacy, så de kun beskriver den offentlige CLI, det faktiske site og den separate private Desktop Pro.
+- Opret `tools/product-contract.json` som maskinlæsbar single source med `product_key: transmute-desktop`, `amount: 19`, `currency: USD`, `billing: one_time`, `machines: 3` og den officielle Payment Link; filen må ikke indeholde secrets.
+- Synkronisér npm- og siteversion gennem én kilde eller en CI-kontrol.
+- Fjern alle claims om kildekode, builds eller licenspayload i dette repo, medmindre de beskriver den separate betalte app på et verificerbart niveau.
 
 **Acceptkriterier:**
 
-- En ny `tools/verify_contract.mjs`-kontrol er wire ind i `npm test`, læser `tools/product-contract.json` og fejler ved afvigende pris, currency, billing, maskinantal, Payment Link, produktnøgle, platform, licenspayload eller versioner.
-- Kontrollen læser npm-, Cargo-, Tauri- og siteversion, inklusive siteens `softwareVersion`, og kræver ens værdier.
-- Hvert reklameret downloadformat findes i den verificerede byggematrix; hvis Linux ikke får et grønt build, fjernes alle Linux-claims samlet.
-- README, site, desktop og privacy matcher den faktiske kode og licens-API.
-- Versionskontrollen fejler, når versionerne ikke er ens før et build.
-- `npm test && npm pack --dry-run`, site-gaten og — hvis Tauri-konfigurationen røres — Rust-gaten er grønne. Der laves ingen tags, releases eller npm-publish.
+- En ny `tools/verify_contract.mjs`-kontrol er wire ind i `npm test`, læser `tools/product-contract.json` og fejler ved afvigende pris, currency, billing, maskinantal, Payment Link eller produktnøgle.
+- README og site bruger kun den officielle Payment Link, ingen private kodelinks og ingen ukendte CI-workflows.
+- Versionskontrollen læser npm- og siteversion og kræver ens værdier.
+- `npm test && npm pack --dry-run` og site-gaten er grønne. Der laves ingen tags, releases eller npm-publish.
 
 ### 10. [ ] Opdatér runtime og afhængigheder kontrolleret
 
@@ -289,11 +287,11 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 **Scope:**
 
-- Efter T1: tag kompatible patch/minor-opgraderinger samlet.
+- Efter T1: tag kompatible patch/minor-opgraderinger samlet i det offentlige CLI-repo.
 - Research den aktuelle stabile/LTS-version og registrér præcise from/to-versioner i planen, før kode ændres.
 - Tag hver major-version i sin egen commit og læs migrationsnoter først.
 - Opret `package-lock.json`, skift CI/publish-kontrol til `npm ci`, og verificér, at den checked-in lock ikke tilføjer unødige runtime-afhængigheder.
-- Fastlæg den understøttede Node-, npm- og Rust-version i `engines`, `.nvmrc`/package-manager-pin og Rust-toolchainfil i samme commit som et framework, der kræver den.
+- Fastlæg den understøttede Node- og npm-version i `engines` og `.nvmrc` i samme commit som et framework, der kræver den.
 - Opdatér GitHub Actions pin-for-pin og undgå samtidige major-opgraderinger i samme commit.
 - Erstat deprecation-aktiverede `actions/checkout@v4` og `actions/setup-node@v4` én major ad gangen; verificér `ubuntu-latest`-migreringen til Ubuntu 26 senest før 19. oktober 2026.
 
@@ -301,14 +299,14 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 - Planen registrerer hver opgradering fra gammel til ny version og alle nødvendige kodeændringer.
 - Gates er grønne efter hver enkelt opgradering; en brydende major rulles tilbage frem for at merges.
-- `npm ci`, `npm test && npm pack --dry-run`, `npm audit`, Rust-audit, pip-audit og de relevante runtime-gates er grønne med den nye lockfile.
-- `.nvmrc`, `engines`, Rust-toolchainfil og CI-matrix peger på dokumenterede, testede versioner.
+- `npm ci`, `npm test && npm pack --dry-run`, `npm audit` og de relevante site-/runtime-gates er grønne med den nye lockfile.
+- `.nvmrc`, `engines` og CI-matrix peger på dokumenterede, testede versioner.
 - Hver major-version har én selvstændig commit, så præcis rollback kan ske.
 
 ### 11. [ ] Implementér den første dokumenterede Pro-værdi i privat repo
 
-**Status:** BLOCKED: kræver navngivet privat Pro-repo og udvikleradgang fra Mads
-**Afhængighed:** T4 er specificeret; Mads skal levere repo-sti og adgangskontekst uden secrets i planen.
+**Status:** BLOCKED: det private `mahope/transmute-desktop` er navngivet, men ikke tilgængeligt fra dette checkout
+**Afhængighed:** T4 skal specificeres i det private repo; Mads skal give loopet en udvikleradgangskontekst uden secrets i planen.
 **Begrundelse:** Betalt kode skal give mærkbarlig værdi for virksomheder, ikke blot fjerne en kunstig grænse.
 
 **Scope:**
@@ -330,14 +328,15 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 ## Beslutninger og fund
 
 - Stripe Payment Link, produktnavn og `product_key` må ikke ændres uden Mads' beslutning; nye produkter, priser og releases er uden for scope.
+- Commit `16cb82a` er et repo-skifte, ikke en grund til at slette historikken eller merge den forældede `ceo/rustsec-baseline`; offentlige og private afhængigheder skal audits hver i sit repo.
 - Loopet må aldrig oprette tags, releases, npm-publiceringer eller udløse deploy.
 - Produktreglen fra 24. september prioriterede T2 før T1; RustSec-auditen blev alligevel kørt før og efter pluginændringen, og RUSTSEC-fixen blev gjort i commit `4d1a828`.
-- `cargo audit` fandt først `rustls 0.23.43` med RUSTSEC-2026-0285; den blev opdateret til `0.23.45`. Efter `tauri-plugin-opener 2.5.5` gav audit exit 0 uden vulnerabilities, men syv advarsler (bl.a. `glib` RUSTSEC-2024-0429 og flere unmaintained-pakker); T1’s strenge advarsel-/Dependabot-gate er derfor stadig åben.
+- `cargo audit` fandt først `rustls 0.23.43` med RUSTSEC-2026-0285; den blev opdateret til `0.23.45`. Efter `tauri-plugin-opener 2.5.5` gav audit exit 0 uden vulnerabilities, men syv advarsler (bl.a. `glib` RUSTSEC-2024-0429 og flere unmaintained-pakker). Den strenge advarselsgate blev derefter overført til det private desktop-repo.
 - T2 bruger `withGlobalTauri`, den eksakte `opener:allow-open-url`-ACL og `plugin:opener|open_url` gennem den statiske frontend; begge links har headless regressionstest og Tauri-build.
 - Pakket macOS-app-build lykkedes, men GUI-smoke kunne ikke køres i dette miljø, fordi `orca` ikke er installeret; browserhåndtering og fallback er derfor kun automatisk mock-verificeret.
-- `cargo fmt --check` rapporterer tre eksisterende formateringsafvigelser i `desktop/src-tauri/src/lib.rs`; de er ikke relateret til T2 og blev ikke ændret for at holde diffen minimal.
+- `cargo fmt --check` rapporterede tre eksisterende formateringsafvigelser i den daverende `desktop/src-tauri/src/lib.rs`; de var ikke relateret til T2 og blev ikke ændret for at holde diffen minimal.
 - T3 kommer før T4, fordi produktfasen eksplicit prioriterer købs-/licensfejl over konvertering og Pro-værdi.
-- Gratis desktop skal ifølge strategien være fuldt brugbar; den nuværende tredobbeltige demofris er ikke en gyldig langsigtigfri/Pro-grænse.
+- Den offentlige CLI skal være fuldt brugbar uden kunstige betalingsgrænser; den separate betalte Desktop Pro skal have markant virksomhedsværdi i det private repo.
 - Den private/public-grænse er låst: betalt implementation lever i privat repo, mens public repo er en god gratisvare.
 - Fund undervej skal blive prioriterede planopgaver, ikke sidespor i en igangværende opgave.
 - CI-run `36099345814` for planstatuscommitten `c9ba6b9` sluttede `success` og udløste ingen deploy-site-run. GitHub advarede om, at `actions/checkout@v4` og `actions/setup-node@v4` er deprecation-aktiverede og køres på Node 24; opgraderingen og Ubuntu 26-migreringen er nu eksplicit del af T10.
@@ -350,9 +349,8 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 ## ❓ Til Mads
 
-1. **Privat Pro-repo:** T11 kan ikke begynde, før Mads har oprettet eller navngivet et privat repo og givet de nødvendige udviklere adgang. Loopet opretter ikke selv eksterne repos.
+1. **Privat Pro-repo:** `mahope/transmute-desktop` er navngivet, men dette checkout har ingen udvikleradgang til det. Loopet kan derfor hverken skrive Pro-specen eller implementere batch/automation dér.
 2. **Deploy-tidszone:** Kildekontrakten angiver 07:30/12:30/17:30 uden tidszone. Angiv den offset, external batchdeployeren bruger, før en `DEPLOY-MISSING`-tæller må starte.
-3. **Linux:** anbefales at fortsætte med Linux-builds, fordi README og site lover det. Alternativet er at fjerne løftet, indtast en verificeret Linux-pipeline er klar.
 
 ## Iterationlog
 
@@ -361,3 +359,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 03:29 UTC: `6e89d13` mergeret fast-forward til `main` og pushet til `main` samt `ceo/desktop-opener`; CI-run `36090507215` sluttede `success`, og ingen deploy-site-run blev udløst.
 - 2026-09-25 05:37 UTC: T1-forsøg 1 gemt på `ceo/rustsec-baseline` som `7e34c0f` og pushet uden merge. Root-test/pack, Cargo check/test og YAML-parsning er grønne; `cargo audit --deny warnings` fejler korrekt på syv upstream-fund. Næste iteration skal genkontrollere dem.
 - 2026-09-25 05:38 UTC: Planstatuscommitten `c9ba6b9` pushet til `main`; CI-run `36099345814` sluttede `success`, og ingen deploy-site-run blev udløst.
+- 2026-09-25 07:11 UTC: T1 lukket som overført efter `16cb82a`; T5 implementeret på `ceo/remove-auto-deploy`. Deploy-workflowen er fjernet, 20 workflow-regressioner dækker Cloudflare, push-deploy, YAML-varianter og lokale actions, og 38 engine-tests plus pack og npm-audit er grønne. Merge og kontrol af nye deploy-runs afventer.
