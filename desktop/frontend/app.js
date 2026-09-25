@@ -494,9 +494,23 @@ const licenseForm = document.getElementById('licenseForm');
 const licenseActive = document.getElementById('licenseActive');
 
 const BUY_URL = 'https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02';
+
+async function openPurchaseLink(event) {
+  if (!invoke) return;
+  event.preventDefault();
+  errorBanner.style.display = 'none';
+  try {
+    await invoke('plugin:opener|open_url', { url: BUY_URL });
+  } catch {
+    showError('Could not open the purchase page in your system browser. Please try again.');
+  }
+}
+
 ['buyLink', 'buyLink2'].forEach(id => {
   const el = document.getElementById(id);
-  if (el) el.href = BUY_URL;
+  if (!el) return;
+  el.href = BUY_URL;
+  el.addEventListener('click', openPurchaseLink);
 });
 
 function renderLicense() {

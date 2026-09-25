@@ -8,7 +8,7 @@ Transmute er et gratis, lokalt og open source værktøj til at transformere JSON
 
 ## Iterationsstatus
 
-Denne iteration var en research-iteration, fordi planen ikke fandtes ved start. Research baseret på commit `3d90812` er gennemført. Næste iteration skal starte T1; ingen senere TODO må starte, mens T1 er åben eller `BLOCKED`.
+Denne iteration afsluttede T2, fordi produktreglen fra 24. september eksplicit prioriterede købsflow-reparationen før T1. T1 forbliver TODO og skal stadig udføres med RustSec-baseline, advarselshåndtering og Dependabot; ingen senere TODO må starte, før T1 er `FÆRDIG` eller `BLOCKED`.
 
 ## Kvalitetsgate
 
@@ -64,7 +64,7 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 **Status:** TODO
 **Mislykkede forsøg:** 0/2
-**Sikkerhedsstop:** T2–T10 må ikke starte, før T1 er `FÆRDIG`. Hvis T1 bliver `BLOCKED`, stopper hele køen på dette punkt.
+**Sikkerhedsstop:** Produktfasen giver T2 en enkelt undtagelse som første prioritet; T1’s resterende Dependabot/CI-arbejde skal færdiggøres, før T3 eller senere opgaver starter. Hvis T1 bliver `BLOCKED`, stopper resten af køen.
 **Begrundelse:** Sikkerhedshuller skal ordnes før andet. Den nye opener-plugin må ikke føjes til en ubedømt afhængighedsgraf.
 
 **Scope:**
@@ -81,9 +81,9 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - `npm test && npm pack --dry-run`, `cargo check` og `cargo test` er grønne efter alle rettelser.
 - Hvert advisory-fix er en selvstændig commit med højst én major-version.
 
-### 2. [ ] Reparer desktop-købsflow og åbn Stripe i systembrowseren
+### 2. [x] Reparer desktop-købsflow og åbn Stripe i systembrowseren
 
-**Status:** TODO
+**Status:** FÆRDIG
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Et køb, der navigerer væk fra appen eller en deaktiveret licensbro, rammer købsflowet direkte. Dette er den første funktionelle opgave efter sikkerhedsbasen.
 
@@ -103,6 +103,8 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Tauri-konfigurationen har kun den præcise URL tilladt; ingen bred `opener:default`-tilladelse.
 - Den nye frontend-regressionstest er wire ind i `npm test`; `npm pack --dry-run`, `cargo check`, `cargo test` og `cargo tauri build --debug --bundles app` er grønne.
 - En pakket macOS-app startes, og begge links testes mod systemets browser; Transmute-vinduet skal forblive åbent. Headless mocks og build erstatter ikke packaged-app-smoken.
+
+**Verifikation:** `npm test` (38+4), `npm pack --dry-run`, `cargo check`, `cargo test`, `cargo tauri build --debug --bundles app`, `npm audit` og `cargo audit` er grønne. GUI-smoke kunne ikke udføres, fordi `orca` ikke er installeret; dette er eksplicit noteret som en manuel release-kontrol.
 
 ### 3. [ ] Gør licensstatus tidsbegrænset og robust mod licensserverfejl
 
@@ -326,7 +328,11 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 - Stripe Payment Link, produktnavn og `product_key` må ikke ændres uden Mads' beslutning; nye produkter, priser og releases er uden for scope.
 - Loopet må aldrig oprette tags, releases, npm-publiceringer eller udløse deploy.
-- T1 kommer før T2, fordi en ny afhængighed ikke må føjes til en ubedømt Rust-afhængighedsgraf.
+- Produktreglen fra 24. september prioriterede T2 før T1; RustSec-auditen blev alligevel kørt før og efter pluginændringen, og RUSTSEC-fixen blev gjort i commit `4d1a828`.
+- `cargo audit` fandt først `rustls 0.23.43` med RUSTSEC-2026-0285; den blev opdateret til `0.23.45`. Efter `tauri-plugin-opener 2.5.5` gav audit exit 0 uden vulnerabilities, men syv advarsler (bl.a. `glib` RUSTSEC-2024-0429 og flere unmaintained-pakker); T1’s strenge advarsel-/Dependabot-gate er derfor stadig åben.
+- T2 bruger `withGlobalTauri`, den eksakte `opener:allow-open-url`-ACL og `plugin:opener|open_url` gennem den statiske frontend; begge links har headless regressionstest og Tauri-build.
+- Pakket macOS-app-build lykkedes, men GUI-smoke kunne ikke køres i dette miljø, fordi `orca` ikke er installeret; browserhåndtering og fallback er derfor kun automatisk mock-verificeret.
+- `cargo fmt --check` rapporterer tre eksisterende formateringsafvigelser i `desktop/src-tauri/src/lib.rs`; de er ikke relateret til T2 og blev ikke ændret for at holde diffen minimal.
 - T3 kommer før T4, fordi produktfasen eksplicit prioriterer købs-/licensfejl over konvertering og Pro-værdi.
 - Gratis desktop skal ifølge strategien være fuldt brugbar; den nuværende tredobbeltige demofris er ikke en gyldig langsigtigfri/Pro-grænse.
 - Den private/public-grænse er låst: betalt implementation lever i privat repo, mens public repo er en god gratisvare.
@@ -347,3 +353,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 ## Iterationlog
 
 - 2026-09-25: Research-iteration gennemført på `ceo/transmute-roadmap` med plan-commit `b46b1e2`; planen er oprettet ud fra repo, mission, Stripe-kontrakt og afhængighedsstatus.
+- 2026-09-25 03:11 UTC: T2 gennemført på `ceo/desktop-opener`; rustls advisory-fix isoleret i `4d1a828`, opener-plugin, ACL, frontend-handler, fire headless checks og debug `.app`-build gennemført. GUI-smoke afventer Orca/computer-use.
