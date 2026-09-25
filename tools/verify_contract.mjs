@@ -304,6 +304,43 @@ check('the declared runtime is the runtime CI actually tests', () => {
   }
 });
 
+check('no workflow pins an action major GitHub has deprecated', () => {
+  // GitHub deprecates old action majors, then quietly runs them on a newer Node
+  // runtime than they were written for, and the job fails with a warning
+  // nobody reads. T10 therefore walks one major per commit so a breaking major
+  // can be rolled back alone; raise each floor here in the same commit as the
+  // bump it locks in, and never lower one.
+  const floors = {
+    'actions/checkout': 5,
+    'actions/setup-node': 4,
+    'actions/setup-python': 7,
+  };
+  const workflows = join(root, '.github', 'workflows');
+  const seen = new Map();
+  for (const entry of readdirSync(workflows, { withFileTypes: true })) {
+    if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) {
+      continue;
+    }
+    const source = readFileSync(join(workflows, entry.name), 'utf8');
+    for (const [, action, ref] of source.matchAll(/uses:\s*['"]?([\w.-]+\/[\w.-]+)@([\w.-]+)['"]?/g)) {
+      if (!(action in floors)) {
+        continue;
+      }
+      if (/^[0-9a-f]{40}$/.test(ref)) {
+        continue;
+      }
+      const major = ref.match(/^v(\d+)$/);
+      assert(major, `${entry.name} pins ${action}@${ref}; pin a major tag (v7) or a full commit SHA, not a branch or a range`);
+      const pinned = Number(major[1]);
+      assert(pinned >= floors[action], `${entry.name} pins ${action}@${ref}; GitHub has deprecated everything below v${floors[action]}`);
+      seen.set(action, pinned);
+    }
+  }
+  for (const [action, floor] of Object.entries(floors)) {
+    assert(seen.has(action), `no workflow uses ${action}, so the v${floor} floor is asserted against nothing; remove the entry or pin the action`);
+  }
+});
+
 for (const [file, messages] of failuresByFile) {
   for (const message of messages) {
     failures.push(`${label(file)}: ${message}`);
