@@ -2,7 +2,7 @@ name: Bump Homebrew formula
 
 # When a vX.Y.Z tag is pushed, update Formula/transmute.rb in mahope/homebrew-tap
 # with the new source-archive url + sha256. Triggered on tag push rather than
-# "release published" because the release in build.yml is created with
+# "release published" because the release in publish.yml is created with
 # GITHUB_TOKEN, and events raised by GITHUB_TOKEN do not start other workflows.
 # Requires the TAP_TOKEN secret (fine-grained GitHub PAT with contents:write on
 # mahope/homebrew-tap - same token as in deskuptime and clean-copy-cli).

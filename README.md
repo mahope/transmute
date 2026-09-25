@@ -1,15 +1,16 @@
 # Transmute
 
-[![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions)
+[![CI](https://github.com/mahope/transmute/actions/workflows/ci.yml/badge.svg)](https://github.com/mahope/transmute/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/badge/install-npx%20%40mahope%2Ftransmute-CB3837)](https://github.com/mahope/transmute#install--run)
 
 Cross-platform CLI data transformer — JSON, CSV, YAML, XML. Filter, sort, map, pick, omit, unique and convert between formats. Zero dependencies, runs anywhere Node.js runs (macOS, Windows, Linux).
 
-[![Tests](https://github.com/mahope/transmute/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/transmute/actions/workflows/build.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-**Transmute** is also a cross-platform **desktop app** (macOS, Windows, Linux) with a visual pipeline builder — free tier: 3 transformations per launch, [$19 one-time Pro license](https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02) for up to 3 machines.
+**Transmute Desktop** is a separate, closed-source app for macOS, Windows and
+Linux that runs the same engine with a visual pipeline builder. Its source is
+not in this repository. Pro is a [$19 one-time licence](https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02)
+for up to 3 machines; see [transmute.run/support](https://transmute.run/support/).
+The CLI in this repository is free and unlimited, with no key and no limits.
 
 ## Install / run
 
@@ -107,10 +108,14 @@ CI publishes to npm and creates the GitHub release.
 
 ## License
 
-MIT (CLI and engine). The desktop app's Pro license is sold via Stripe; activation goes through the Mahope license server at `mahope.tools`.
+MIT (CLI and engine). Transmute Desktop Pro is sold separately via Stripe; its
+licence is activated through the Mahope licence server at `mahope.tools`.
 
 Like the project? [Support open source](https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c).
 
 ## Open source and Pro
 
-The CLI in this repository is open source (MIT). Transmute Desktop is a paid, closed-source app: download it from https://transmute.run/ and unlock it with your license key.
+The CLI in this repository is open source (MIT) and always free. Transmute
+Desktop is a paid, closed-source app, built from a private repository: see
+[transmute.run/support](https://transmute.run/support/) to buy a key and
+activate it.

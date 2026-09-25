@@ -1,0 +1,31 @@
+{
+  "$comment": "Single source of truth for Transmute's commercial constants. tools/verify_contract.mjs fails if this file drifts from the Stripe contract or if README, docs or the site state a different price, currency, billing term, machine count, product key or payment link. No secrets belong in this file.",
+  "cli": {
+    "package": "@mahope/transmute",
+    "license": "MIT",
+    "repository": "https://github.com/mahope/transmute"
+  },
+  "desktop_pro": {
+    "product_key": "transmute-desktop",
+    "product_name": "Transmute Desktop Pro",
+    "amount": 19,
+    "currency": "USD",
+    "billing": "one_time",
+    "machines": 3,
+    "free_tier_transformations_per_launch": 3,
+    "payment_link": "https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02",
+    "licence_api": "https://mahope.tools/api/license/",
+    "licence_cache_days": 7,
+    "order_email": "orders@mahoje.dk",
+    "source_repository_private": true
+  },
+  "donation_link": "https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c",
+  "allowed_desktop_link_targets": [
+    "/#desktop",
+    "/da/#desktop",
+    "/support/",
+    "/support/#buying-pro",
+    "/da/support/",
+    "/da/support/#buying-pro"
+  ]
+}

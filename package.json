@@ -12,7 +12,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/test.js && node test/cli.test.mjs && node test/conformance.test.mjs && node test/readme.test.mjs && node test/verify-workflows.test.mjs && node tools/verify_workflows.mjs",
+    "test": "node test/test.js && node test/cli.test.mjs && node test/conformance.test.mjs && node test/readme.test.mjs && node test/verify-workflows.test.mjs && node tools/verify_workflows.mjs && node tools/verify_contract.mjs",
+    "check:contract": "node tools/verify_contract.mjs",
     "snapshots:cli": "node tools/update_cli_snapshots.mjs",
     "check:site": "bash tools/site_gate.sh",
     "audit:site": ".venv-site/bin/python -m pip_audit -r tools/site-requirements.txt --require-hashes",

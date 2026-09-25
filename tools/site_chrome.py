@@ -181,7 +181,7 @@ def footer(lang: str, alt_url: str | None) -> str:
         <p>{s["f_product"]}</p>
         <ul>
           <li><a href="{home}#install">{s["f_install"]}</a></li>
-          <li><a href="https://github.com/mahope/transmute/releases">{s["f_desktop"]}</a></li>
+          <li><a href="{home}#desktop">{s["f_desktop"]}</a></li>
           <li><a href="/cheatsheet/">{s["f_cheatsheet"]}</a></li>
           <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
           <li><a href="https://github.com/mahope/transmute/releases">{s["f_releases"]}</a></li>
