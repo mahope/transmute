@@ -5,3 +5,6 @@ target/
 .wrangler/
 site/.wrangler/
 tools/shots/
+
+# Transmute Desktop (betalt) ligger i det private repo mahope/transmute-desktop
+desktop/

@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/test.js && node test/desktop-purchase-links.test.js",
+    "test": "node test/test.js",
     "start": "node src/cli.js",
     "release": "node scripts/release.mjs"
   },

@@ -94,3 +94,7 @@ CI publishes to npm and creates the GitHub release.
 MIT (CLI and engine). The desktop app's Pro license is sold via Stripe; activation goes through the Mahope license server at `mahope.tools`.
 
 Like the project? [Support open source](https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c).
+
+## Open source and Pro
+
+The CLI in this repository is open source (MIT). Transmute Desktop is a paid, closed-source app: download it from https://transmute.run/ and unlock it with your license key.
