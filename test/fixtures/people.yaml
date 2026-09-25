@@ -1,0 +1,9 @@
+- name: Alice
+  age: 30
+  city: Aarhus
+- name: Bob
+  age: 25
+  city: Odense
+- name: Carla
+  age: 41
+  city: Aarhus

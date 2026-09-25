@@ -1,0 +1,5 @@
+name,age,zip,active,city
+Alice,30,0074,true,Aarhus
+Bob,25,2100,false,Odense
+Carla,41,8000,true,Aarhus
+Daniel,25,2100,true,Odense

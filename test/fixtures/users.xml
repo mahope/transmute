@@ -1,0 +1,5 @@
+<users>
+  <user><name>Alice</name><age>30</age><city>Aarhus</city></user>
+  <user><name>Bob</name><age>25</age><city>Odense</city></user>
+  <user><name>Carla</name><age>41</age><city>Aarhus</city></user>
+</users>

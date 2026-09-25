@@ -245,10 +245,15 @@ const serializers = {
   table: (data) => {
     if (data.length === 0) return '(empty)';
     const headers = Object.keys(data[0]);
+    const cell = (v) => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'object') return JSON.stringify(v);
+      return String(v);
+    };
     // Calculate column widths
     const colWidths = headers.map(h => Math.max(
       h.length,
-      ...data.map(row => String(row[h] ?? '').length)
+      ...data.map(row => cell(row[h]).length)
     ));
     // Build separator
     const sep = '+-' + colWidths.map(w => '-'.repeat(w)).join('-+-') + '-+';
@@ -258,7 +263,7 @@ const serializers = {
     // Rows (first 20)
     const maxRows = 20;
     const rows = data.slice(0, maxRows).map(row =>
-      '| ' + headers.map((h, i) => String(row[h] ?? '').padEnd(colWidths[i])).join(' | ') + ' |'
+      '| ' + headers.map((h, i) => cell(row[h]).padEnd(colWidths[i])).join(' | ') + ' |'
     );
     let output = [headerSep, header, headerSep, ...rows, headerSep];
     if (data.length > maxRows) {

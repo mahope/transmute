@@ -36,7 +36,18 @@ Options:
 
 - `-f, --format <type>` — input format: json, csv, yaml, xml (auto-detected)
 - `-p, --pipe <json>` — transformation pipeline as a JSON array
-- `-o, --output <type>` — output format: json, csv, yaml, xml, table (default: table)
+- `-o, --output <type>` — output format: json, csv, yaml, xml, table, sql (default: table)
+- `--out <file>` — write the output to a file instead of stdout
+- `--table <name>` — table name for SQL output (default `my_table`)
+- `-v, --version`, `-h, --help`
+
+Exit codes: `0` success, `1` the transformation failed, `2` usage error, `3`
+input error (missing or unparseable file). Errors go to stderr; stdout stays
+empty on failure, so redirects never leave half-written files behind.
+
+**Full reference: [docs/cli.md](docs/cli.md)** — every operation with a fixture
+and its exact output, the coercion rules, and script examples. The examples
+are executed by `npm test`, so the docs cannot drift from the code.
 
 ## Examples
 
@@ -74,8 +85,13 @@ echo '{"a":1}' | transmute --output xml
 ## Tests
 
 ```bash
-node test/test.js
+npm test        # engine unit tests, real CLI runs, and CLI-vs-browser conformance
+npm run check:site
 ```
+
+`npm test` also asserts that the CLI engine and the browser engine on
+transmute.run produce identical output for every documented example, and that
+`docs/cli.md` still matches what the code does.
 
 ## Why Transmute?
 
