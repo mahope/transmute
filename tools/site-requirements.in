@@ -1,0 +1,4 @@
+# Direct dependencies of the Transmute site gate.
+# Generate tools/site-requirements.txt with: npm run lock:site
+playwright==1.60.0
+pip-audit==2.9.0

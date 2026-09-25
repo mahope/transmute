@@ -1,0 +1,48 @@
+name: Site gate
+
+# Kører kun når sitet eller dets låste værktøjssæt røres, så PR'er der ikke
+# rører sitefiler ikke bærer Chromium-tiden. Udadvende deploy er ikke en del
+# af denne workflow; tools/verify_workflows.mjs håndhæver det i npm test.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "tools/site_gate.sh"
+      - "tools/site_gate_selftest.py"
+      - "tools/seo_check.py"
+      - "tools/layout_check.py"
+      - "tools/site-requirements.in"
+      - "tools/site-requirements.txt"
+      - "package.json"
+      - ".github/workflows/site-gate.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "tools/site_gate.sh"
+      - "tools/site_gate_selftest.py"
+      - "tools/seo_check.py"
+      - "tools/layout_check.py"
+      - "tools/site-requirements.in"
+      - "tools/site-requirements.txt"
+      - "package.json"
+      - ".github/workflows/site-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13.15"
+      - name: Site-gate (SEO, layout, selftest)
+        env:
+          TRANSMUTE_PLAYWRIGHT_DEPS: "1"
+        run: npm run check:site
+      - name: pip-audit på de hash-låste siteværktøjer
+        run: npm run audit:site

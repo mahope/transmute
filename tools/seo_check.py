@@ -12,13 +12,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SITE = ROOT / "site"
+SITE = Path(os.environ.get("TRANSMUTE_SITE") or (ROOT / "site"))
 BASE = "https://transmute.run"
 
 

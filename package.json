@@ -13,6 +13,9 @@
   ],
   "scripts": {
     "test": "node test/test.js && node test/verify-workflows.test.mjs && node tools/verify_workflows.mjs",
+    "check:site": "bash tools/site_gate.sh",
+    "audit:site": ".venv-site/bin/python -m pip_audit -r tools/site-requirements.txt --require-hashes",
+    "lock:site": "uv pip compile tools/site-requirements.in --python-version 3.13 --generate-hashes --no-annotate --no-header -o tools/site-requirements.txt",
     "start": "node src/cli.js",
     "release": "node scripts/release.mjs"
   },

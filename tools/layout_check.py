@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import http.server
+import os
 import socketserver
 import threading
 from pathlib import Path
@@ -20,7 +21,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-SITE = ROOT / "site"
+SITE = Path(os.environ.get("TRANSMUTE_SITE") or (ROOT / "site"))
 WIDTHS = [360, 768, 1280]
 BOXES = {
     "family": ".family-bar",
