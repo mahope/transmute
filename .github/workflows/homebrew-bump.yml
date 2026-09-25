@@ -21,7 +21,10 @@ permissions:
 
 jobs:
   bump:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: GitHub moves that label to Ubuntu 26.04 in a
+    # rollout starting 19 October 2026 (actions/runner-images#14748). This job
+    # only needs curl, tar, sha256sum, sed and git, all present on the image.
+    runs-on: ubuntu-26.04
     steps:
       - name: Resolve tag, download source archive, compute sha256
         run: |

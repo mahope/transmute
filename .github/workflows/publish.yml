@@ -17,7 +17,10 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: GitHub moves that label to Ubuntu 26.04 in a
+    # rollout starting 19 October 2026 (actions/runner-images#14748). The image
+    # carries GitHub CLI 2.101.0, which is what "gh release create" below needs.
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
