@@ -317,7 +317,7 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   // check therefore also requires one major per action across all workflows.
   const floors = {
     'actions/checkout': 7,
-    'actions/setup-node': 6,
+    'actions/setup-node': 7,
     'actions/setup-python': 7,
   };
   const workflows = join(root, '.github', 'workflows');
@@ -365,13 +365,41 @@ check('no workflow inherits implicit dependency caching from setup-node', () => 
   // setup-node v5 started caching on its own as soon as package.json declared a
   // package manager, and v6 widened the trigger: either devEngines.packageManager
   // or the top-level packageManager field naming npm now switches caching on.
-  // This repository declares neither, so `npm ci` resolves from the lockfile on
-  // every run. A future field would turn caching on silently, in CI and in
-  // publish, with a cache key nobody reviewed — so require an explicit decision.
+  // v6.5.0 and v7 answer it with the package-manager-cache input, and v7's own
+  // README examples set it to false. So every step says it out loud rather than
+  // relying on package.json staying silent: a `packageManager` field added to the
+  // manifest later then changes nothing, and the opt-out cannot be lost in a
+  // future pin bump the way an absent field can.
+  const workflows = join(root, '.github', 'workflows');
+  for (const entry of readdirSync(workflows, { withFileTypes: true })) {
+    if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) {
+      continue;
+    }
+    const source = readFileSync(join(workflows, entry.name), 'utf8');
+    const lines = source.split('\n');
+    lines.forEach((line, index) => {
+      if (!/uses:\s*['"]?actions\/setup-node@/.test(line)) {
+        return;
+      }
+      const indent = line.length - line.trimStart().length;
+      const nextStep = new RegExp(`^\\s{${indent}}-\\s`);
+      const block = [line];
+      for (let next = index + 1; next < lines.length && !nextStep.test(lines[next]); next += 1) {
+        block.push(lines[next]);
+      }
+      const step = block.join('\n');
+      const decided = /package-manager-cache:\s*(?:['"]?false['"]?|false)/.test(step) || /\bcache:\s*\S/.test(step);
+      assert(
+        decided,
+        `${entry.name} uses actions/setup-node without saying what caching should do. Add "package-manager-cache: false" to its with: block, or an explicit "cache:" input, so a packageManager field added to package.json later cannot switch npm caching on silently.`,
+      );
+    });
+  }
+
   const declared = [packageJson.packageManager, packageJson.devEngines?.packageManager].filter(Boolean);
   assert(
     declared.length === 0,
-    `package.json declares package manager "${declared.join('", "')}"; actions/setup-node now caches npm automatically for it, which is not reviewed here. Either set the cache input explicitly on every setup-node step, or drop the field.`,
+    `package.json declares package manager "${declared.join('", "')}"; actions/setup-node caches npm for it. Either drop the field, or review the cache keys the opt-out above is hiding.`,
   );
 });
 
