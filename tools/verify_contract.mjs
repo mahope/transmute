@@ -312,7 +312,7 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   // bump it locks in, and never lower one.
   const floors = {
     'actions/checkout': 6,
-    'actions/setup-node': 5,
+    'actions/setup-node': 6,
     'actions/setup-python': 7,
   };
   const workflows = join(root, '.github', 'workflows');
@@ -339,6 +339,20 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   for (const [action, floor] of Object.entries(floors)) {
     assert(seen.has(action), `no workflow uses ${action}, so the v${floor} floor is asserted against nothing; remove the entry or pin the action`);
   }
+});
+
+check('no workflow inherits implicit dependency caching from setup-node', () => {
+  // setup-node v5 started caching on its own as soon as package.json declared a
+  // package manager, and v6 widened the trigger: either devEngines.packageManager
+  // or the top-level packageManager field naming npm now switches caching on.
+  // This repository declares neither, so `npm ci` resolves from the lockfile on
+  // every run. A future field would turn caching on silently, in CI and in
+  // publish, with a cache key nobody reviewed — so require an explicit decision.
+  const declared = [packageJson.packageManager, packageJson.devEngines?.packageManager].filter(Boolean);
+  assert(
+    declared.length === 0,
+    `package.json declares package manager "${declared.join('", "')}"; actions/setup-node now caches npm automatically for it, which is not reviewed here. Either set the cache input explicitly on every setup-node step, or drop the field.`,
+  );
 });
 
 for (const [file, messages] of failuresByFile) {
