@@ -230,6 +230,32 @@ check('the desktop app is not built or published from this repository', () => {
   assert(published.includes('src'), 'the CLI is the published package');
 });
 
+check('the checked-in lockfile is present, honest and reproducible', () => {
+  const lockPath = join(root, 'package-lock.json');
+  assert(existsSync(lockPath), 'package-lock.json is not committed, so CI cannot install reproducibly');
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+  assert(lock.name === packageJson.name, `lockfile is for ${lock.name}, package.json is ${packageJson.name}`);
+  assert(lock.version === packageJson.version, `lockfile pins ${lock.version}, package.json is ${packageJson.version}. Run npm install --package-lock-only and commit it.`);
+  assert(lock.lockfileVersion === 3, `lockfileVersion is ${lock.lockfileVersion}; npm ci here needs 3`);
+  const rootEntry = lock.packages?.[''] ?? {};
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+    const names = Object.keys(rootEntry[field] ?? packageJson[field] ?? {});
+    assert(names.length === 0, `package.json declares ${field} (${names.join(', ')}); README advertises zero dependencies, and a published dependency is a supply-chain promise`);
+  }
+  const resolved = Object.keys(lock.packages ?? {}).filter(path => path !== '');
+  assert(resolved.length === 0, `lockfile resolves ${resolved.length} package(s); README advertises zero dependencies`);
+  const workflows = join(root, '.github', 'workflows');
+  for (const entry of readdirSync(workflows, { withFileTypes: true })) {
+    if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) {
+      continue;
+    }
+    const source = readFileSync(join(workflows, entry.name), 'utf8');
+    for (const [, command] of source.matchAll(/^\s*(?:-\s*run:\s*|run\s*\|\s*)?(npm (?:install|i)\b.*)$/gm)) {
+      assert(!/npm (?:install|i)\b/.test(command), `${entry.name} runs "${command.trim()}"; install from the committed lockfile with npm ci so CI and npm see the same tree`);
+    }
+  }
+});
+
 for (const [file, messages] of failuresByFile) {
   for (const message of messages) {
     failures.push(`${label(file)}: ${message}`);
