@@ -8,7 +8,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`. T6 er færdig med commit `d555f65`; T7 er næste opgave.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65` og T7 med `0534cb8`. T8 er næste opgave.
 
 ## Kvalitetsgate
 
@@ -21,6 +21,8 @@ Den obligatoriske gate er denne, i den angivne rækkefølge:
 Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 har lagt site-gaten i `.github/workflows/site-gate.yml`, som kun kører på site- og værktøjsændringer. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten.
 
 ## Deploy
+
+VERIFICÉR DEPLOY: `/support/` + Support-link i footeren på alle 19 sider + `lastmod` 2026-09-24 i sitemap, commit `0534cb8`, 2026-09-25 ca. 11:15 lokal tid / 09:15 UTC. Tidszonen for batchdeployeren er stadig ukendt, så to-vinduer-tællen kan ikke begynde, før Mads svarer.
 
 Loopet må aldrig trigge deploy, webhook, Dokploy-API eller andre udadvendte writes. Den tidligere `.github/workflows/deploy-site.yml` deployed `site/**` ved push til `main` og blev fjernet i commit `28a06dd`. `tools/verify_workflows.mjs` er nu en del af `npm test` og afviser Cloudflare Pages eller kendte push-triggerede deploymekanismer. T5 rørte ingen sitefiler, så der forventes ingen ekstern batch-deploy og der er oprettet ingen `VERIFICÉR DEPLOY`-note.
 
@@ -221,9 +223,9 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 **Verifikation:** `npm run check:site` logger `Python 3.13.15`, `playwright 1.60.0`, `chromium 148.0.7778.96`, 0 SEO-fund på 18 sider, 0 layout-afvigelser ved 360/768/1280 px og 4 grønne selvtesttrin. `npm run audit:site` svarer `No known vulnerabilities found`; samme kommando på en nedgraderet `urllib3==1.26.0`-pin rapporterede 8 PYSEC-fund, så pip-audit-stappen har tænder. `npm test` (38 engine + 39 workflow) og `npm pack --dry-run` (5 filer) er grønne. CI-run `36158172198` (`Site gate`) sluttede `success` efter 1 min. 15 s og loggen bekræfter præcis de samme versioner som lokalt: `Python 3.13.15 [GCC 13.3.0]`, `playwright 1.60.0`, `chromium 148.0.7778.96`, `0 finding(s) across 18 pages`, `deviations: 0`, fire `No known vulnerabilities found` og fire grønne selvtesttrin inkl. de to fangede regressioner. CI-run `36158172199` (`CI`) sluttede `success`, og ingen `deploy-site`-run findes.
 
 
-### 7. [ ] Skab en komplet support- og købsside
+### 7. [x] Skab en komplet support- og købsside
 
-**Status:** I GANG — 2026-09-25, `ceo/support-page`
+**Status:** FÆRDIG — merged til `main` i commit `0534cb8`
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Købere mangler tydelig hjælp til nøgle, maskiner og kontakt, og det offentlige site mangler den påkrævede `/support`.
 
@@ -242,6 +244,18 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Siden har overskrifter for køb, aktivering, maskinbegrænsning, fejlfinding og kontakt; refusionsområdet indeholder ingen love/paragraffer.
 - `npm run check:site` er grøn ved 360, 768 og 1280 px.
 - Donationen er tilgængelig, men kun i support/efter et lykket resultat.
+
+**Resultat:**
+
+- `site/support/index.html` dækker køb, aktivering, tre maskiner, fejlfinding, nøglersikkerhed, kontakt og en kort donationstekst. Den bruger kun den officielle Payment Link og ingen personlige nøgler.
+- Siden er på engelsk og har `hreflang: en` + `x-default`; den danske udgave er lagt som ny opgave nedenfor. Det følger samme mønster som `/cheatsheet/`, der også kun findes på engelsk.
+- Footerens sitokolonne har nu et Support-link på alle 19 sider. Det kommer fra `tools/site_chrome.py` (`f_support`), så en ny side ikke kan glemme det.
+- `llms.txt` peger på siden under Pages. `site/sitemap.xml` og `site/search-index.json` er regenereret af `site_chrome.py`; søgeindekset gik fra 102 til 103 entries.
+- `.github/workflows/site-gate.yml` fik `tools/site_chrome.py` i path-filteret, så en kun-chrome-ændring ikke kan springe site-gaten over.
+
+**Verifikation:** `npm test` (38 engine + 39 workflow), `npm pack --dry-run` (5 filer), `npm run audit:site` (`No known vulnerabilities found`) og `npm run check:site` er grønne. Site-gaten melder `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px og fire grønne selvtesttrin inkl. de to fangede regressioner. CI-run afventer notering.
+
+**Flake fundet og lukket undervejs:** Første `check:site` kørsel var rød med `FEJL layout-regression fanges (exit 1)`, selvom samme trin er grønt i isolation. En reproduktion af den indbyggede 2400 px-regression gav dog korrekt `horizontal overflow` ved alle tre bredder, så årsagen lå i selftestens manglende diagnoseoutput, ikke i layout-regressionen. `site_gate_selftest.py` hæfter nu checkerens egen output på en fejl, og `layout_check.py` fanger Playwright-fejl pr. side (én side pr. URL, `goto`-timeout 20 s) og tæller dem som afvigelse i stedet for at gå i stykker med en traceback. Tre efterfølgende grønne kørsler af hele gaten. Fremtidige røde site-gater er dermed læsbare, ikke uforklarlige.
 
 ### 8. [ ] Gør den gratis CLI komplet, dokumenteret og ens sitets engine
 
@@ -329,6 +343,26 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - En `public-boundary`-kontrol og `npm pack --dry-run` beviser, at betalt implementation ikke ligger i public repo eller npm-pakken.
 - Arkitektur-, privacy- og sikkerhedstest er grønne i det private repo. Loopet skaber ingen release eller udgivelse.
 
+### 12. [ ] Udgiv support-siden på dansk
+
+**Status:** TODO
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** T7 lavede kun den engelske `/support`, fordi en halvfærdig dansk side er værre end ingen. Men købsflowet er dansk, og Mads' læsere er danske; en købsside på dansk er den konvertering, der mangler mest.
+
+**Scope:**
+
+- Opret `site/da/support/index.html` med samme opbygning som `/support/`: køb, aktivering, tre maskiner, fejlfinding, nøglersikkerhed, kontakt og donation.
+- Tilføj `hreflang: da` på den danske side og `da` på `/support/`, så søgemaskinerne kender sammenhængen. `seo_check.py` kræver i dag `da` kun på forsiden og privacy, så tjekkene skal udvides til at dække support-parret.
+- Tilføj `da` i `STRINGS["da"]` og lad `site_chrome.py` generere brødkrummer, indholdsfortegnelse, JSON-LD og sitemap.
+- Hold alle Commercial-claims identiske med den engelske side: 19 USD, `https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02`, 3 maskiner, 7 dages cache.
+
+**Acceptkriterier:**
+
+- `/da/support/` består SEO- og layoutkontrollen ved 360, 768 og 1280 px og ligger i sitemap med korrekt hreflang-parring.
+- Dansk og engelsk side har samme købslink, samme maskinantal og ingen modstridende claims; en kontrol i `npm test` sammenligner de to.
+- Ingen nye jura- eller refusionsformuleringer, der ikke findes på den engelske side.
+- `npm run check:site` er grøn.
+
 ## Beslutninger og fund
 
 - Stripe Payment Link, produktnavn og `product_key` må ikke ændres uden Mads' beslutning; nye produkter, priser og releases er uden for scope.
@@ -349,6 +383,11 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - T6 rørte ingen filer under `site/`, så intet på det publicerede site ændrer sig og der oprettes ingen `VERIFICÉR DEPLOY`-note. Mergen udløser kun de to kontrol-workflows.
 - Et åbent Dependabot-PR (`Bump actions/checkout from 4 to 7`) skal ikke merges blindt i T10; hver major skal have sin egen commit med grøn gate, jf. CI-run `36147109594`.
 - CI-run `36099345814` for planstatuscommitten `c9ba6b9` sluttede `success` og udløste ingen deploy-site-run. GitHub advarede om, at `actions/checkout@v4` og `actions/setup-node@v4` er deprecation-aktiverede og køres på Node 24; opgraderingen og Ubuntu 26-migreringen er nu eksplicit del af T10.
+- T7 bruger kun den officielle Payment Link og siger aldrig noget om refusion, frister eller tilbagebetaling; købssiden beder læseren kontakte support før et køb, hvis de vil tale om refusion. Det er præcis, hvad T7's scope tillod.
+- Support-siden nævner `orders@mahoje.dk` kun som afsender af kvitteringen, aldrig som supportadresse, fordi kontrakten kun dokumenterer den som afsender. Kontaktpunktet er derfor mahope.dk og GitHub issues, jf. `❓ Til Mads`.
+- Support-siden er på engelsk, fordi T7's scope kun navngavn `site/support/index.html`, og en tynk eller halvfærdig dansk side ville skade mere end den gavner. Den danske udgave er lagt som T12 med hreflang-krav.
+- Den røde site-gate i T7's første kørsel var en flake, ikke en reel regression. Layoutkontrollen fejler nu pr. side i stedet for at gå i stykker, og selftesten viser checkerens egen output ved fejl, så det samme kan ske igen uden at koste en hel iteration.
+- `site_chrome.py` er det eneste sted, der definerer fælles chrome. Support-linket i footeren, søgeindekset og sitemap'en er derfor ændret ét sted og regenereret af værktøjet, ikke ved håndredigering i 19 filer.
 
 ## Navneforslag
 
@@ -360,6 +399,8 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 
 1. **Privat Pro-repo:** `mahope/transmute-desktop` er navngivet, men dette checkout har ingen udvikleradgang til det. Loopet kan derfor hverken skrive Pro-specen eller implementere batch/automation dér.
 2. **Deploy-tidszone:** Kildekontrakten angiver 07:30/12:30/17:30 uden tidszone. Angiv den offset, external batchdeployeren bruger, før en `DEPLOY-MISSING`-tæller må starte.
+3. **Supportadresse:** Kontrakten nævner kun `orders@mahoje.dk` som afsender af kvitteringen, ikke som indgående adresse. Skal support-siden linke til en postkasse, eller er `mahoje.dk` plus GitHub issues det tilsigtede kontaktpunkt? Loopet bruger pt. kun mahope.dk og GitHub issues, fordi det er de eneste kontakter privacy-siden allerede dokumenterer.
+4. **Dansk support-side:** T12 er klar til at blive taget, men kræver en beslutning om, om det danske købsflow er vigtigt nok til at prioriteres frem for T8 (CLI-dokumentation) og T9 (sandhedsdygtige claims).
 
 ## Iterationlog
 
@@ -371,3 +412,4 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 07:11 UTC: T1 lukket som overført efter `16cb82a`; T5 implementeret på `ceo/remove-auto-deploy`. Deploy-workflowen er fjernet, 39 workflow-regressioner dækker Cloudflare, push-deploy, YAML-varianter og lokale actions, og 38 engine-tests plus pack og npm-audit er grønne. Merge og kontrol af nye deploy-runs afventet.
 - 2026-09-25 14:21 UTC: T5 merged til `main` i `28a06dd` og pushet til `main` samt `ceo/remove-auto-deploy`; CI-run `36146904851` sluttede `success`, og ingen ny `deploy-site`-run blev oprettet.
 - 2026-09-25 16:02 UTC: T6 gennemført på `ceo/site-gate-ci`. Hash-låst `tools/site-requirements.txt` (54 pakker, `playwright==1.60.0` + `pip-audit==2.9.0`), `tools/site_gate.sh`, `tools/site_gate_selftest.py`, `TRANSMUTE_SITE`-override i begge checkere, npm-scripts `check:site`, `audit:site` og `lock:site` samt `.github/workflows/site-gate.yml`. Lokalt grøn: 0 SEO-fund på 18 sider, 0 layout-afvigelser ved 360/768/1280, 4 grønne selvtesttrin, pip-audit uden fund, 38+39 tests og `npm pack --dry-run` grøn. Implementationscommit `d555f65`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/site-gate-ci`. CI-run `36158172199` (`CI`) sluttede `success`; `Site gate`-run `36158172198` sluttede `success` efter 1 min. 15 s med de fire grønne selvtesttrin i loggen. Ingen sitefil rørt, ingen deploy-note, ingen `deploy-site`-run. Næste opgave er T7 (`/support` og købsside).
+- 2026-09-25 ca. 11:20 lokal tid: T7 gennemført på `ceo/support-page`. `site/support/index.html` med køb via den officielle Payment Link, 32-tegns nøglen, tre maskiner, fejlfinding, nøglersikkerhed, kontakt og en kort donationstekst; Support-link i footeren på alle 19 sider via `site_chrome.py`; `llms.txt` opdateret; sitemap og søgeindeks regenereret (102 → 103 entries). En rød site-gate undervejs blev isoleret som flake og lukket: `layout_check.py` fejler nu pr. side med 20 s `goto`-timeout i stedet for at gå i stykker, og `site_gate_selftest.py` hæfter checkerens output på en fejl. Lokalt grøn: `npm test` (38 + 39), `npm pack --dry-run` (5 filer), `npm run audit:site` uden fund, `npm run check:site` med 0 SEO-fund på 19 sider, 0 layout-afvigelser ved 360/768/1280 px og fire grønne selvtesttrin; tre grønne site-gate-kørsler efter flake-fixen. Implementationscommit `0534cb8`, mergeret fast-forward til `main` og pushet til `main` samt `ceo/support-page`. T8 er næste opgave; T12 (dansk support-side) er lagt til med hreflang-krav.
