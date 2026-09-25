@@ -8,7 +8,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafslutdede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er implementeret på `ceo/remove-auto-deploy` med grøn root-gate og afventer merge samt kontrol af workflow-kørsel. T6 er næste opgave.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, merged til `main` og pushet; CI-run `36146904851` sluttede `success`, og ingen ny deploy-run blev oprettet. T6 er næste opgave.
 
 ## Kvalitetsgate
 
@@ -22,9 +22,9 @@ Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bru
 
 ## Deploy
 
-Loopet må aldrig trigge deploy, webhook, Dokploy-API eller andre udadvendte writes. Den tidligere `.github/workflows/deploy-site.yml` deployed `site/**` ved push til `main` og blev fjernet på `ceo/remove-auto-deploy`. `tools/verify_workflows.mjs` er nu en del af `npm test` og afviser Cloudflare Pages eller kendte push-triggerede deploymekanismer. T5 rører ingen sitefiler, så der forventes ingen ekstern batch-deploy og der oprettes ingen `VERIFICÉR DEPLOY`-note.
+Loopet må aldrig trigge deploy, webhook, Dokploy-API eller andre udadvendte writes. Den tidligere `.github/workflows/deploy-site.yml` deployed `site/**` ved push til `main` og blev fjernet i commit `28a06dd`. `tools/verify_workflows.mjs` er nu en del af `npm test` og afviser Cloudflare Pages eller kendte push-triggerede deploymekanismer. T5 rørte ingen sitefiler, så der forventes ingen ekstern batch-deploy og der er oprettet ingen `VERIFICÉR DEPLOY`-note.
 
-Før T5-merge var seneste `deploy-site`-kørsel run `36062253130` med commit `3d90812ee423d61da7dc9096f5f9985da6e90a75`, oprettet `2026-09-24T21:33:38Z`. Efter merge skal der verificeres, at ingen ny deploy-run er oprettet; hvis det sker, skrives `DEPLOY-OOPS: <workflow og tidspunkt>` og alle merges stoppes.
+Før T5-merge var seneste `deploy-site`-kørsel run `36062253130` med commit `3d90812ee423d61da7dc9096f5f9985da6e90a75`, oprettet `2026-09-24T21:33:38Z`. Efter merge af `28a06dd` blev ingen ny `deploy-site`-kørsel oprettet; CI-run `36146904851` for committen sluttede `success` den `2026-09-25T14:21:13Z`.
 
 Efter merge af en fremtidig live-siteændring skal planen få `VERIFICÉR DEPLOY: <ændring> <commit-sha> <tidspunkt med UTC-offset>`. Den eksterne batchdeploy forventes ca. kl. 07:30, 12:30 og 17:30. Kildekontrakten angiver ikke tidszone, så to-vinduer-tællen må først begynde, når den faktiske offset er observeret og skrevet i noten. HTTP 200 er ikke tilstrækkelig; indholdet skal sammenlignes. Efter to dokumenterede deploy-vinduer uden den forventede live-ændring skrives `DEPLOY-MISSING: <detaljer>`, og yderligere merges til `main` stoppes. Aktuelle deploy-notes: ingen.
 
@@ -174,9 +174,9 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - README, site og desktop kan udledes fra samme matrix uden modstridende claims.
 - Ingen større Pro-feature er implementeret før denne task er afkrydset.
 
-### 5. [ ] Fjern den uoverensstemmende automatiske site-deploy
+### 5. [x] Fjern den uoverensstemmende automatiske site-deploy
 
-**Status:** IMPLEMENTERET — afventer merge og workflow-verifikation
+**Status:** FÆRDIG — merged til `main` i commit `28a06dd`
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** Nuværende push-workflow kan deploye mod kontrakten og gør det usikkert at merge de efterfølgende siteopgaver.
 
@@ -194,7 +194,7 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - Merge af sletningen logger ingen deploy-kørsel; hvis det alligevel sker, skrives `DEPLOY-OOPS: <workflow og tidspunkt>` og alle merges stoppes.
 - Ingen udadvendende action køres fra agenten.
 
-**Verifikation før merge:** `npm test` (38 engine + 39 workflow-regressioner), `npm pack --dry-run` og `npm audit --package-lock=false --omit=dev` er grønne. Den faktiske merge- og workflow-kontrol afsluttes i næste planstatuscommit.
+**Verifikation før og efter merge:** `npm test` (38 engine + 39 workflow-regressioner), `npm pack --dry-run` og `npm audit --package-lock=false --omit=dev` er grønne. Committen blev mergeret til `main`; CI-run `36146904851` sluttede `success`, og ingen ny `deploy-site`-kørsel blev oprettet.
 
 ### 6. [ ] Gør site-gaten reproducible i CI
 
@@ -359,4 +359,5 @@ Validering er due, når `now - last_checked_at >= 24 timer`, og skal ske ved app
 - 2026-09-25 03:29 UTC: `6e89d13` mergeret fast-forward til `main` og pushet til `main` samt `ceo/desktop-opener`; CI-run `36090507215` sluttede `success`, og ingen deploy-site-run blev udløst.
 - 2026-09-25 05:37 UTC: T1-forsøg 1 gemt på `ceo/rustsec-baseline` som `7e34c0f` og pushet uden merge. Root-test/pack, Cargo check/test og YAML-parsning er grønne; `cargo audit --deny warnings` fejler korrekt på syv upstream-fund. Næste iteration skal genkontrollere dem.
 - 2026-09-25 05:38 UTC: Planstatuscommitten `c9ba6b9` pushet til `main`; CI-run `36099345814` sluttede `success`, og ingen deploy-site-run blev udløst.
-- 2026-09-25 07:11 UTC: T1 lukket som overført efter `16cb82a`; T5 implementeret på `ceo/remove-auto-deploy`. Deploy-workflowen er fjernet, 20 workflow-regressioner dækker Cloudflare, push-deploy, YAML-varianter og lokale actions, og 38 engine-tests plus pack og npm-audit er grønne. Merge og kontrol af nye deploy-runs afventer.
+- 2026-09-25 07:11 UTC: T1 lukket som overført efter `16cb82a`; T5 implementeret på `ceo/remove-auto-deploy`. Deploy-workflowen er fjernet, 39 workflow-regressioner dækker Cloudflare, push-deploy, YAML-varianter og lokale actions, og 38 engine-tests plus pack og npm-audit er grønne. Merge og kontrol af nye deploy-runs afventet.
+- 2026-09-25 14:21 UTC: T5 merged til `main` i `28a06dd` og pushet til `main` samt `ceo/remove-auto-deploy`; CI-run `36146904851` sluttede `success`, og ingen ny `deploy-site`-run blev oprettet.
