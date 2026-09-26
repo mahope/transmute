@@ -412,6 +412,44 @@ printf '[{"id":1,"email":"a@x.dk"},{"id":2},{"id":3,"email":"c@x.dk"}]' \
 Warnings are for stderr only. A `2>/dev/null` around a run, or a `--out` file,
 never changes the file that is written.
 
+### When a row is not a record
+
+A field name no record has is a warning, because the next file may have it. A
+row that is not a record is the other thing entirely: a step that names a field
+has no field to read, so every answer it could give is invented or lost data.
+
+After a `map` that leaves strings, `omit` and `rename` built columns `0 1 2 3`
+holding `A l i c e` — characters the file never contained; `add` spread a
+number into `{}` and lost the number; `group` filed every row under `(null)`;
+`unique` compared `undefined` with `undefined`, decided two different names were
+identical and deleted one; `join` dropped every row and wrote an empty file. All
+of it exit 0, empty stderr, and output that looked like the transformation that
+was asked for.
+
+`pick`, `omit`, `rename`, `add`, `sort`, `group`, `unique --by`, `flatten` and
+`join` now stop at the first row they cannot read, and say which step it was,
+which row it was, and what the row was. Exit 1, nothing on stdout, no file
+written — the data is wrong, so there is nothing to write:
+
+```bash
+transmute test/fixtures/people.csv \
+  --pipe '[{"op":"map","expr":"item.name"},{"op":"pick","fields":["name"]}]' --output csv
+```
+
+```
+Error: Pipeline step 2 (pick) names a field, but row 1 is a string ("Alice"), not a record. It has no fields to read — use map to turn each row into a record first.
+```
+
+This is a transformation error, not a usage error, so it is exit 1 and not exit
+2: the pipeline is a good pipeline for a file of records, and it is these rows
+that are not. `count`, `head`, `tail`, `filter`, `map` and a `unique` without
+`by` need no field and keep working on rows that are not records — a `map` that
+reshapes records into values is how such rows are made in the first place, and
+the step that made them must be allowed to see them.
+
+The browser playground runs the same engine and shows the same message in its
+error box.
+
 ### filter
 
 Keep the records where a JavaScript expression is true. `item` is the record,

@@ -1138,12 +1138,104 @@ t('a field only the right side of a join has is not reported as missing', () => 
 });
 
 t('rows that are not records are not fields nobody has', () => {
-  // A step over values has no fields to miss, and `pick` reports the row it
-  // cannot read in its own error. The check must not pile a second, vaguer
-  // complaint on top of it.
+  // A step over values has no fields to miss, and a step that cannot read a
+  // row says which row it could not read. The check must not pile a second,
+  // vaguer complaint on top of that error.
   const r = runSQL('[1,2,3]', 'json', [{ op: 'sort', by: 'n' }], 'json');
   assert.deepStrictEqual(r.warnings, []);
-  assert.strictEqual(r.error, undefined);
+  assert.ok(/row 1 is a number \(1\)/.test(r.error), r.error);
+});
+
+t('a step that names a field refuses a row that is not a record', () => {
+  // The data-shaped twin of the missing-parameter check. After a `map` that
+  // yields strings, six of the eight steps that name a field answered with
+  // something other than what they did: `omit` and `rename` built columns
+  // `0 1 2 3` holding `A d a`, data no file contained; `add` spread a number
+  // into `{}` and lost it; `group` put every row in `(null)`; `unique` compared
+  // `undefined` with `undefined` and deleted all but one row; `join` dropped
+  // every row and wrote an empty file. Exit 0, empty stderr, every time.
+  const steps = [
+    { op: 'pick', fields: ['name'] },
+    { op: 'omit', fields: 'name' },
+    { op: 'rename', mapping: { name: 'n' } },
+    { op: 'add', fields: { x: '1' } },
+    { op: 'sort', by: 'name' },
+    { op: 'group', by: 'name' },
+    { op: 'unique', by: 'name' },
+    { op: 'flatten', field: 'items' },
+    { op: 'join', with: [{ name: 'Ada' }], on: 'name' }
+  ];
+  for (const step of steps) {
+    const r = runSQL('[{"name":"Ada"},{"name":"Bob"}]', 'json',
+      [{ op: 'map', expr: 'item.name' }, step], 'json');
+    assert.ok(r.error, `${step.op} answered a string row with ${JSON.stringify(r.data)}`);
+    assert.ok(
+      r.error.includes(`(Pipeline step 2 (${step.op})` ) || r.error.startsWith(`Pipeline step 2 (${step.op})`),
+      `${step.op}: ${r.error}`
+    );
+    assert.ok(/row 1 is a string \("Ada"\)/.test(r.error), `${step.op}: ${r.error}`);
+    // Data, not a bad command: the pipeline is right for a file of records.
+    assert.strictEqual(r.usage, false, step.op);
+    assert.strictEqual(r.text, undefined, step.op);
+  }
+});
+
+t('a row that is not a record is named by its number, not just its kind', () => {
+  const r = runSQL('[{"n":1},{"n":2},{"n":3}]', 'json',
+    [{ op: 'map', expr: 'item.n === 2 ? "two" : ({ name: item.n })' }, { op: 'pick', fields: ['name'] }], 'json');
+  assert.ok(/row 2 is a string \("two"\)/.test(r.error), r.error);
+});
+
+t('the other shapes a row can have are named too', () => {
+  const shapes = [
+    ['[1,2]', 'a number (1)'],
+    ['[true,false]', 'a boolean (true)'],
+    ['[null]', 'null'],
+    ['[[1,2]]', 'an array']
+  ];
+  for (const [input, described] of shapes) {
+    const r = runSQL(input, 'json', [{ op: 'pick', fields: ['name'] }], 'json');
+    assert.ok(r.error.includes(`row 1 is ${described}`), `${input}: ${r.error}`);
+  }
+});
+
+t('steps that need no field still work on rows that are not records', () => {
+  // The other half of the rule. `count`, `head`, `tail`, `filter`, `map` and a
+  // `unique` without `by` compare or count rows, not fields, and a `map` that
+  // reshapes rows into values is how a value-shaped tool gets its rows in the
+  // first place. Failing them too would make the guard a new silent loss: the
+  // step that produced the strings would be the only one allowed to see them.
+  const input = '[{"name":"Ada"},{"name":"Bob"},{"name":"Ada"}]';
+  const asNames = [{ op: 'map', expr: 'item.name' }];
+  for (const [label, pipeline, expected] of [
+    ['count', [...asNames, { op: 'count' }], 3],
+    ['head', [...asNames, { op: 'head', n: 2 }], 2],
+    ['tail', [...asNames, { op: 'tail', n: 1 }], 1],
+    ['filter', [...asNames, { op: 'filter', expr: 'item === "Ada"' }], 2],
+    ['unique', [...asNames, { op: 'unique' }], 2],
+    ['map', [...asNames, { op: 'map', expr: 'item.length' }], 3]
+  ]) {
+    const r = runSQL(input, 'json', pipeline, 'json');
+    assert.strictEqual(r.error, undefined, `${label}: ${r.error}`);
+    const rows = label === 'count' ? r.data[0].count : r.data.length;
+    assert.strictEqual(rows, expected, label);
+  }
+  // A `unique` with no `by` on identical strings is the one case where two rows
+  // really are the same, so it may drop one — that is what it is for.
+  const u = runSQL(input, 'json', [...asNames, { op: 'unique' }], 'json');
+  assert.deepStrictEqual(u.data, ['Ada', 'Bob']);
+});
+
+t('the guard looks at the row, not at what is inside it', () => {
+  // A record whose values are null, an empty object, an array or a key called
+  // `__proto__` is still a record, and the steps that name fields keep working
+  // on it. What the guard refuses is the row's own shape.
+  const r = runSQL('[{"a":null},{"a":{}},{"a":[1]},{"__proto__":1}]', 'json',
+    [{ op: 'group', by: 'a' }, { op: 'pick', fields: ['key', 'count', 'items'] }], 'json');
+  assert.strictEqual(r.error, undefined, r.error);
+  // Three keys: two rows have no `a` and share "(null)", and the two objects
+  // and the array are their own keys, because `group` compares them by identity.
+  assert.deepStrictEqual(r.data.map(g => g.count), [2, 1, 1]);
 });
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);

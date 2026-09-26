@@ -1458,6 +1458,77 @@ function reportMissingFields(data, step, warnings) {
   }
 }
 
+// ─── Rows that are not records ───────────────────────────────────────────
+
+/**
+ * The steps that read a row as a record, because they name a field in it.
+ *
+ * This is the data-shaped twin of `validatePipeline`. T25 asked whether a step
+ * brings the parameter it needs; this asks what happens when the rows it meets
+ * are not the shape the step was written for, and the answer was that six of
+ * the eight said something other than what they did. After a `map` that yields
+ * strings, `omit` built columns `0 1 2` holding `A d a` — data the file never
+ * had — `rename` did the same, `add` spread a number into `{}` and lost it,
+ * `group` put every row in the group `(null)`, `unique --by` compared
+ * `undefined` with `undefined` and deleted all but one row, and `join` dropped
+ * every row and wrote an empty file. All of it exit 0, empty stderr, and an
+ * output the user believed was the transformation they had asked for. Only
+ * `pick` was loud, and it shouted V8's own words: `Cannot use 'in' operator to
+ * search for 'name' in Ada`.
+ *
+ * `count`, `head`, `tail`, `filter` and `map` are missing on purpose: they
+ * work on any row, which is what makes them useful after a `map`. `unique`
+ * without `by` compares whole rows and needs no field, so it is only in the set
+ * when `by` is there.
+ */
+const RECORD_STEPS = new Set([
+  'add', 'flatten', 'group', 'join', 'omit', 'pick', 'rename', 'sort'
+]);
+
+function readsRecords(step) {
+  return RECORD_STEPS.has(step.op) || (step.op === 'unique' && Boolean(step.by));
+}
+
+/** What a row is, in words a user wrote the pipeline in. */
+function describeRow(row) {
+  if (row === null) return 'null';
+  if (Array.isArray(row)) return 'an array';
+  const kind = typeof row;
+  if (kind === 'string' || kind === 'number' || kind === 'boolean') {
+    return `a ${kind} (${JSON.stringify(row)})`;
+  }
+  return `a ${kind}`;
+}
+
+/**
+ * Say a step cannot read a row, instead of reading something out of it.
+ *
+ * Unlike a field name no record has, this is not a warning. A field name is an
+ * assumption about data, and a script that guesses it may be right about the
+ * next file, so the run succeeds and one line goes to stderr. A row that is not
+ * a record is not an assumption the step can survive: there is no field to
+ * read, and every answer the step could give — an empty object, a row of
+ * character indexes, a dropped row — is invented or lost data. The run stops
+ * and says which step, which row and what the row was, and leaves it to the
+ * user to decide whether the fix is a `map` that builds records, a different
+ * step, or different input.
+ *
+ * The error is the data's, not the pipeline's, so it is not a `usage` error:
+ * the pipeline is a perfectly good pipeline for a file of records.
+ */
+function requireRecords(data, step, index) {
+  if (!Array.isArray(data) || !readsRecords(step)) return;
+  const at = `Pipeline step ${index + 1} (${step.op})`;
+  for (let i = 0; i < data.length; i++) {
+    if (!isPlainObject(data[i])) {
+      throw new Error(
+        `${at} names a field, but row ${i + 1} is ${describeRow(data[i])}, not a record. ` +
+        `It has no fields to read — use map to turn each row into a record first.`
+      );
+    }
+  }
+}
+
 // ─── Main pipeline function ──────────────────────────────────────────────
 
 /**
@@ -1487,10 +1558,11 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
     let data = parsers[inputFormat](inputText, { ...opts, warnings });
 
     // Transform
-    for (const step of pipeline) {
+    for (const [index, step] of pipeline.entries()) {
       // Against the data as it is here, not against the file as it arrived: a
       // field `add` or `map` just created is present from this step on, and one
       // `rename` removed is gone from it.
+      requireRecords(data, step, index);
       reportMissingFields(data, step, warnings);
       data = operations[step.op](data, step);
       if (!Array.isArray(data)) data = [data];

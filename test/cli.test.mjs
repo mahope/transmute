@@ -547,5 +547,49 @@ test('a field the data has is not reported missing', () => {
   assert.equal(rows.length, 4, r.stdout);
 });
 
+console.log('── a step that meets rows it cannot read ──');
+
+test('a step that names a field fails on a row that is not a record', () => {
+  // The silent half of the family. After a `map` that leaves strings, `omit`
+  // wrote columns `0 1 2 3` holding `A l i c e`, `rename` did the same, `add`
+  // spread the string away and lost it, `group` filed everything under
+  // "(null)", `unique` compared `undefined` to `undefined` and kept one of two
+  // rows, and `join` dropped every row. Exit 0, empty stderr, every time.
+  for (const step of [
+    '{"op":"pick","fields":["name"]}',
+    '{"op":"omit","fields":"name"}',
+    '{"op":"rename","mapping":{"name":"n"}}',
+    '{"op":"add","fields":{"x":"1"}}',
+    '{"op":"sort","by":"name"}',
+    '{"op":"group","by":"name"}',
+    '{"op":"unique","by":"name"}',
+    '{"op":"join","with":[{"name":"Alice"}],"on":"name"}'
+  ]) {
+    const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -f csv --pipe '[{"op":"map","expr":"item.name"},${step}]' -o json`);
+    assert.equal(r.status, 1, `${step} exited ${r.status}, stderr: ${r.stderr}`);
+    assert.equal(r.stdout, '', `${step} wrote to stdout anyway: ${r.stdout}`);
+    assert.match(r.stderr, /not a record/, `${step}: ${r.stderr}`);
+    assert.match(r.stderr, /row 1 is a string \("Alice"\)/, `${step}: ${r.stderr}`);
+  }
+});
+
+test('the failure is a transformation error, not a usage error', () => {
+  // The pipeline is a good pipeline for a file of records. It is the rows that
+  // are not, so this is exit 1 like any other failed transformation, and not
+  // exit 2, which belongs to a flag or an expression the user mistyped.
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -f csv --pipe '[{"op":"map","expr":"item.name"},{"op":"pick","fields":["name"]}]' -o csv`);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Pipeline step 2 \(pick\)/, r.stderr);
+  assert.match(r.stderr, /use map to turn each row into a record first/, r.stderr);
+});
+
+test('a step that needs no field still runs on rows that are not records', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -f csv --pipe '[{"op":"map","expr":"item.city"},{"op":"unique"},{"op":"count"}]' -o json`);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stderr, '', r.stderr);
+  // Four rows, two cities: `unique` over the values is what the step is for.
+  assert.deepEqual(JSON.parse(r.stdout), [{ count: 2 }]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
