@@ -532,7 +532,7 @@ Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") er **lukket, ikke merged*
 
 ### 26. [x] Et feltnavn, ingen rækker har, skal sige hvad der skete
 
-**Status:** FÆRDIG på `ceo/missing-fields` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Status:** FÆRDIG med commit `b20b809` på `ceo/missing-fields` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
 **Mislykkede forsøg:** 0/2
 **Metode:** T20–T25-metoden fortsat på den flade T25's research efterlod: et resultat, der afviser det, der blev bedt om, uden at sige det. Alle otte fund er kørt på den gamle kode før rettelsen.
 
