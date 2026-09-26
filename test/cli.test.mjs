@@ -432,6 +432,85 @@ test('add still turns a per-record failure into null', () => {
   assert.equal(out.includes(','), true, 'the null field must be in the output');
 });
 
+console.log('── each option is given once ──');
+
+// The parser used to keep the last value of a repeated flag and say nothing,
+// so a command that was not the command the user wrote exited 0 with an empty
+// stderr and output that looked like the answer to it. Two `--pipe` flags ran
+// one pipeline and dropped the other; `-f json -f csv` read JSON as CSV and
+// wrote the empty result it made up.
+
+test('two --pipe flags → exit 2, and the message says to put every step in one', () => {
+  expectFail(
+    `transmute test/fixtures/people.csv -p '[{"op":"sort","by":"age"}]' -p '[{"op":"head","n":3}]' -o csv`,
+    2,
+    'Put every step in one --pipe, as a JSON array.'
+  );
+});
+
+test('a short alias and its long name are the same flag', () => {
+  expectFail(
+    `transmute test/fixtures/people.csv -p '[{"op":"head","n":1}]' --pipe '[{"op":"head","n":2}]' -o json`,
+    2,
+    '--pipe was given 2 times'
+  );
+});
+
+test('two --format flags → exit 2, no empty CSV from reading JSON as CSV', () => {
+  // `-f json -f csv` used to read the JSON fixture as a one-column CSV and
+  // write the empty result, exit 0.
+  expectFail(`transmute test/fixtures/people.csv -f json -f csv -o csv`, 2, '--format was given 2 times');
+});
+
+test('two --output flags → exit 2', () => {
+  expectFail(`transmute test/fixtures/people.csv -o json -o csv`, 2, '--output was given 2 times');
+});
+
+test('two --delimiter flags → exit 2, no one-column file', () => {
+  expectFail(`transmute test/fixtures/european.csv --delimiter ';' --delimiter ',' -o csv`, 2, '--delimiter was given 2 times');
+});
+
+test('two --table flags → exit 2', () => {
+  expectFail(`transmute test/fixtures/people.csv -o sql --table t1 --table t2`, 2, '--table was given 2 times');
+});
+
+test('two --out flags → exit 2, and neither file is written', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const first = join(dir, 'first.csv');
+    const second = join(dir, 'second.csv');
+    expectFail(`transmute test/fixtures/people.csv -o csv --out ${JSON.stringify(first)} --out ${JSON.stringify(second)}`, 2, '--out was given 2 times');
+    assert.equal(existsSync(first), false, 'the first --out target must not be written');
+    assert.equal(existsSync(second), false, 'the second --out target must not be written either');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the count is the whole command line, not the number of repeats found so far', () => {
+  // The parser stops at the first repeat. Reporting "2 times" for a command
+  // that gave the flag three times would be the same silence in miniature.
+  expectFail(`transmute test/fixtures/people.csv -f json -f json -f json -o json`, 2, '--format was given 3 times');
+});
+
+test('every option once still works, in both spellings', () => {
+  const out = expectOk(sh(`transmute test/fixtures/people.csv -f csv -p '[{"op":"head","n":2}]' -o csv --table people`));
+  assert.equal(out.trim().split('\n').length - 1, 2);
+  const shorthand = expectOk(sh(`transmute test/fixtures/people.csv --format csv --pipe '[{"op":"head","n":2}]' --output csv --table people`));
+  assert.equal(shorthand, out);
+});
+
+test('--help says the same rule the error enforces', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" --help`));
+  assert.equal(out.includes('Give each option once'), true, '--help does not say that each option is given once');
+  assert.equal(out.includes('single --pipe'), true, '--help does not point at one --pipe');
+});
+
+test('the preview says it too, since that is where a user reads the options', () => {
+  const out = expectOk(sh(`transmute test/fixtures/people.csv`));
+  assert.equal(out.includes('Every option is given once'), true, 'the preview does not say that each option is given once');
+});
+
 console.log('── help and version ──');
 
 test('--help exits 0 and lists every option and operation', () => {

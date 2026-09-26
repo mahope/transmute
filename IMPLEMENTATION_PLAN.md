@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T27)
+Opdateret: 2026-09-26 (T28)
 
 
 ## Mission
@@ -11,11 +11,11 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 07:0x CEST med `npm run check:deploy`, starten på T27-iterationen):** uændret. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 07:5x CEST med `npm run check:deploy`, starten på T28-iterationen):** uændret for tredje gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
-**VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T26, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/missing-fields` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
+**VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T28, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/repeated-flags` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
-**Næste iteration:** deploy-stillen er uændret, og derfor ligger **femten** færdige commits på ni branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; hvis `DEPLOY-MISSING` er væk, merges hele bunken (T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809` og T27 `0abe7a3`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, er T28 næste opgave, og **T20's metode er den der virkede**: kør rigtige filer gennem `src/cli.js` med hvert output-format, og se efter exit 0 med mistet data.
+**Næste iteration:** deploy-stillen er uændret, og derfor ligger **sexten** færdige commits på ti branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; hvis `DEPLOY-MISSING` er væk, merges hele bunken (T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3` og T28) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, er T29 næste opgave, og dens fund er allerede målt: **`--out fil` uden `--output` er ignoreret helt** — previewen kører, exit 0, tom stderr, og filen skriver aldrig sig. Det er den stærkeste form for fejlen i rækken, fordi brugeren beder om en fil og får en tabel.
 
 **De fire flader, T21 og T22 efterlod, er lukket:** serialiseringssiden (T20: `[object Object]`, array-kollision, `join --prefix`), `unique` uden `by` og `group` (T21: rækkefølgeafhængig nøgle, `__proto__`), XML-udgangen (T21: ulovlige tag-navne, tavs læsefejl) og `detectFormat` (T22: svagere kopi af læserens regel, afvisning af TSV/semikon/pipe/enkolonne på stdin). **`sort` er den eneste af de fire, der står åben, og den er dokumenteret væk i T21**: tal-strenge sorteres leksikografisk, fordi det er præcis hvad `jq`'s `sort_by` gør på strenge, og CSV-coercion gør tal til tal alligevel. Det er en afvejning, ikke en tavs korruption, så den kræver en beslutning fra Mads, ikke en fix.
 
@@ -31,7 +31,10 @@ Beslutningen, planen havde lagt åben — *hvor må den fejle* — viste sig at 
 
 **Forskellen på advarsel og fejl er her ikke et smagspørgsmål, men T26's egen skelneline.** Et *feltnavn* er et antagende om data, der kan være rigtigt for næste fil, så det er en advarsel (T26). En *række uden felter* er ikke noget steppet kan overleve: der er intet at læse, og ethvert svar — `{}`, tegnindekser, en tabt række — er opdigtet eller tabt data. Derfor fejl, exit 1, tom stdout, ingen fil. `count`, `head`, `tail`, `filter`, `map` og `unique` uden `by` skal fortsat virke på ikke-records, ellers ville vagten selv blive en ny tavs tab: det step der skabte strengene, skal kunne se dem.
 
-**Den næste flade er en anden slags tavshed, fundet undervejs for T27: et gentaget flag.** CLI'en tager det **sidste** `--pipe`, `--format`, `--output`, `--delimiter` og `--table` og kasserer de forrige i stilhed. `--pipe '[{"op":"head","n":1}]' --pipe '[{"op":"head","n":2}]'` kører kun den sidste og siger intet, selv om CLI'ens egen hjælp skriver flere step i **ét** `--pipe`. Det er T25's familie — en kommando, der ikke er den brugeren skrev, med et svar de ikke kan se — bare i argument-parseren i stedet for i pipeline-steptene. Se T28.
+**Den ottende flade, argument-parseren, er lukket af T28.** Den var den anden slags tavshed, T27 havde fundet på vejen: CLI'en tog det **sidste** `--pipe`, `--format`, `--output`, `--out`, `--delimiter` og `--table` og kasserede de forrige i stilhed. Syv kørsler, alle exit 0 med tom stderr, og to af dem slettede data: `-f json -f csv` læste JSON'en som én kolonne og skrev den tomme resultat den selv fandt på, og `--out a.csv --out b.csv` lod `a.csv` forsvinde. Nu afvises et gentaget flag med exit 2 og en besked der siger hvad der ville være sket og, for `--pipe`, hvordan det skrives i stedet. To valg er værd at huske: **afvise, ikke sammensætte** — `--pipe` er det eneste flag hvor en sammensætning betyder noget, og den gør flagenes rækkefølge afgørende for stepenes, så den ville være det ene flag med en skjult regel; og **tallet er hele kommandolinjen**, fordi parseren ellers stoppede ved det første gentagne flag og sagde "2 gange" om tre. Konformitetslåsen mellem fejl, `--help` og `docs/cli.md` er testet mod mutation, ikke bare skrevet.
+
+**Den niende flade er fundet undervejs for T28 og hedder `--out`:** et flag der aldrig bruges, fordi et andet mangler. `transmute people.csv --out p.csv` uden `--output` kører previewen, exit 0, tom stderr, og filen skriver aldrig sig — brugeren beder om en fil og får en tabel. Det er den anden halvdel af T28's familie, og svaret kræver et valg, så den ligger som T29.
+
 
 `npm run check:site` er grøn efter T27 (20 sider, 0 fund, 0 layout-afvigelser). `❓ Til Mads` punkt 1 er stadig den eneste beslutning, der frigør mest, og intet i køen kan løse den.
 
@@ -166,37 +169,89 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 **Deploy:** `npm run check:deploy` kørt først i iterationen: uændret, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. `DEPLOY-MISSING` står derfor ved, diffen er **ikke** mergeret til `main`, og der er oprettet ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret.
 
-### 28. [ ] Et gentaget flag skal ikke blive taget som en ny kommando
+### 28. [x] Et gentaget flag skal ikke blive taget som en ny kommando
 
-**Status:** ÅBEN — fundet undervejs for T27, reproduceret på den nuværende kode
+**Status:** FÆRDIG på `ceo/repeated-flags` — sha står i Iterationsstatus. Ligger på branch, ikke mergeret, se Deploy.
 **Mislykkede forsøg:** 0/2
-**Begrundelse:** samme familie som T25 (en kommando, der ikke er den brugeren skrev, med et svar de ikke kan se), bare i argument-parseren. CLI'en tager det **sidste** `--pipe`, `-f`, `-o`, `--delimiter` og `--table` og kasserer de forrende i stilhed.
+**Begrundelse:** samme familie som T25 (en kommando, der ikke er den brugeren skrev, med et svar de ikke kan se), bare i argument-parseren. CLI'en tog det **sidste** `--pipe`, `-f`, `-o`, `--delimiter`, `--out` og `--table` og kasserede de forrige i stilhed.
 
-**Fund, kørt på den nuværende kode:**
+**Fund, kørt på den kode der var før rettelsen.** Alle syv kørseler var exit 0 med tom stderr:
 
 ```
 $ transmute q.json --pipe '[{"op":"head","n":1}]' --pipe '[{"op":"head","n":2}]' --output json
-[ { "a": 1, "b": 2 } ]        # kun den sidste kørte, exit 0, tom stderr
-$ printf 'a;b
-1;2
-' | transmute -f csv --delimiter ';' --delimiter ',' --output csv
-"a;b"                        # sidste delimiter vandt, filen læst som én kolonne
+fire rækker                                        # kun den sidste kørte
+$ printf 'a;b\n1;2\n' | transmute -f csv --delimiter ';' --delimiter ',' --output csv
+"a;b"                                              # én kolonne, filen læst med den forkerte delimiter
+$ transmute q.json --output json --output csv
+a,b                                                # CSV, selv om den FØRSTE sagde json
+$ transmute q.json -f json -f csv --output csv
+                                                    # tom output: JSON læst som CSV, exit 0
+$ transmute q.json --out a.csv --out b.csv --output csv
+                                                    # kun b.csv skrev sig
+$ transmute q.json -p '[…]' --pipe '[…]' --output json
+                                                    # alias og lang navn er samme flag, og det tæller ikke
+$ transmute q.json --output sql --table t1 --table t2
+INSERT INTO "t2" …                                # kun det sidste tabelnavn
 ```
 
-Andet kørte endda **første** `--output` (`--output json --output csv` skrev CSV), altså er det ikke engang ensrettet — og CLI'ens egen hjælptekst skriver flere step i **ét** `--pipe`, så to `--pipe` er den naturlige fejltagelse.
+To af dem sletter data: `-f json -f csv` læste JSON'en som én kolonne og skrev det den selv fandt på, og `--out a.csv --out b.csv` lod `a.csv` forsvinde uden at sige det. Resten svarede med noget andet end det bestilte, i to tilfælde med en *anden* end nogen af værdierne, fordi det er `--output` der afgør, ikke det første.
+
+**Rettelse:**
+
+- `OPTION_NAMES` i `src/cli.js` er navneliste over de seks options der tager en værdi, med aliaserne foldet ind (`-p` → `--pipe`), og `takeOption(seen, counts, name)` afviser det andet krav med `UsageError` (exit 2, tom stdout). Parseren er stadig en liste af tildelinger; kun gentagne flag afvises.
+- **Tallet er hele kommandolinjen, ikke gentagelserne indtil nu.** `countOptions(args)` tæller alle forekomster før parsing, fordi parseren stopper ved det første gentagne flag — ellers svarer tre `--delimiter` "2 gange", hvilket er samme stilhed i miniature. Målt: `--delimiter` tre gange siger 3, `-p` fire gange siger 4.
+- **Exit 2, ikke 1.** Samme skelnelinje som T23: det er brugerens egen kommandolinje, der er forkert, ikke data.
+- Beskeden er ens for alle flags og siger hvad der *ville* være sket: `--pipe was given 2 times, and only the last one would have been used. Put every step in one --pipe, as a JSON array.` De øvrige ender på `Give each option once.`
+
+**Valg, der er bevidst:**
+
+- **Afvise, ikke sammensætte.** T28's scope stillede spørgsmålet, og svaret er nej, fordi `--pipe` er det eneste flag hvor en sammensætning overhovedet betyder noget, og den gør **flagenes rækkefølge** afgørende for stepenes rækkefølge. Så ville `--pipe` være det ene flag med en skjult regel — præcis det, T23–T28 fjerner. De øvrige fem kan ikke slås sammen, så familien må være "én option, én gang".
+- **Ingen advarsel.** En advarsel om at den første værdi blev kasseret ville være T26's svar anvendt forkert: her er data ikke tabt, kun *kommandoen* er en anden end den skrevne, og så skal den ikke køre.
+- **T29's `--out`-fund er ikke rettet her.** Det er en anden fejl (et flag der *ikke* bruges) og har sin egen opgave, fordi svaret kræver et valg mellem "skriv filen alligevel" og "sag at previewen og `--out` ikke kan begge være det".
+
+**Acceptkriterier, verificeret:**
+
+- Alle seks options afvises gentaget, exit 2, tom stdout — målt på den rigtige binary i `test/cli.test.mjs`.
+- `-p` og `--pipe` tælles som samme flag; tallet er det fulde antal forekomster.
+- Ét flag én gang røres ikke: 134 engine-tests, 109 CLI-tests (98 → 109, 11 nye), 72 konformitets- (69 → 72, 3 nye), 6 README-, 39 workflow-regressioner, 4 workflow-kontrakter og 173 kontratkontroller er grønne, og `--delimiter` i previewen (T22) virker stadig.
+- `docs/cli.md`, `--help` og previewen siger det samme, og konformitestesten låser alle tre mod den *rigtige* fejlmeddelelse.
+
+**Konformitetslåsen er testet mod mutation, ikke bare skrevet.** Tre mutationer, alle fanget: ændret fejltekst i `src/cli.js` → docs/cli.md citater den gamle; fjernet `takeOption` for `--delimiter` → både konformitets- og CLI-test falder; fjernet reglen fra `--help` → konformitestesten falder. Konformitestesten læser desuden optionerne *ud af docs-tabellen* og kræver at parseren både kender dem og afviser dem gentagne, så en option der tilføjes i parseren uden dokumentation — eller en dokumenteret option der ikke findes — fanger den.
+
+**Procesfejl, én, fanget af målingen:** den første rettelse talte gentagelserne undervejs og sagde `2 gange` for tre `--delimiter`. Det er præcis den fejl opgaven fjerner, så tællingen blev flyttet til en optælling af hele kommandolinjen, og testen "the count is the whole command line" låser den.
+
+**Deploy:** `npm run check:deploy` kørt først i iterationen: uændret, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. `DEPLOY-MISSING` står derfor ved, diffen er **ikke** mergeret til `main`, og der er oprettet ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. T28 rører ingen `site/`-fil — den rører kun argument-parseren, som browseren ikke har.
+
+### 29. [ ] Et flag, der kræver et andet, må ikke forsvinde i stilhed
+
+**Status:** ÅBEN — fundet undervejs for T28, målt på den kode T28 efterlod
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** T28's familie igen, den anden halvdel. T28 stoppede et flag, der blev gentaget; denne opgave er et flag, der **aldrig bruges**, fordi et andet mangler. Brugeren beder om en fil og får en preview på stdout.
+
+**Fund, målt på koden efter T28:**
+
+```
+$ transmute test/fixtures/people.csv --out /tmp/p.csv
+╔════════════════════════════════════╗      # previewen, exit 0, tom stderr
+║   Transmute — Data Transformer    ║
+$ ls /tmp/p.csv
+ls: /tmp/p.csv: No such file or directory        # filen blev aldrig skrevet
+```
+
+`--out` ignoreres helt, fordi previewen er den vej, CLI'en tager når hverken `--pipe` eller `--output` er med. Det er den *stærkeste* form af fejlen i hele rækken: brugeren har bedt om en fil, fået en tabel på skærmen og exit 0, og intet på stderr siger at filen ikke findes. Samme mønster findes for `--table` uden `--output` (dets eneste formål er SQL, så det er svagere), og måske for `--pipe` + `--out` uden `--output`, som er det samme som `--out` alene.
 
 **Scope:**
 
-- Saml alle gentagne flag i `src/cli.js` under ét og afvis dem med `UsageError` (exit 2), der navngiver flaget og siger at step skal samles i ét `--pipe`.
-- Ét spørgsmål at besvare i research: skal `--pipe` tillades gentaget og *sammensættes* (bedre UX, men en footer der afhænger af skjulte parametre), eller afvises? Vi valgte i T25 at være stram, fordi det samme argument gælder her.
-- `docs/cli.md` får det under `Options`, og `--help` skal sige det samme.
+- Svar på det designspørgsmål, T28's plan lagde og lod ligge: når `--out` er med uden `--output`, skal der så skrives filen med `table`-output, eller skal det være en usage-fejl? Begge er forsvarige — T27's linje er, at en kommando der ikke kan gøre det den blev bedt om skal *sige* det, så standarden bør være fejl, men `--out` er så hyppig en vane at en fejl kan være irriterende.
+- Samme afgørelse for `--table` uden `--output`, hvor svaret nok er "advarsel eller intet", fordi intet data går tabt.
+- Samme for `--delimiter` med et output-format der ikke læser CSV; den er allerede accepteret og kastet væk i `--output json --delimiter ';'`.
+- `docs/cli.md` under `Options`, `--help` med det samme, konformitetslås på den rigtige besked som T28's.
 
 **Acceptkriterier:**
 
-- `--pipe A --pipe B` giver exit 2, tom stdout, og en besked der nævner at step samles i ét `--pipe`.
-- Samme for `--format`, `--output`, `--delimiter` og `--table`.
-- Ét flag én gang røres ikke: hele den eksisterende CLI-suite (98 tests) og alle dokumenterede kommandoer er grønne.
-- `docs/cli.md` og `transmute --help` siger det samme, og konformitetstesten låser at de ikke kan glide fra hinanden.
+- `--out file` uden `--output` gør *noget synligt* — enten en fejl der nævner at `--out` kræver `--output`, eller en fil der skrives — aldrig exit 0 med en tabel på stdout og ingen fil.
+- Ingen af de tre øvrige flag kan forsvinde i stilhed på samme måde; de måles på den rigtige binary.
+- Ét flag én gang røres ikke, og hele den eksisterende suite (109 CLI-tests) er grøn.
 
 ### 1. [x] Afslut den gamle RustSec-baseline efter desktopflytningen
 
@@ -1477,3 +1532,5 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 - 2026-09-26 ca. 04:5x CEST: T21 gennemført på `ceo/xml-safe-keys`. `npm run check:deploy` kørt først: `DEPLOY-MISSING` står uændret (live `3d90812`, 5 site-commit i drift, `/support/index.html` utilgængelig), så intet merges til `main` — elleve færdige commits ligger nu på fem branch. T20-metoden fortsat på den sidste flade: XML-output, `unique` uden `by`, `group`. Tre fund, alle reproduceret på den gamle kode. (1) `writeXMLElement` skrev JSON-nøglen som tag-navn uden tjek, så `first name`/`2fa`/`a/b`/tom nøgle gav `<first name>Ada</first name>` — filen ingen parser læser, og Transmute læste sin egen output tilbage som `[{}]`, exit 0. Samme fejl i attributterne (`@2fa` → `<item 2fa="x">`, `@` → `<item ="x">`). Rettet med én definition af et navn: ulovlig nøgle → `<field name="…">`, læses tilbage af `readFieldName`; ulovlig `@`-nøgle → child-element gennem samme markør, så T18's `@id`-attribut er urørt. (2) `unique` uden `by` brugte `JSON.stringify`, som er rækkeføljeafhængig, så `{"a":1,"b":2}` og `{"b":2,"a":1}` begge blev beholdt — ny `stableKey()` sorterer nøglerne på vejen ned. (3) `group` brugte et almindeligt objekt, så `__proto__` nåede `Object.prototype` og kørselen døde med `groups[key].push is not a function` — nu en `Map`. **Læseren taler nu:** rod der ikke kan læses, rod der aldrig lukkes og element den ikke kan navngive kaster i stedet for at give `[]`/`{}`; det var stilheden, der gjorde fund 1 usynligt. XML-udgangen bevises desuden af en regex over alle tag- og attributnavne i testen, ikke af et eksempel. Otte nye engine-tests: mod den gamle `src/engine.js` fejler alle otte med det konkrete symptom, efter rettelsen grøn. Lokalt grøn: `npm test` 99+76+69+6+39+4+173, `npm pack --dry-run` 5 filer, `npm run check:site` grøn inkl. deploy-friskheds-selftesten. Ingen snapshot ændrede sig. Implementationscommit `f49458a`, pushet til `ceo/xml-safe-keys`, **ikke** mergeret til `main` mens `DEPLOY-MISSING` står. Fund: `sort` på tal-strenge er bevidst ikke rettet — `jq`'s `sort_by` gør det samme, så det er en afvejning og ikke en tavs korruption. Næste iteration: `❓ Til Mads` punkt 1 (batchdeployeren) er stadig den eneste beslutning, der frigør mest, og elleve commits på fem branch kan ikke frigives uden den.
 - 2026-09-26 ca. 06:3x–07:1x CEST: T27 gennemført på `ceo/record-shape` som `0abe7a3`, bygget oven på `ceo/missing-fields`, **ikke mergeret til `main`**. `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret, live er stadig `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig — så bunken er nu femten commits på ni branch, og der oprettes ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. T26 havde efterladt designsvalget "skal `pick` på ikke-records returnere `{}`, fejle, eller skal `map` altid levere records?" i stedet for at gætte; researchen bag T27 viste, at `pick` var det *mindste* eksempel — efter et `map` der efterlod strenge var seks af de otte step, der navngiver et felt, tavse på exit 0 med tom stderr: `omit` og `rename` byggede kolonnerne `0 1 2 3` med `A l i c e` i (data filen aldrig indeholdt), `add` spreadede et tal ind i `{}` og tabte tallet, `group` lagde hver række i `(null)`, `unique --by` sammenlignede `undefined` med `undefined` og slettede alle*rækker undtagen én*, `join` droppede alle og skrev en tom fil. Kun `pick` var høj, med V8's egen `Cannot use 'in' operator to search for 'name' in Ada`. Rettelsen er `requireRecords(data, step, index)` + `RECORD_STEPS` + `describeRow` i engine'en, kaldt i `run`s transform-løkke før hvert step: fejl med step, rækkenummer og rækkens form, exit 1 (ikke 2 — pipeline'en er fin, rækkerne er det ikke), tom stdout, ingen fil. `count`, `head`, `tail`, `filter`, `map` og `unique` uden `by` røres ikke, fordi `map` er den dokumenterede vej til værdier, så en vagt der stoppede den, ville gøre vejen ubrugelig — testet i begge lag. 5 nye engine-tests (129 → 134) og 3 nye CLI-tests (95 → 98) på den rigtige binary. To procesfejl, begge fanget af de nye tests: en test lavede en *record med en streng i* i stedet for en streng som række, og en antog to grupper hvor `group` slår objekter og arrays sammen efter identitet og dermed giver tre — begge rettet til det faktiske output. Lokalt grøn: `npm test` 134+98+69+6+39+4+173, `npm pack --dry-run` 5 filer uændret, `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0` ved 360/768/1280 px, selftester grønne inkl. deploy-friskheds-selftesten. `tools/site_chrome.py` regenererede `site/engine.js` (byte-identisk med `src/engine.js`) og asset-hash'en i `try.html`; ingen anden side ændrede sig, søgeindeks uændret på 104. Næste opgave er **T28**: et gentaget `--pipe` (eller `-f`, `-o`, `--delimiter`, `--table`) tages som en ny kommando, og de forrende kasseres i stilhed — fundet undervejs, reproduceret, og skrevet ned med scope og acceptkriterier.
 - 2026-09-26 ca. 05:3x–06:1x CEST: T23 og T24 gennemfort på `ceo/expression-syntax` (branch fra `ceo/format-detect`), **ikke mergeret til `main`, fordi `DEPLOY-MISSING` står.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret, live er stadig `3d90812` og 25 filer afviger, så bøgen på tolv commits er stadig låst. T23: `compileExpression` slugt alle syntax-fejl og returnerede identiteten, så `item.age >` kørte med exit 0, tom stderr og alle rækker; `add` skrev hele recordet ind i det beregnede felt. Nu kaster `compileExpression` med `Invalid expression "…": V8-besked`, fejlen bærer `usage`, `run` fører flaget videre, og CLI'en giver exit 2 mens en kast-ved-kørsel-expression fortsat er exit 1; `add` kompilerer før den første række, så null-adfærden for kast ved kørslen er uændret. Beslutningen "hvor må den fejle" viste sig at have ét svar: kaldet ligger i `run`s `try`, `site/try.html:27` videresender `r.error` til playgroundets fejlboks. T24: `showPreview` kaldte `run` uden `delimiter`, så `--delimiter` var valideret, accepteret og kasseret netop når `--output` manglede. Lokalt grøn: `npm test` 108 engine- + 86 CLI- + 69 conformance- + 6 README-tests, 39 workflow-regressioner, 4 workflow-kontrakter, 173 kontratkontroller; `npm pack --dry-run` 5 filer; `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0`, fire grønne selftesttrin inklusive deploy-friskheds-selftesten; `npm run audit:site` `No known vulnerabilities found`. **Tænder:** de ni nye tests i T23 og den ene i T24 er kørt mod den gamle kode og fejlede med deres konkrete symptom (exit 0 med alle rækker; `x` = hele recordet; preview ignorerede flaget). Ingen snapshot ændrede sig, og ingen `CASES`-case ændrede rækkefølge. `tools/site_chrome.py` regenererede `site/engine.js` (byte-identisk med `src/engine.js`) og asset-hash'en i `try.html`; ingen anden side ændrede sig. Implementationscommits `29f1e9a` (T23) og `ca259c1` (T24), begge grønne lokalt og ikke mergerede. Næste iteration: kør `npm run check:deploy` igen, og hvis stadig `DEPLOY-MISSING`, tag fejlklassificeringen i `run` — `{"op":"filter"}` uden `expr` er stadig identiteten med exit 0.
+
+- 2026-09-26 ca. 07:2x–08:3x CEST: T28 gennemført på `ceo/repeated-flags` (ny branch fra `ceo/record-shape`), **ikke mergeret til `main`**. `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for tredje gang i træk, live er stadig `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig — så bunken er nu seksten commits på ti branch, og der oprettes ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. Syv kørsler med et gentaget flag blev målt på den gamle kode, alle exit 0 med tom stderr, og to af dem slettede data (`-f json -f csv` læste JSON som én kolonne og skrev en tom fil den selv havde fundet på; `--out a.csv --out b.csv` lod `a.csv` forsvinde). Rettelsen er `OPTION_NAMES` + `countOptions` + `takeOption` i `src/cli.js`, som afviser det andet krav med `UsageError`: exit 2, tom stdout, besked der siger at kun den sidste ville være brugt. To valg blev truffet og skrevet ned: **afvise, ikke sammensætte** to `--pipe` (det er det eneste flag hvor en sammensætning betyder noget, og den ville gøre flagenes rækkefølge afgørende for stepenes — altså det ene flag med en skjult regel), og **tallet fra hele kommandolinjen** (`countOptions` kører før parsing), fordi den første rettelse sagde "2 gange" om tre `--delimiter` — præcis den fejl opgaven fjerner. Procesfejl, én, fanget af målingen. 11 nye CLI-tests (98 → 109) og 3 nye konformitestests (69 → 72); konformitestesten kører den rigtige binary to gange, låser `docs/cli.md` til fejlmeddelelsen **ordret**, låser at hver option i docs-tabellen både findes i parseren og afvises gentagne, og tjekker at exit-2-rækken i docs stadig beskriver exit 2. Låsen er verificeret mod tre mutationer, alle fanget: ændret fejltekst, fjernet `takeOption` for `--delimiter`, fjernet reglen fra `--help`. `docs/cli.md` fik reglen under `Options` med den kørte kommando og exit-2-linjen, `--help` og previewen siger det samme. Lokalt grøn: `npm test` 134+109+72+6+39+4+173, `npm pack --dry-run` uændret på 5 filer, `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0`, selftester grønne inkl. deploy-friskheds-selftesten. **Ingen sitefil rørt** — T28 rører kun argument-parseren, som browseren ikke har, så `site/engine.js` er uændret og ingen `VERIFICÉR DEPLOY`-note opstår. Næste opgave er **T29**: `--out fil` uden `--output` er helt ignoreret (preview, exit 0, tom stderr, ingen fil), målt på koden efter T28 og skrevet ned med scope og acceptkriterier.

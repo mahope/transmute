@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import vm from 'node:vm';
 import engine from '../src/engine.js';
 import { CASES, bigDataset, fixtureText } from './fixtures/cases.mjs';
@@ -157,6 +158,64 @@ test('docs/cli.md documents every operation', () => {
 test('README documents every operation', () => {
   for (const op of Object.keys(operations)) {
     assert.equal(readme.includes(op), true, `README does not mention ${op}`);
+  }
+});
+
+console.log('── the error, the help and docs/cli.md say the same thing ──');
+
+/** Run the real binary, so the message locked below is the one a user gets. */
+function runCli(args, input) {
+  return spawnSync(process.execPath, [join(root, 'src', 'cli.js'), ...args], { cwd: root, encoding: 'utf-8', input });
+}
+
+const help = runCli(['--help']).stdout;
+
+test('docs/cli.md quotes the real error for an option given twice', () => {
+  // Two --pipe flags used to run one pipeline and drop the other, exit 0 and
+  // an empty stderr. The docs have to carry the message the CLI now prints, or
+  // a reader is told about a rule the tool does not enforce.
+  const result = runCli(['test/fixtures/people.csv', '-p', '[{"op":"head","n":1}]', '-p', '[{"op":"head","n":2}]', '-o', 'csv']);
+  assert.equal(result.status, 2, `a repeated --pipe should be a usage error, got exit ${result.status}`);
+  assert.equal(result.stdout, '', 'a repeated option must leave stdout empty');
+  const message = result.stderr.trim().replace(/^Error: /, '');
+  assert.equal(docs.includes(message), true, `docs/cli.md does not quote the error verbatim: ${message}`);
+  assert.equal(help.includes('Give each option once'), true, '--help does not say that each option is given once');
+  assert.equal(docs.includes('Given each option is given once') || docs.includes('Each option is given once'), true, 'docs/cli.md does not state the rule in prose');
+});
+
+test('every option the parser accepts is in the docs, in the help, and checked for repeats', () => {
+  // The docs table is the list here, so it is what the parser and the help are
+  // held against: an option the parser accepts without documenting it, or a
+  // documented option nobody accepts, fails this.
+  const table = docs.slice(docs.indexOf('## Options'), docs.indexOf('## Exit codes'));
+  const documented = [...table.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)]
+    .flatMap(row => row[1].split(',').map(token => token.trim().split(' ')[0]))
+    .filter(token => token.startsWith('-'));
+  assert.ok(documented.length >= 10, `the docs option table looks unparsed: ${documented.join(' ')}`);
+
+  const source = readFileSync(join(root, 'src', 'cli.js'), 'utf-8');
+  for (const option of documented) {
+    assert.equal(help.includes(option), true, `--help does not document ${option}`);
+    if (option === '-v' || option === '-h' || option === '--version' || option === '--help') continue;
+    assert.equal(
+      new RegExp(`['"]${option}['"]:\\s*'(--[a-z]+)'`).test(source),
+      true,
+      `${option} is not mapped to a counted option name in the parser`
+    );
+    const counted = source.match(new RegExp(`['"]${option}['"]:\\s*'(--[a-z]+)'`))[1];
+    assert.equal(
+      source.includes(`takeOption(seenOptions, optionCounts, '${counted}')`),
+      true,
+      `${counted} is not checked for being given twice`
+    );
+  }
+});
+
+test('the docs exit-code table still describes exit 2', () => {
+  const row = docs.split('\n').find(line => line.startsWith('| `2` |'));
+  assert.ok(row, 'docs/cli.md has no row for exit code 2');
+  for (const cause of ['an option given twice', 'bad option value', 'Unknown option']) {
+    assert.equal(row.includes(cause), true, `the exit 2 row no longer lists: ${cause}`);
   }
 });
 

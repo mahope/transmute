@@ -31,6 +31,59 @@ const EXIT = { ok: 0, transform: 1, usage: 2, input: 3 };
 class UsageError extends Error {}
 class InputError extends Error {}
 
+/**
+ * Every option carries one value, and a second one used to be answered with the
+ * last — silently, exit 0 and an empty stderr, so a command that was not the
+ * command the user wrote produced output that looked like what they had asked
+ * for. Two `--pipe` flags is the natural way to hit it, because the help text
+ * shows several steps in *one* `--pipe`. A short alias is the same flag as its
+ * long name, so `-p` and `--pipe` are counted together.
+ *
+ * Repeating `--pipe` could be *merged* into one pipeline instead of refused,
+ * but then the order of the flags would decide the order of the steps, and no
+ * other option has a merge that means anything — so this would be the one flag
+ * with a hidden rule, which is the thing being removed here.
+ */
+const OPTION_HINTS = {
+  '--pipe': 'Put every step in one --pipe, as a JSON array.',
+};
+
+/** Every accepted option, mapped to the one name it is counted under. */
+const OPTION_NAMES = {
+  '-p': '--pipe', '--pipe': '--pipe',
+  '-f': '--format', '--format': '--format',
+  '-o': '--output', '--output': '--output',
+  '--out': '--out',
+  '--table': '--table',
+  '--delimiter': '--delimiter',
+};
+
+/** How often each option appears anywhere on the command line. */
+function countOptions(args) {
+  const counts = new Map();
+  for (const arg of args) {
+    const name = OPTION_NAMES[arg];
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Claim an option once, so the parser below stays a plain list of assignments
+ * and every repeated flag is refused the same way. The count comes from the
+ * whole command line, not from the claims so far: the parser stops at the first
+ * repeat, and a command with three `--delimiter` flags is told three, not two.
+ */
+function takeOption(seen, counts, name) {
+  if (seen.has(name)) {
+    throw new UsageError(
+      `${name} was given ${counts.get(name)} times, and only the last one would have been used. ` +
+      (OPTION_HINTS[name] || 'Give each option once.')
+    );
+  }
+  seen.add(name);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   let inputFile = null;
@@ -41,27 +94,35 @@ async function main() {
   let outFile = null;
   let tableName = 'my_table';
   let delimiter = null;
+  const seenOptions = new Set();
+  const optionCounts = countOptions(args);
 
   // Parse args
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--pipe' || arg === '-p') {
+      takeOption(seenOptions, optionCounts, '--pipe');
       pipeline = parsePipeline(flagValue(args, ++i, '--pipe'));
     } else if (arg === '--format' || arg === '-f') {
+      takeOption(seenOptions, optionCounts, '--format');
       inputFormat = flagValue(args, ++i, '--format');
       if (!INPUT_FORMATS.includes(inputFormat)) {
         throw new UsageError(`Unknown input format: ${inputFormat} (expected ${INPUT_FORMATS.join(', ')})`);
       }
     } else if (arg === '--output' || arg === '-o') {
+      takeOption(seenOptions, optionCounts, '--output');
       outputFormat = flagValue(args, ++i, '--output');
       if (!OUTPUT_FORMATS.includes(outputFormat)) {
         throw new UsageError(`Unknown output format: ${outputFormat} (expected ${OUTPUT_FORMATS.join(', ')})`);
       }
     } else if (arg === '--out') {
+      takeOption(seenOptions, optionCounts, '--out');
       outFile = flagValue(args, ++i, '--out');
     } else if (arg === '--table') {
+      takeOption(seenOptions, optionCounts, '--table');
       tableName = flagValue(args, ++i, '--table');
     } else if (arg === '--delimiter') {
+      takeOption(seenOptions, optionCounts, '--delimiter');
       const raw = flagValue(args, ++i, '--delimiter');
       if (!Object.prototype.hasOwnProperty.call(DELIMITERS, raw)) {
         throw new UsageError(`Unknown delimiter: ${raw} (expected , ; tab or |)`);
@@ -204,6 +265,7 @@ function showPreview(text, format, delimiter) {
   console.log('  --out <file> (write the output to a file instead of stdout)');
   console.log('  --delimiter ,|;|tab   (CSV delimiter; detected from the header line when omitted)');
   console.log('  transmute users.csv --output sql --table users   # CSV to SQL INSERT statements');
+  console.log('  Every option is given once — a repeated --pipe or --output is a usage error, not a merge.');
   console.log('');
   console.log('Examples:');
   console.log('  transmute data.json --pipe \'[{"op":"head","n":5}]\' --output csv');
@@ -233,6 +295,9 @@ function showHelp(stream = process.stdout) {
   log('      --delimiter <d>    CSV/TSV delimiter: , ; tab or | (default: detected from the header line)');
   log('  -v, --version          Print the version');
   log('  -h, --help             Show this help');
+  log();
+  log('Give each option once. Repeating one is a usage error: two --pipe flags');
+  log('are not two sets of steps, so put every step in a single --pipe.');
   log();
   log('Pipeline operations:');
   log('  filter   {"op":"filter","expr":"item.age > 18"}');

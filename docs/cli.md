@@ -50,6 +50,23 @@ with `node src/cli.js`.
 
 Exactly one input file is accepted. Use `-` or a pipe to read from stdin.
 
+Each option is given once. Giving one twice is a usage error, because the last
+one used to win and the earlier ones were dropped without a word: two `--pipe`
+flags ran only the second pipeline, `--output json --output csv` wrote CSV, and
+`--out a.csv --out b.csv` wrote only `b.csv` — all of it exit 0 with an empty
+stderr, and output that looked like the command that was asked for. A short
+alias counts as the same flag, so `-p` and `--pipe` together is a repeat too.
+Steps are collected in a single `--pipe`, because the flag order would otherwise
+decide the order of the steps:
+
+```bash
+transmute people.csv --pipe '[{"op":"sort","by":"age"}]' --pipe '[{"op":"head","n":3}]' --output csv
+```
+
+```
+Error: --pipe was given 2 times, and only the last one would have been used. Put every step in one --pipe, as a JSON array.
+```
+
 With no `--pipe` and no `--output`, Transmute prints a preview table of the
 input, which is the quickest way to check what a file contains. The preview is
 the same run with the same flags, `--delimiter` included — it used to read the
@@ -62,7 +79,7 @@ already told it how to read.
 |---|---|---|
 | `0` | Success | — |
 | `1` | The transformation failed | The engine threw while transforming |
-| `2` | Usage error | Unknown option, bad option value, `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
+| `2` | Usage error | Unknown option, bad option value, an option given twice, `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, or unparseable as the input format |
 
 Errors always go to stderr, prefixed with `Error:`, and stdout stays empty on
