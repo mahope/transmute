@@ -17,66 +17,7 @@ const parsers = {
     return Array.isArray(data) ? data : [data];
   },
   csv: (text, opts) => parseCSV(text, opts),
-  yaml: (text) => {
-    // Simple YAML parser for basic structures (arrays of scalars/objects)
-    const lines = text.split('\n');
-    if (lines.length === 0) return [];
-    
-    // Try JSON.parse first (YAML is superset of JSON)
-    try { return parsers.json(text); } catch {}
-    
-    // Detect if it's a YAML list
-    const result = [];
-    let current = null;
-    let isList = false;
-    let sawAny = false;
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      sawAny = true;
-      
-      if (trimmed.startsWith('- ')) {
-        isList = true;
-        const val = trimmed.slice(2).trim();
-        // Check if it's a key: value pair
-        if (val.includes(': ')) {
-          if (current) result.push(current);
-          current = {};
-          const [k, ...v] = val.split(': ');
-          current[k.trim()] = v.join(': ').trim();
-        } else {
-          current = null;
-          result.push(parseYAMLValue(val));
-        }
-      } else if (trimmed.includes(': ') && !trimmed.startsWith('- ')) {
-        if (current && !isList) {
-          const [k, ...v] = trimmed.split(': ');
-          current[k.trim()] = parseYAMLValue(v.join(': ').trim());
-        } else if (isList && current) {
-          // continuation of previous object
-          const [k, ...v] = trimmed.split(': ');
-          current[k.trim()] = parseYAMLValue(v.join(': ').trim());
-        }
-      } else if (!trimmed.startsWith('-') && !trimmed.includes(':')) {
-        // Scalar list item without dash — edge case
-        if (trimmed) result.push(parseYAMLValue(trimmed));
-      }
-    }
-    if (current) result.push(current);
-    if (!isList && sawAny && result.length === 0 && current === null) {
-      // Single top-level object (not a list): collect key: value pairs
-      const obj = {};
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const m = trimmed.match(/^([^:#]+):\s*(.*)$/);
-        if (m) obj[m[1].trim()] = parseYAMLValue(m[2]);
-      }
-      if (Object.keys(obj).length > 0) return [obj];
-    }
-    return result;
-  },
+  yaml: (text, opts) => parseYAML(text, opts),
   xml: (text) => {
     // Minimal XML to array-of-objects conversion.
     // Strategy: find the root element's matching close tag, parse its direct
@@ -222,12 +163,10 @@ const serializers = {
   yaml: (data) => {
     if (!Array.isArray(data)) data = [data];
     return data.map(item => {
-      if (typeof item !== 'object' || item === null) return `- ${item}`;
-      const keys = Object.keys(item);
-      return keys.map((k, i) => {
-        const prefix = i === 0 ? '- ' : '  ';
-        return `${prefix}${k}: ${formatYAMLValue(item[k])}`;
-      }).join('\n');
+      // A record is a mapping; the dash carries the first line and the keys
+      // sit in the column the reader will look for them in.
+      if (!isYAMLPlainObject(item)) return `- ${formatYAMLValue(item)}`;
+      return writeYAMLMapping(Object.entries(item), 2, '- ').join('\n');
     }).join('\n');
   },
   xml: (data, rootName = 'data') => {
@@ -609,10 +548,520 @@ function parseYAMLValue(val) {
   return val;
 }
 
+// ─── YAML reader ──────────────────────────────────────────────────────────
+
+/**
+ * YAML is read by indentation, not line by line.
+ *
+ * The reader this replaces walked one line at a time and only recognised a
+ * mapping when two keys sat side by side. A config file with an indented
+ * block under a key — the normal shape of a config file — lost that block
+ * entirely and still exited 0, which is the worst failure this tool can
+ * have: the user asked for a conversion and got a smaller, plausible answer.
+ *
+ * Two rules carry the reader:
+ *   1. a line belongs to the block above it when it is indented further, and
+ *   2. a block is a sequence when its first line starts with `- `, otherwise
+ *      it is a mapping.
+ *
+ * Block scalars, quoting, comments, flow collections and document separators
+ * sit on top of those two rules without changing them.
+ */
+function parseYAML(text, opts) {
+  // YAML is a superset of JSON, so a JSON document never needs this reader.
+  try { return parsers.json(text); } catch {}
+
+  const lines = tokenizeYAML(text);
+
+  // `---` opens the document; anything before it that is not a document is
+  // not read at all, and every further one is a document this tool does not
+  // read. Saying so beats silently using the first half of the file.
+  let start = skipYAMLBlanks(lines, 0);
+  if (start < lines.length && lines[start].content === '---') {
+    start = skipYAMLBlanks(lines, start + 1);
+  }
+  const extra = lines.slice(start)
+    .filter(l => !l.blank && l.indent === 0 && (l.content === '---' || l.content === '...')).length;
+  if (extra > 0 && opts && Array.isArray(opts.warnings)) {
+    opts.warnings.push(`YAML: ${extra + 1} documents in file, only the first was read`);
+  }
+  if (start >= lines.length) return [];
+
+  // The shapes a document can have for a pipeline: a sequence (one record per
+  // item), a mapping (one record), or a run of bare scalars (one record per
+  // line). The last one is not YAML, but the reader above it accepted it and
+  // data in the wild is shaped that way.
+  if (!isYAMLSequenceEntry(lines[start].content) && !splitYAMLKey(lines[start].content)) {
+    const records = [];
+    for (let i = start; i < lines.length; i++) {
+      if (lines[i].blank || isYAMLComment(lines[i].content)) continue;
+      if (lines[i].content === '---' || lines[i].content === '...') break;
+      if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content)) break;
+      records.push(parseYAMLScalar(lines[i].content));
+    }
+    return records;
+  }
+
+  const parsed = parseYAMLBlock(lines, start, lines[start].indent);
+  if (Array.isArray(parsed.value)) return parsed.value;
+  if (parsed.value === null) return [];
+  return [parsed.value];
+}
+
+/**
+ * Split a document into lines that remember their indentation, their source
+ * line number and whether they are blank. Comments are deliberately *not*
+ * stripped here: a `#` inside a block scalar is data, and stripping it early
+ * would quietly rewrite every shell snippet a config file carries.
+ */
+function tokenizeYAML(text) {
+  return text.split(/\r\n|\n|\r/).map((line, i) => {
+    const lead = /^[ \t]*/.exec(line)[0];
+    const content = line.slice(lead.length);
+    return {
+      indent: lead.length,
+      content: content.replace(/\s+$/, ''),
+      blank: content.trim() === '',
+      no: i + 1
+    };
+  });
+}
+
+function isYAMLComment(content) {
+  return content.startsWith('#');
+}
+
+/** Advance past blank lines and comment-only lines. */
+function skipYAMLBlanks(lines, i) {
+  while (i < lines.length && (lines[i].blank || isYAMLComment(lines[i].content))) i++;
+  return i;
+}
+
+function isYAMLSequenceEntry(content) {
+  return content === '-' || /^-[\s]/.test(content);
+}
+
+/**
+ * Find the `:` that ends a mapping key, or null when the line is not a
+ * mapping entry. A colon only ends a key when a space or the end of the line
+ * follows it, which is what keeps `12:30` and `a:b` the plain scalars they
+ * look like.
+ */
+function splitYAMLKey(content) {
+  if (!content || content === '-' || isYAMLComment(content)) return null;
+  if (content[0] === '"' || content[0] === "'") {
+    const quoted = readYAMLQuoted(content, 0);
+    if (!quoted) return null;
+    const after = content.slice(quoted.end).replace(/^[ \t]*/, '');
+    if (!after.startsWith(':')) return null;
+    return { key: quoted.value, rest: after.slice(1).replace(/^[ \t]+/, '') };
+  }
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === '#' && i > 0 && /\s/.test(content[i - 1])) return null;
+    if (ch === ':' && (i === content.length - 1 || /\s/.test(content[i + 1]))) {
+      return {
+        key: content.slice(0, i).trim(),
+        rest: content.slice(i + 1).replace(/^[ \t]+/, '')
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse the block starting at `start`, indented by `indent`. Returns
+ * `{ value, end }` so the caller can carry on after the block.
+ */
+function parseYAMLBlock(lines, start, indent) {
+  const i = skipYAMLBlanks(lines, start);
+  if (i >= lines.length || lines[i].indent < indent) return { value: null, end: i };
+  const content = lines[i].content;
+  if (isYAMLSequenceEntry(content)) return parseYAMLSequence(lines, i, lines[i].indent);
+  if (splitYAMLKey(content)) return parseYAMLMapping(lines, i, lines[i].indent);
+  return parseYAMLFoldedScalar(lines, i, lines[i].indent);
+}
+
+function parseYAMLMapping(lines, start, indent) {
+  const map = {};
+  let i = start;
+  while (i < lines.length) {
+    if (lines[i].blank || isYAMLComment(lines[i].content)) { i++; continue; }
+    if (lines[i].indent < indent) break;
+    if (lines[i].content === '---' || lines[i].content === '...') break;
+    if (lines[i].indent > indent) {
+      throw new SyntaxError(`YAML line ${lines[i].no}: unexpected indentation`);
+    }
+    const split = splitYAMLKey(lines[i].content);
+    if (!split) {
+      throw new SyntaxError(`YAML line ${lines[i].no}: expected "key: value", got "${lines[i].content}"`);
+    }
+    const { key, rest } = split;
+
+    if (rest === '' || isYAMLComment(rest)) {
+      // No value on the line, so the block underneath owns it — or it is null.
+      const j = skipYAMLBlanks(lines, i + 1);
+      if (j < lines.length && lines[j].indent > indent) {
+        const child = parseYAMLBlock(lines, j, lines[j].indent);
+        map[key] = child.value;
+        i = child.end;
+        continue;
+      }
+      // A sequence may sit at the same indentation as the key that owns it,
+      // which is how most hand-written config files are written.
+      if (j < lines.length && lines[j].indent === indent && isYAMLSequenceEntry(lines[j].content)) {
+        const child = parseYAMLSequence(lines, j, indent);
+        map[key] = child.value;
+        i = child.end;
+        continue;
+      }
+      map[key] = null;
+      i++;
+      continue;
+    }
+
+    const block = blockScalarHeader(rest);
+    if (block) {
+      const child = readYAMLBlockScalar(lines, i + 1, indent, block);
+      map[key] = child.value;
+      i = child.end;
+      continue;
+    }
+
+    map[key] = parseYAMLScalar(rest);
+    i++;
+  }
+  return { value: map, end: i };
+}
+
+function parseYAMLSequence(lines, start, indent) {
+  const arr = [];
+  let i = start;
+  while (i < lines.length) {
+    if (lines[i].blank || isYAMLComment(lines[i].content)) { i++; continue; }
+    if (lines[i].indent < indent) break;
+    if (lines[i].content === '---' || lines[i].content === '...') break;
+    if (lines[i].indent > indent) {
+      throw new SyntaxError(`YAML line ${lines[i].no}: unexpected indentation`);
+    }
+    if (!isYAMLSequenceEntry(lines[i].content)) break;
+
+    const after = lines[i].content.slice(1);
+    const lead = after.length - after.trimStart().length;
+    const inner = after.trimStart();
+
+    if (inner === '' || isYAMLComment(inner)) {
+      const j = skipYAMLBlanks(lines, i + 1);
+      if (j < lines.length && lines[j].indent > indent) {
+        const child = parseYAMLBlock(lines, j, lines[j].indent);
+        arr.push(child.value);
+        i = child.end;
+        continue;
+      }
+      arr.push(null);
+      i++;
+      continue;
+    }
+
+    // `- key: value` opens a mapping whose lines are indented to the column
+    // the key starts in, so the entry is rewritten in place as that block.
+    const childIndent = indent + 1 + lead;
+    const block = blockScalarHeader(inner);
+    if (block) {
+      const child = readYAMLBlockScalar(lines, i + 1, indent, block);
+      arr.push(child.value);
+      i = child.end;
+      continue;
+    }
+    lines[i] = { indent: childIndent, content: inner, blank: false, no: lines[i].no };
+    const child = parseYAMLBlock(lines, i, childIndent);
+    arr.push(child.value);
+    i = child.end;
+  }
+  return { value: arr, end: i };
+}
+
+/** A run of bare scalars with no dash and no key, folded the way YAML folds. */
+function parseYAMLFoldedScalar(lines, start, indent) {
+  const parts = [];
+  let i = start;
+  while (i < lines.length && !lines[i].blank && lines[i].indent === indent) {
+    if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content)) break;
+    parts.push(parseYAMLScalar(lines[i].content));
+    i++;
+  }
+  return { value: parts.length === 1 ? parts[0] : parts.join(' '), end: i };
+}
+
+/**
+ * `key: |` and `key: >`, with the chomping indicators `-` (drop the final
+ * newline) and `+` (keep every one). `|` keeps line breaks, `>` folds them
+ * into spaces the way prose does.
+ */
+function blockScalarHeader(value) {
+  const m = /^[|>]([+-]?)[ \t]*(?:#.*)?$/.exec(value.trim());
+  if (!m) return null;
+  return { style: m[0][0], chomp: m[1] || 'clip' };
+}
+
+function readYAMLBlockScalar(lines, start, parentIndent, header) {
+  const collected = [];
+  let i = start;
+  while (i < lines.length && (lines[i].blank || lines[i].indent > parentIndent)) {
+    collected.push(lines[i]);
+    i++;
+  }
+  // Trailing blank lines are the chomping rules' business, not the value's.
+  let last = collected.length;
+  while (last > 0 && collected[last - 1].blank) last--;
+  const body = collected.slice(0, last);
+  const trailing = collected.length - last;
+
+  const shared = body.reduce((min, l) => (l.blank ? min : Math.min(min, l.indent)), Infinity);
+  const dedented = body.map(l => (l.blank ? '' : ' '.repeat(l.indent - shared) + l.content));
+
+  let text;
+  if (header.style === '>') {
+    text = '';
+    for (const line of dedented) {
+      if (line === '') { text += '\n'; continue; }
+      text += (text === '' || text.endsWith('\n')) ? line : ' ' + line;
+    }
+  } else {
+    text = dedented.join('\n');
+  }
+
+  const stripped = text.replace(/\n+$/, '');
+  if (header.chomp === '-') text = stripped;
+  else if (header.chomp === '+') text = stripped + '\n'.repeat(trailing + (stripped ? 1 : 0));
+  else text = stripped ? stripped + '\n' : '';
+
+  return { value: text, end: i };
+}
+
+/**
+ * A `#` only opens a comment at the start of a line or after a space, and
+ * never inside quotes — `note: "a # b"` keeps its hash.
+ */
+function stripYAMLComment(text) {
+  let quote = null;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '#' && (i === 0 || /\s/.test(text[i - 1]))) return text.slice(0, i);
+  }
+  return text;
+}
+
+function parseYAMLScalar(raw) {
+  const value = stripYAMLComment(raw).trim();
+  if (value === '') return null;
+  if (value[0] === '"' || value[0] === "'") {
+    // A quoted scalar is a string even when it reads like a number, so it
+    // never goes through the number and boolean coercion below.
+    const quoted = readYAMLQuoted(value, 0);
+    if (quoted) return quoted.value;
+  }
+  if (value[0] === '[' || value[0] === '{') {
+    const flow = parseYAMLFlow(value);
+    if (flow.ok) return flow.value;
+  }
+  return parseYAMLValue(value);
+}
+
+/**
+ * Read a quoted scalar starting at `start`. Returns `{ value, end }` with
+ * `end` just past the closing quote, or null when the quote never closes — a
+ * half-open quote is a typo, not a reason to throw away the rest of a file.
+ */
+function readYAMLQuoted(text, start) {
+  const quote = text[start];
+  let out = '';
+  for (let i = start + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (quote === "'") {
+      if (ch === "'") {
+        if (text[i + 1] === "'") { out += "'"; i++; continue; }
+        return { value: out, end: i + 1 };
+      }
+      out += ch;
+      continue;
+    }
+    if (ch === '\\') { out += unescapeYAML(text[i + 1]); i++; continue; }
+    if (ch === '"') return { value: out, end: i + 1 };
+    out += ch;
+  }
+  return null;
+}
+
+function unescapeYAML(ch) {
+  const escapes = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', 0: '\0', '\\': '\\', '"': '"', '/': '/' };
+  return ch === undefined ? '' : (ch in escapes ? escapes[ch] : ch);
+}
+
+/**
+ * Flow collections on one line — `[a, b]`, `{k: v}`. They are everywhere in
+ * config files, and the line-for-line reader handed them back as a string, so
+ * `hosts: {a: 1}` silently became the text `{a: 1}`. Anything this cannot
+ * read is returned as the plain string it is, never dropped.
+ */
+function parseYAMLFlow(text) {
+  let i = 0;
+  const skipSpace = () => { while (i < text.length && /[ \t]/.test(text[i])) i++; };
+  const separators = ',]}:';
+
+  const scalar = () => {
+    skipSpace();
+    if (text[i] === '"' || text[i] === "'") {
+      const quoted = readYAMLQuoted(text, i);
+      if (!quoted) throw new SyntaxError('unclosed quote');
+      i = quoted.end;
+      return quoted.value;
+    }
+    let raw = '';
+    while (i < text.length && !separators.includes(text[i])) raw += text[i++];
+    return parseYAMLValue(raw.trim());
+  };
+
+  const value = () => {
+    skipSpace();
+    if (text[i] === '[') return sequence();
+    if (text[i] === '{') return mapping();
+    return scalar();
+  };
+
+  const sequence = () => {
+    i++;
+    const out = [];
+    skipSpace();
+    if (text[i] === ']') { i++; return out; }
+    for (;;) {
+      out.push(value());
+      skipSpace();
+      if (text[i] === ',') { i++; continue; }
+      if (text[i] === ']') { i++; return out; }
+      throw new SyntaxError('expected , or ] in flow sequence');
+    }
+  };
+
+  const mapping = () => {
+    i++;
+    const out = {};
+    skipSpace();
+    if (text[i] === '}') { i++; return out; }
+    for (;;) {
+      skipSpace();
+      let key;
+      if (text[i] === '"' || text[i] === "'") {
+        const quoted = readYAMLQuoted(text, i);
+        if (!quoted) throw new SyntaxError('unclosed quote');
+        key = quoted.value;
+        i = quoted.end;
+      } else {
+        let raw = '';
+        while (i < text.length && !separators.includes(text[i])) raw += text[i++];
+        key = raw.trim();
+      }
+      skipSpace();
+      if (text[i] !== ':') throw new SyntaxError('expected : in flow mapping');
+      i++;
+      out[key] = value();
+      skipSpace();
+      if (text[i] === ',') { i++; continue; }
+      if (text[i] === '}') { i++; return out; }
+      throw new SyntaxError('expected , or } in flow mapping');
+    }
+  };
+
+  try {
+    const parsed = value();
+    skipSpace();
+    return i === text.length ? { ok: true, value: parsed } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// ─── YAML writer ──────────────────────────────────────────────────────────
+
+function isYAMLPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * A scalar written the way the reader reads it back: numbers, booleans and
+ * null bare; a string that could be read as something else, or that carries a
+ * character with meaning in YAML, quoted. `0074` is a zip code in every
+ * dataset this tool has seen, and written bare the reader hands back 74.
+ */
 function formatYAMLValue(val) {
   if (val === null || val === undefined) return 'null';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
+  if (typeof val === 'boolean' || typeof val === 'number') return String(val);
+  if (typeof val === 'string') {
+    if (val.includes('\n') || val.trim() === '') return JSON.stringify(val);
+    return needsYAMLQuotes(val) ? JSON.stringify(val) : val;
+  }
+  return JSON.stringify(val);
+}
+
+function needsYAMLQuotes(value) {
+  if (value === '') return true;
+  if (/^\s|\s$/.test(value)) return true;
+  if (/^[-?:,[\]{}#&*!|>'"%@`]/.test(value)) return true;
+  if (/:\s/.test(value) || /:$/.test(value)) return true;
+  if (/#/.test(value)) return true;
+  if (/[\t\r]/.test(value)) return true;
+  if (/^(true|false|null|~)$/i.test(value)) return true;
+  return !isNaN(Number(value));
+}
+
+function formatYAMLKey(key) {
+  return /^[A-Za-z0-9_][A-Za-z0-9_.\-/ ]*$/.test(key) ? key : JSON.stringify(String(key));
+}
+
+/**
+ * Write a mapping as `key: value` lines at `indent`, prefixing the first one
+ * with `prefix` — `- ` for a record in a sequence, otherwise the indentation
+ * itself. The keys of one mapping all start in the same column, because that
+ * is the column the reader takes the mapping's indent from.
+ */
+function writeYAMLMapping(entries, indent, prefix) {
+  const pad = ' '.repeat(indent);
+  return entries.flatMap(([k, v], i) =>
+    writeYAMLEntry(i === 0 ? prefix : pad, k, v, indent));
+}
+
+function writeYAMLEntry(prefix, key, value, indent) {
+  const head = prefix + formatYAMLKey(key) + ':';
+  const pad = ' '.repeat(indent + 2);
+
+  if (typeof value === 'string' && value.includes('\n') && value.trim() !== '') {
+    // A block scalar is the only way to keep line breaks. A quoted string
+    // would need \n escapes, and hand-folding them is how a value gets
+    // quietly rewritten; the marker says what the trailing newline does.
+    const marker = value.endsWith('\n\n') ? '|+' : value.endsWith('\n') ? '|' : '|-';
+    return [head + ' ' + marker, ...value.slice(0, -1).split('\n').map(line => pad + line)];
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [head + ' []'];
+    return [head, ...value.flatMap(item => isYAMLPlainObject(item)
+      ? writeYAMLMapping(Object.entries(item), indent + 4, pad + '- ')
+      : [pad + '- ' + formatYAMLValue(item)])];
+  }
+
+  if (isYAMLPlainObject(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return [head + ' {}'];
+    return [head, ...writeYAMLMapping(entries, indent + 2, pad)];
+  }
+
+  return [head + ' ' + formatYAMLValue(value)];
 }
 
 function escapeXML(val) {
@@ -713,11 +1162,19 @@ function detectFormat(filename, content) {
   }
   if (content) {
     const trimmed = content.trim();
+    // The first line that says something: a comment or a blank above it is
+    // not evidence of any format, and a YAML file usually starts with one.
+    const firstLine = trimmed.split('\n')
+      .map(l => l.trim())
+      .find(l => l && !l.startsWith('#') && l !== '---') || '';
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'json';
     if (trimmed.startsWith('<')) return 'xml';
     if (trimmed.startsWith('- ') || trimmed.startsWith('---')) return 'yaml';
+    // A `key: value` line is YAML. A CSV header row has no colon, so this
+    // cannot steal a CSV file, and without it a config file pasted into the
+    // browser playground is read as JSON and the YAML reader never runs.
+    if (/^[^\s#-][^:\n]*:(\s|$)/.test(firstLine)) return 'yaml';
     if (trimmed.includes('\n') && trimmed.includes(',')) {
-      const firstLine = trimmed.split('\n')[0];
       if (firstLine.includes(',') && !firstLine.includes(': ')) return 'csv';
     }
   }

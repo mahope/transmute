@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -208,6 +208,61 @@ test('xml → xml does not compound its own escaping', () => {
   const twice = expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o xml`, { input: once }));
   assert.equal(twice, once);
   assert.equal(once.includes('&amp;amp;'), false, `escape grew: ${once}`);
+});
+
+console.log('── nested YAML is read, not flattened away ──');
+
+test('an indented block survives, instead of vanishing with exit 0', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o json`, {
+    input: 'server:\n  host: db.local\n  port: 5432\nlist:\n  - a\n  - b\n'
+  }));
+  assert.deepEqual(JSON.parse(out), [{ server: { host: 'db.local', port: 5432 }, list: ['a', 'b'] }]);
+});
+
+test('three levels of mappings and sequences survive the round trip', () => {
+  const source = readFileSync('test/fixtures/nested.yaml', 'utf8');
+  const once = expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o yaml`, { input: source }));
+  const twice = expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o yaml`, { input: once }));
+  assert.equal(twice, once, 'writing the same structure twice must be byte-identical');
+  assert.equal(once.includes('rpm: 600'), true, once);
+  const back = JSON.parse(expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o json`, { input: once })));
+  assert.equal(back[0].service.routes[1].limits.rpm, 60);
+  assert.equal(back[0].service.changelog, '2026-09-01 first release\n2026-09-20 added refunds\n');
+});
+
+test('a numeric string stays a string through json → yaml → json', () => {
+  // `0074` is a zip code, not the number 74. YAML reads a bare 0074 as a
+  // number — that is YAML's rule, not this tool's — so the writer is the
+  // half that has to quote it.
+  const written = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o yaml`, { input: '[{"zip":"0074"}]' }));
+  assert.equal(written.trim(), '- zip: "0074"');
+  const back = expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o json`, { input: written }));
+  assert.deepEqual(JSON.parse(back), [{ zip: '0074' }]);
+});
+
+test('a config file with no extension is detected as YAML', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const target = join(dir, 'app.conf');
+    writeFileSync(target, '# a config\nservice:\n  name: billing\n  tags:\n    - a\n    - b\n');
+    const out = expectOk(sh(`"${process.execPath}" "${cli}" ${JSON.stringify(target)} -o json`));
+    assert.deepEqual(JSON.parse(out), [{ service: { name: 'billing', tags: ['a', 'b'] } }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a multi-document file is read as its first document and says so', () => {
+  const r = sh(`"${process.execPath}" "${cli}" -f yaml -o json`, { input: 'a: 1\n---\nb: 2\n' });
+  const stdout = expectOk(r, { allowStderr: true });
+  assert.deepEqual(JSON.parse(stdout), [{ a: 1 }]);
+  assert.ok(/only the first was read/.test(r.stderr), r.stderr);
+});
+
+test('a YAML block that cannot be read fails with exit 3 and an empty stdout', () => {
+  // Unreadable input is exit 3 in this tool's contract, and the message names
+  // the line, so the user can go look at it instead of trusting the output.
+  expectFail(`"${process.execPath}" "${cli}" -f yaml -o json`, 3, 'YAML line 2', { input: 'a: 1\n   b: 2\n' });
 });
 
 console.log('── errors are machine-readable ──');

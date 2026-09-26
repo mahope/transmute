@@ -220,8 +220,27 @@ pipeline step such as `{"op":"map","expr":"({...item, age: Number(item.age)})"}`
 when you want numbers.
 
 YAML support covers the shapes this tool cares about: a list of objects, a list
-of scalars, and a single top-level object. Anchors, multi-document files and
-nested block structures are not supported.
+of scalars, and a single top-level object — read by indentation, so nested
+mappings and sequences at any depth survive, as do block scalars (`|`, `>`),
+single and double quotes, flow collections (`[a, b]`, `{k: v}`) and `#`
+comments. Anchors, aliases and multi-document files are not supported; a file
+with more than one document is read as its first document and says so on
+stderr.
+
+A top-level mapping is one record, the way a key-value document is one row:
+
+```bash
+cat config.yaml | transmute --format yaml
+```
+
+```json
+[
+  {
+    "a": 1,
+    "b": "hello"
+  }
+]
+```
 
 ## Operations
 
@@ -569,6 +588,100 @@ Alice,30,Aarhus
 Bob,25,Odense
 Carla,41,Aarhus
 ```
+
+Nested YAML to JSON — mappings, sequences, a block scalar and a quoted string,
+three levels deep:
+
+```bash
+transmute test/fixtures/nested.yaml --output json
+```
+
+```json
+[
+  {
+    "service": {
+      "name": "billing",
+      "replicas": 3,
+      "labels": {
+        "team": "payments",
+        "tier": "critical"
+      },
+      "routes": [
+        {
+          "path": "/invoices",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "limits": {
+            "rpm": 600
+          }
+        },
+        {
+          "path": "/refunds",
+          "methods": [
+            "POST"
+          ],
+          "limits": {
+            "rpm": 60
+          }
+        }
+      ],
+      "changelog": "2026-09-01 first release\n2026-09-20 added refunds\n",
+      "note": "quoted: with a colon # and a hash"
+    },
+    "tags": [
+      "fast",
+      "audited"
+    ],
+    "feature_flags": {
+      "new_pricing": false,
+      "beta": null
+    }
+  }
+]
+```
+
+The same file written back as YAML keeps the structure, and a second run
+produces byte-identical output:
+
+```bash
+transmute test/fixtures/nested.yaml --output yaml
+```
+
+```yaml
+- service:
+    name: billing
+    replicas: 3
+    labels:
+      team: payments
+      tier: critical
+    routes:
+      - path: /invoices
+        methods:
+          - GET
+          - POST
+        limits:
+          rpm: 600
+      - path: /refunds
+        methods:
+          - POST
+        limits:
+          rpm: 60
+    changelog: |
+      2026-09-01 first release
+      2026-09-20 added refunds
+    note: "quoted: with a colon # and a hash"
+  tags:
+    - fast
+    - audited
+  feature_flags:
+    new_pricing: false
+    beta: null
+```
+
+A string that would be read back as something else is quoted on the way out:
+`0074` stays `"0074"` instead of becoming the number 74.
 
 XML to JSON — one record per `<user>`:
 

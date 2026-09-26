@@ -283,5 +283,18 @@ export const CASES = [
     // The five predefined entities and numeric references are decoded on the
     // way in, so the escape never compounds across a round trip.
     command: `transmute test/fixtures/entities.xml --output json`
+  },
+  {
+    name: 'yaml-nested',
+    docOutput: '"rpm": 600',
+    op: null,
+    fixture: 'yaml',
+    file: join(here, 'nested.yaml'),
+    pipeline: [],
+    outputFormat: 'json',
+    // Three levels of mappings and sequences, a block scalar and a quoted
+    // string. A line-for-line reader kept only the two top-level lists, so
+    // the whole `service` block was missing from a run that exited 0.
+    command: `transmute test/fixtures/nested.yaml --output json`
   }
 ];

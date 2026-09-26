@@ -3,7 +3,11 @@
  */
 
 const assert = require('assert');
-const { run, serializers } = require('../src/engine');
+const { readFileSync } = require('fs');
+const { join } = require('path');
+const { run, serializers, detectFormat } = require('../src/engine');
+
+const here = join(__dirname, 'fixtures');
 
 let passed = 0;
 let failed = 0;
@@ -209,6 +213,97 @@ test('parse YAML list', () => {
 test('parse YAML scalars', () => {
   const r = run('- apple\n- banana\n- cherry', 'yaml');
   assert.strictEqual(r.data.length, 3);
+});
+
+/**
+ * The reader used to walk one line at a time, so an indented block was not
+ * parsed — it was dropped, and the run still exited 0. These tests are the
+ * difference between "the file was read" and "the file was mostly read".
+ */
+test('parse nested YAML mappings and sequences', () => {
+  const r = run([
+    'server:',
+    '  host: db.local',
+    '  port: 5432',
+    '  tls:',
+    '    - name: a',
+    '      port: 1',
+    '    - name: b',
+    'list:',
+    '  - x',
+    '  - y'
+  ].join('\n'), 'yaml');
+  assert.deepStrictEqual(r.data, [{
+    server: { host: 'db.local', port: 5432, tls: [{ name: 'a', port: 1 }, { name: 'b' }] },
+    list: ['x', 'y']
+  }]);
+});
+
+test('a sequence may sit at the same indentation as its key', () => {
+  const r = run('tags:\n- x\n- y\nother: 1', 'yaml');
+  assert.deepStrictEqual(r.data, [{ tags: ['x', 'y'], other: 1 }]);
+});
+
+test('flat top-level YAML keys are one record, unchanged', () => {
+  assert.deepStrictEqual(run('a: 1\nb: hello', 'yaml').data, [{ a: 1, b: 'hello' }]);
+});
+
+test('YAML comments and document separators are not data', () => {
+  const r = run('# top\na: 1 # trailing\n---\nb: 2', 'yaml');
+  assert.deepStrictEqual(r.data, [{ a: 1 }]);
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(/only the first was read/.test(r.warnings[0]), r.warnings[0]);
+});
+
+test('block scalars keep their line breaks, and a # inside one is data', () => {
+  const r = run('script: |\n  #!/bin/sh\n  echo one # not a comment\nafter: 1', 'yaml');
+  assert.strictEqual(r.data[0].script, '#!/bin/sh\necho one # not a comment\n');
+  assert.strictEqual(r.data[0].after, 1);
+});
+
+test('folded scalars join lines the way prose does', () => {
+  const r = run('text: >\n  one\n  two\n\n  three', 'yaml');
+  assert.strictEqual(r.data[0].text, 'one two\nthree\n');
+});
+
+test('quoted YAML strings keep the characters that mean something', () => {
+  const r = run('a: "x: y # z; w"\nb: \'it\'\'s fine\'', 'yaml');
+  assert.strictEqual(r.data[0].a, 'x: y # z; w');
+  assert.strictEqual(r.data[0].b, "it's fine");
+});
+
+test('flow collections are read, not stringified', () => {
+  const r = run('hosts: {a: 1, b: [2, three]}\nlist: [1, 2]', 'yaml');
+  assert.deepStrictEqual(r.data[0].hosts, { a: 1, b: [2, 'three'] });
+  assert.deepStrictEqual(r.data[0].list, [1, 2]);
+});
+
+test('a malformed YAML block fails loudly and names the line', () => {
+  const r = run('a: 1\n   b: 2', 'yaml');
+  assert.ok(/YAML line 2/.test(r.error), r.error);
+});
+
+test('yaml → yaml keeps a nested structure and is idempotent', () => {
+  const once = run(readFileSync(join(here, 'nested.yaml'), 'utf8'), 'yaml', [], 'yaml').text;
+  const twice = run(once, 'yaml', [], 'yaml').text;
+  assert.strictEqual(twice, once);
+  const back = run(once, 'yaml').data;
+  assert.strictEqual(back[0].service.routes[0].limits.rpm, 600);
+  assert.strictEqual(back[0].service.changelog, '2026-09-01 first release\n2026-09-20 added refunds\n');
+  assert.deepStrictEqual(back[0].tags, ['fast', 'audited']);
+});
+
+test('a string that reads like a number is written quoted', () => {
+  const once = run('[{"zip":"0074","on":"true","empty":""}]', 'json', [], 'yaml').text;
+  assert.ok(once.includes("zip: '0074'") || once.includes('zip: "0074"'), once);
+  assert.deepStrictEqual(run(once, 'yaml').data, [{ zip: '0074', on: 'true', empty: '' }]);
+});
+
+test('nested YAML is detected from content, not just from the extension', () => {
+  assert.strictEqual(detectFormat(null, 'server:\n  host: db.local\n'), 'yaml');
+  assert.strictEqual(detectFormat(null, '# comment first\na: 1\n'), 'yaml');
+  assert.strictEqual(detectFormat(null, 'name,age\nAlice,30\n'), 'csv');
+  assert.strictEqual(detectFormat(null, '{"a":1}'), 'json');
 });
 
 // ─── TRANSFORMATIONS ─────────────────────────────────────────────────────
