@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 /** The contract of record. Changing a value here requires Mads' decision. */
 const LOCKED = {
   product_key: 'transmute-desktop',
+  product_name: 'Transmute Desktop Pro',
   amount: 19,
   currency: 'USD',
   billing: 'one_time',
@@ -62,6 +63,15 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/** The SPDX id a `license` field names, so it can be looked for in LICENSE. */
+function licenseId(value) {
+  return String(value ?? '').replace(/^\(|\)$/g, '').split(/\s+OR\s+/)[0].trim();
+}
+
+function escapeFor(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function collect(dir, extensions) {
@@ -216,6 +226,98 @@ check('npm, the CLI and the site agree on the version', () => {
   assert(cli.includes("require('../package.json')"), 'src/cli.js must read its version from package.json instead of hardcoding it');
   const contractVersion = /^\d+\.\d+\.\d+$/.test(String(contract.version ?? '')) ? contract.version : null;
   assert(contractVersion === null || contractVersion === version, `tools/product-contract.json pins version ${contractVersion}, package.json is ${version}`);
+});
+
+check("the contract's claims about this repository are what the committed code says", () => {
+  // Measured 2026-09-26, on this repository, before these rules existed.
+  //
+  //   1. Rewriting `name` in package.json *and* package-lock.json — so the tree
+  //      agreed with itself — left all 174 checks green while thirty public files
+  //      still told users `npm i -g @mahope/transmute`. The package a stranger
+  //      installs is the one claim here nobody had bound to the code.
+  //   2. `tools/product-contract.json`'s own `cli` block was read by no rule at
+  //      all: a wrong package name, `GPL-3.0` as the licence and a foreign
+  //      repository URL, all three wrong together, produced zero failures.
+  //
+  // Same failure form as T52's version lie: the lock compared claims with claims,
+  // so a claim that drifts together with the thing it describes cannot be seen.
+  // These are the rules that cannot be satisfied by agreeing with yourself.
+  const cli = contract.cli ?? {};
+  for (const key of ['package', 'license', 'repository']) {
+    assert(key in cli, `contract.cli.${key} is gone, so the contract of record no longer states what this repository is`);
+  }
+
+  assert(cli.package === packageJson.name,
+    `contract.cli.package is ${JSON.stringify(cli.package)}, the published package.json is ${JSON.stringify(packageJson.name)}`);
+  assert(cli.license === packageJson.license,
+    `contract.cli.license is ${JSON.stringify(cli.license)}, package.json declares ${JSON.stringify(packageJson.license)}`);
+
+  const licenceFile = readFileSync(join(root, 'LICENSE'), 'utf8').split('\n', 1)[0];
+  assert(new RegExp(`\\b${escapeFor(licenseId(packageJson.license))}\\b`).test(licenceFile),
+    `package.json declares the licence ${JSON.stringify(licenseId(packageJson.license))}, but LICENSE starts "${licenceFile}"`);
+
+  const repository = String(packageJson.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  assert(cli.repository === repository,
+    `contract.cli.repository is ${JSON.stringify(cli.repository)}, package.json's repository is ${JSON.stringify(repository)}`);
+});
+
+check('every public file quotes the package npm actually publishes', () => {
+  // The measured failure above: package.json and the lockfile renamed together,
+  // thirty install instructions left behind, gate green. The install line is the
+  // promise, and it is only true if it names the committed package.
+  const published = packageJson.name;
+  for (const file of claimed) {
+    // Any scope, not just ours: a package renamed to a scope we do not own is
+    // exactly the case this rule exists for. The trailing strip keeps a
+    // sentence-ending dot in "…/package/@mahope/transmute." out of the name.
+    for (const [, raw] of readFileSync(file, 'utf8').matchAll(/(@[a-z][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)/gi)) {
+      const name = raw.replace(/[._-]+$/, '');
+      assert(name === published,
+        `${label(file)} tells readers to install ${name}, but npm serves this repository as ${published}`);
+    }
+  }
+});
+
+check('the paid product is named the way the contract locks it', () => {
+  // product_name was in the contract of record and no rule could contradict it, so
+  // a page was free to invent "Transmute Desktop Premium" and sell a tier that
+  // does not exist. Only a capitalised word after the product is a tier claim;
+  // "Transmute Desktop is the paid app" is prose, not a second product.
+  const locked = pro.product_name;
+  for (const file of claimed) {
+    for (const [, raw] of readFileSync(file, 'utf8').matchAll(/Transmute Desktop\s+([A-Z][\w.+-]*)/g)) {
+      const tier = raw.replace(/[.,:;!?]+$/, '');
+      assert(locked.endsWith(` ${tier}`),
+        `${label(file)} calls the paid product "Transmute Desktop ${tier}", but the contract locks it as "${locked}"`);
+    }
+  }
+});
+
+check('every claim in the contract is one a rule can contradict', () => {
+  // A claim nothing reads is a claim nothing can catch, and this file had three of
+  // them. So the contract may not grow a key that no rule below is able to
+  // contradict: add it to LOCKED (Mads' Stripe contract) with a rule that reads
+  // it, or derive it from committed code under `cli`.
+
+  const containers = new Set(['cli', 'desktop_pro']);
+  const read = new Set([
+    ...Object.keys(LOCKED),
+    'free_tier_transformations_per_launch',
+    'source_repository_private',
+  ]);
+  for (const [key, value] of Object.entries(contract)) {
+    if (containers.has(key)) {
+      assert(value && typeof value === 'object' && !Array.isArray(value), `contract.${key} must be an object of claims`);
+      continue;
+    }
+    if (key === '$comment' || key === 'allowed_desktop_link_targets') {
+      continue;
+    }
+    assert(read.has(key), `contract.${key} is a claim no rule can contradict: add it to LOCKED with a rule that reads it, or derive it from committed code under cli`);
+  }
+  for (const key of Object.keys(pro)) {
+    assert(read.has(key), `contract.desktop_pro.${key} is a claim no rule can contradict: add it to LOCKED with a rule that reads it, or derive it from committed code under cli`);
+  }
 });
 
 check('only a version that describes the code and sits on the default branch can be published', () => {
