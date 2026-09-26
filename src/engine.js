@@ -315,6 +315,7 @@ const serializers = {
   },
   xml: (data, rootName = 'data') => {
     if (!Array.isArray(data)) data = [data];
+    assertXMLWritable(data);
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<${rootName}>\n`;
     for (const row of data) {
       if (typeof row !== 'object' || row === null) {
@@ -1287,6 +1288,104 @@ function escapeXML(val) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+// The C0 controls, by the names `cat -v` and a terminal agree on. A file that
+// carries one of these is unreadable in an editor, so the name is what makes the
+// error message actionable instead of just a number.
+const C0_NAMES = ['NUL', 'SOH', 'STX', 'ETX', 'EOT', 'ENQ', 'ACK', 'BEL',
+  'BS', 'HT', 'LF', 'VT', 'FF', 'CR', 'SO', 'SI', 'DLE', 'DC1', 'DC2', 'DC3',
+  'DC4', 'NAK', 'SYN', 'ETB', 'CAN', 'EM', 'SUB', 'ESC', 'FS', 'GS', 'RS', 'US'];
+
+/**
+ * The first character in `str` that XML 1.0 cannot represent, or `null`.
+ *
+ * This is the `Char` production from the XML 1.0 specification, written out
+ * rather than approximated:
+ *
+ *     Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+ *
+ * So tab, newline and carriage return are in, and #x0-#x8, #xB, #xC, #xE-#x1F,
+ * #xFFFE, #xFFFF and a lone surrogate are out. Iterating with `for...of` walks
+ * code points, so a valid surrogate pair arrives as one character above
+ * #xFFFF and is allowed, while a lone one arrives alone and is not.
+ */
+function firstUnrepresentableXMLChar(str) {
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    if (cp === 0x9 || cp === 0xA || cp === 0xD) continue;
+    if (cp >= 0x20 && cp <= 0xd7ff) continue;
+    if (cp >= 0xe000 && cp <= 0xfffd) continue;
+    if (cp >= 0x10000 && cp <= 0x10ffff) continue;
+    return ch;
+  }
+  return null;
+}
+
+function describeXMLChar(ch) {
+  const cp = ch.codePointAt(0);
+  const hex = 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
+  if (cp <= 0x1f) return `${hex} (${C0_NAMES[cp]})`;
+  if (cp === 0xfffe) return `${hex} (a permanently unassigned character)`;
+  if (cp === 0xffff) return `${hex} (a permanently unassigned character)`;
+  if (cp >= 0xd800 && cp <= 0xdfff) return `${hex} (half of a surrogate pair — the other half is missing)`;
+  return hex;
+}
+
+/**
+ * Refuse data that XML 1.0 has no room for, before any of it is written.
+ *
+ * A control character inside a value is ordinary data: a NUL left by a
+ * fixed-width export, a bell from a terminal capture, the vertical tab in a
+ * legacy file. The writer above escaped `&`, `<`, `>`, `"` and `'`, and wrote
+ * everything else through untouched, so those characters landed in the file
+ * raw. The result declared `version="1.0"` and no XML parser would accept it —
+ * Expat refuses it as `not well-formed (invalid token)` — while this tool's own
+ * reader is lenient enough to read the file back, so a round trip through
+ * Transmute hid it completely. Exit was 0 and stderr was empty.
+ *
+ * There is no way to keep these characters, which is why the run stops instead
+ * of inventing an answer. A numeric character reference is not a way out
+ * either: `&#0;` is refused by the very production above, so an entity would not
+ * make the file valid. Dropping the character would be the silent data loss
+ * that T13 and T30 exist to remove, and a file that claims to be XML 1.0 and is
+ * not is worse than no file at all.
+ *
+ * The formats that *can* carry these characters are untouched: CSV, SQL, JSON
+ * and YAML all hold a NUL faithfully, so `json -> xml` refuses at exactly the
+ * point where the target format runs out of room, and nothing else changes.
+ */
+function assertXMLWritable(data) {
+  const rows = Array.isArray(data) ? data : [data];
+  for (const [index, row] of rows.entries()) {
+    const at = Array.isArray(data) ? `row ${index + 1}` : 'the input';
+    scanXMLValue(row, at);
+  }
+}
+
+function scanXMLValue(value, at) {
+  if (typeof value === 'string') {
+    const bad = firstUnrepresentableXMLChar(value);
+    if (bad !== null) {
+      throw new Error(
+        `XML 1.0 cannot write ${describeXMLChar(bad)}, which is in ${at}. ` +
+        'There is no way to keep it: a numeric character reference is refused by the same rule. ' +
+        'Write CSV, JSON, SQL or YAML instead, or remove the character before converting.'
+      );
+    }
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => scanXMLValue(item, `${at}[${i}]`));
+    return;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    // A key is checked too: a key that is not a legal tag name travels in a
+    // `name` attribute (see `writeXMLElement`), which is text like any other.
+    scanXMLValue(key, `the field name ${JSON.stringify(key)} in ${at}`);
+    scanXMLValue(item, `${at}, field ${JSON.stringify(key)}`);
+  }
 }
 
 /**

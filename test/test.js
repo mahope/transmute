@@ -1305,5 +1305,101 @@ t('the guard looks at the row, not at what is inside it', () => {
   assert.deepStrictEqual(r.data.map(g => g.count), [2, 1, 1]);
 });
 
+t('XML output is well-formed for a fixture of values XML 1.0 cannot hold', () => {
+  // The whole `Char` production, written out, so this covers what XML 1.0
+  // allows and not what a particular control character happens to be. Written
+  // raw, every one of these produced a file that declared `version="1.0"` and
+  // that Expat refused as `not well-formed (invalid token)`, with exit 0 and
+  // an empty stderr — and this tool's own reader read it back happily, so a
+  // round trip through Transmute hid it completely.
+  const C = (n) => String.fromCharCode(n);
+  const input = JSON.stringify([
+    { ok: 'café 日本 🚀', tab: 'a' + C(9) + 'b', nl: 'a' + C(10) + 'b', cr: 'a' + C(13) + 'b' },
+    { nul: 'a' + C(0) + 'b', bel: 'a' + C(7) + 'b', vt: 'a' + C(11) + 'b', ff: 'a' + C(12) + 'b' },
+    { esc: 'a' + C(27) + 'b', us: 'a' + C(31) + 'b', fffe: 'a' + C(0xfffe) + 'b', ffff: 'a' + C(0xffff) + 'b' },
+    { plane2: 'a' + String.fromCodePoint(0x1f600) + 'b', high: 'a' + String.fromCodePoint(0x10ffff) + 'b' }
+  ]);
+
+  // Row 1 is representable, so it is written and read back unchanged.
+  const ok = runSQL(JSON.stringify([JSON.parse(input)[0]]), 'json', [], 'xml');
+  if (ok.error) throw new Error(ok.error);
+  assert.deepStrictEqual(runSQL(ok.text, 'xml', [], 'json').data, [JSON.parse(input)[0]]);
+
+  // Every unrepresentable value refuses, and each one says which character and
+  // where it is — the difference between a user who can act and one who cannot.
+  const rows = JSON.parse(input);
+  const unrepresentable = [
+    ['nul', rows[1].nul], ['bel', rows[1].bel], ['vt', rows[1].vt], ['ff', rows[1].ff],
+    ['esc', rows[2].esc], ['us', rows[2].us], ['fffe', rows[2].fffe], ['ffff', rows[2].ffff]
+  ];
+  for (const [field, value] of unrepresentable) {
+    const expected = describeCodePoint(value);
+    const r = runSQL(JSON.stringify([{ [field]: value }]), 'json', [], 'xml');
+    assert.ok(r.error, `${field} must be refused, got: ${r.text}`);
+    assert.ok(r.error.includes(expected), `${field}: expected ${expected} in: ${r.error}`);
+    assert.ok(r.error.includes(`field "${field}"`), `${field}: message must name the field: ${r.error}`);
+    // Nothing is written, and the refusal is the data's, not the pipeline's, so
+    // the CLI reports it as a transformation failure and not as a usage error.
+    assert.strictEqual(r.text, undefined);
+    assert.strictEqual(r.usage, false);
+  }
+});
+
+function describeCodePoint(str) {
+  const cp = str.codePointAt(1);
+  return 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
+}
+
+t('a lone surrogate is refused too, and a real pair is not', () => {
+  // A JSON string may hold half a surrogate pair; the writer replaced it with
+  // U+FFFD on the way out, which is silent data loss. A *complete* pair is one
+  // character above #xFFFF and is perfectly legal, so the two must not be
+  // confused — `for...of` is what tells them apart.
+  const lone = runSQL('[{"a":"pre\\ud800post"}]', 'json', [], 'xml');
+  assert.ok(lone.error, 'a lone surrogate must be refused');
+  assert.ok(lone.error.includes('U+D800'), lone.error);
+  assert.ok(lone.error.includes('surrogate pair'), lone.error);
+
+  const pair = runSQL(JSON.stringify([{ a: 'pre\u{1f600}post' }]), 'json', [], 'xml');
+  if (pair.error) throw new Error(pair.error);
+  assert.ok(pair.text.includes('\u{1f600}'), pair.text);
+  assert.deepStrictEqual(runSQL(pair.text, 'xml', [], 'json').data, [{ a: 'pre\u{1f600}post' }]);
+});
+
+t('an unrepresentable character is found in a field name and in an attribute', () => {
+  const C = (n) => String.fromCharCode(n);
+  // A key that is not a legal tag name travels in a `name` attribute, which is
+  // text like any other, and an `@key` is written as an attribute value. Both
+  // are places a control character can land, so both are checked.
+  const inName = runSQL(JSON.stringify([{ ['bad' + C(0) + 'name']: 'x' }]), 'json', [], 'xml');
+  assert.ok(inName.error, 'a control character in a field name must be refused');
+  assert.ok(inName.error.includes('U+0000'), inName.error);
+
+  const inAttr = runSQL(JSON.stringify([{ meta: { '@label': 'bad' + C(7) + 'label' } }]), 'json', [], 'xml');
+  assert.ok(inAttr.error, 'a control character in an attribute must be refused');
+  assert.ok(inAttr.error.includes('U+0007'), inAttr.error);
+  assert.ok(inAttr.error.includes('"@label"'), inAttr.error);
+
+  // Deep inside, with the full path, so the message is actionable.
+  const deep = runSQL(JSON.stringify([{ a: [{ b: 'x' + C(11) + 'y' }] }]), 'json', [], 'xml');
+  assert.ok(deep.error.includes('[0]'), deep.error);
+  assert.ok(deep.error.includes('field "b"'), deep.error);
+});
+
+t('the other formats keep the characters XML has to refuse', () => {
+  // The refusal belongs to the XML writer, not to the data. CSV, SQL, JSON and
+  // YAML all carry a NUL faithfully, so a run that XML refuses still produces
+  // the same data in a format that can hold it — the escape route the error
+  // message names has to be a real one.
+  const input = JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]);
+  const expected = JSON.parse(input);
+  for (const format of ['json', 'csv', 'yaml', 'sql', 'table']) {
+    const r = runSQL(input, 'json', [], format);
+    assert.strictEqual(r.error, undefined, `${format}: ${r.error}`);
+    assert.ok(r.text.includes('a'), `${format} must keep the value: ${r.text}`);
+  }
+  assert.strictEqual(runSQL(input, 'json', [], 'json').text, JSON.stringify(expected, null, 2));
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

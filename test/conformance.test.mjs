@@ -7,7 +7,8 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -271,6 +272,35 @@ test('docs/cli.md quotes the real error for input that is not UTF-8', () => {
   assert.equal(help.includes('not UTF-8'), true, '--help does not list non-UTF-8 input as an input error');
   const row = docs.split('\n').find(line => line.startsWith('| `3` |'));
   assert.ok(row.includes('not UTF-8'), 'the exit 3 row in docs/cli.md does not mention it');
+});
+
+test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () => {
+  // The eleventh silence, and the same shape as the tenth: a control character
+  // in a value was written into the file raw, so the file declared XML 1.0 and
+  // no parser would take it, while this tool's own reader read it back and hid
+  // it. Exit 0, empty stderr. The docs have to carry the message the CLI now
+  // prints, and the message has to survive a change to the error text — the
+  // same three-surface lock the two silences above are held under.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-conf-'));
+  try {
+    const path = join(dir, 'nul.json');
+    writeFileSync(path, JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]), 'utf-8');
+    const result = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', 'xml'], { encoding: 'utf-8' });
+    assert.equal(result.status, 1, `a character XML cannot hold should be a transformation failure, got exit ${result.status}`);
+    assert.equal(result.stdout, '', 'a refused conversion must leave stdout empty');
+    const message = result.stderr.trim().replace(/^Error: /, '');
+    assert.equal(docs.includes(message), true, `docs/cli.md does not quote the error verbatim: ${message}`);
+    assert.equal(help.includes('XML 1.0 cannot write'), true, '--help does not mention the XML refusal');
+    const row = docs.split('\n').find(line => line.startsWith('| `1` |'));
+    assert.ok(row.includes('XML 1.0'), 'the exit 1 row in docs/cli.md does not mention it');
+    // The escape route the message names has to exist, or the advice is a lie.
+    for (const format of ['json', 'csv', 'yaml', 'sql']) {
+      const ok = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(ok.status, 0, `${format} should carry the character: ${ok.stderr}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 for (const testCase of CASES) {

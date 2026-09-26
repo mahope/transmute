@@ -125,7 +125,7 @@ transmute european.csv --delimiter ';' -o json
 | Code | Meaning | Typical cause |
 |---|---|---|
 | `0` | Success | — |
-| `1` | The transformation failed | The engine threw while transforming |
+| `1` | The transformation failed | The engine threw while transforming, or XML output was asked for data XML 1.0 cannot represent |
 | `2` | Usage error | Unknown option, bad option value, an option given twice, an option that cannot do its job (`--out` without `--output`, `--table` without `--output sql`, `--delimiter` without CSV input), `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, unparseable as the input format, or not UTF-8 |
 
@@ -277,6 +277,51 @@ Transmute does not guess which encoding the file was in, because every wrong
 guess would rewrite your bytes. Convert the file, then run it again — everything
 valid UTF-8 is read, including `Møller`, `🚀` and `日本`, and including a file
 that really does contain a `U+FFFD` character.
+
+### XML output: the characters XML itself cannot hold
+
+XML 1.0 is not able to represent every character. Its `Char` production is
+
+```
+Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+```
+
+so tab, newline and carriage return are in, and `U+0000`–`U+0008`, `U+000B`,
+`U+000C`, `U+000E`–`U+001F`, the two permanently unassigned characters
+`U+FFFE` and `U+FFFF`, and half a surrogate pair are **out**. A control character
+inside a value is ordinary data — a NUL from a fixed-width export, a bell from a
+terminal capture — and writing it raw produced a file that declared
+`version="1.0"` and that no XML parser would accept. Expat calls it
+`not well-formed (invalid token)`. Transmute's own reader was lenient enough to
+read the file back, so a round trip through Transmute hid it completely, and the
+run exited 0 with nothing on stderr.
+
+There is no entity that saves it. `&#0;` is refused by the very production above,
+so an escape would not make the file valid, and dropping the character would
+throw the data away. So the run stops, names the character and the field, and
+writes nothing — exit **1**, which is a transformation failure, because the
+pipeline is fine and the data is what XML cannot carry.
+
+```bash
+printf '[{"id":1,"note":"a\x00b"}]' > nul.json && transmute nul.json --output xml
+```
+
+```
+Error: XML 1.0 cannot write U+0000 (NUL), which is in row 1, field "note". There is no way to keep it: a numeric character reference is refused by the same rule. Write CSV, JSON, SQL or YAML instead, or remove the character before converting.
+```
+
+This belongs to the XML writer, not to the data: **CSV, JSON, SQL and YAML all
+carry a `U+0000` faithfully**, so `--output json` or `--output csv` on the same
+file succeeds and keeps the value. That is the escape route the message names,
+so it is a real one. Everything XML *can* hold is unaffected — `café`, `日本`,
+`🚀`, tab, newline and carriage return all round-trip unchanged.
+
+#### What XML output does not keep: types
+
+XML has no types, so every element comes back as a string. `{"id": 1}` becomes
+`<id>1</id>` and reads back as `{"id": "1"}`. Use `json` or `csv` when the type
+matters — for a database import, `--output sql` writes numbers unquoted and the
+rest as literals, which is what `INSERT` wants.
 
 #### Writing: quote anything a reader could mistake for structure
 

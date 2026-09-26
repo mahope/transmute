@@ -910,5 +910,67 @@ test('non-ASCII UTF-8 still round-trips: nordic letters, emoji and CJK', () => {
   }
 });
 
+console.log('── XML output has to be well-formed ──');
+
+test('a value XML 1.0 cannot write → exit 1, and no file is written', () => {
+  // A NUL inside a value is ordinary data — a fixed-width export, a legacy file
+  // — and it used to be written straight into the file. The result declared
+  // `version="1.0"` and no XML parser would accept it, while this tool's own
+  // reader read it back, so a round trip through Transmute hid it. Exit was 0.
+  //
+  // There is no entity that saves it: `&#0;` is refused by the same rule of the
+  // specification. So the run stops and says where the character is.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'ctrl.json');
+    writeFileSync(path, JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]), 'utf-8');
+    const out = join(dir, 'out.xml');
+    const result = spawnSync(process.execPath, [cli, path, '-o', 'xml', '--out', out], { encoding: 'utf-8' });
+    assert.equal(result.status, 1, `expected exit 1, got ${result.status}: ${result.stderr}`);
+    assert.equal(result.stdout, '', `stdout should stay empty on error, got: ${result.stdout}`);
+    assert.ok(result.stderr.includes('U+0000 (NUL)'), result.stderr);
+    assert.ok(result.stderr.includes('field "note"'), 'the message should name the field: ' + result.stderr);
+    assert.equal(existsSync(out), false, 'a file the CLI refused to write must not exist');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the character XML can write is still written, byte for byte', () => {
+  // The guard must not narrow what the tool accepts. Tab, newline and carriage
+  // return are inside the `Char` production, and CJK, emoji and astral
+  // characters are above #xFFFF — all of them have to survive a round trip.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const C = (n) => String.fromCharCode(n);
+    const rows = [{ note: 'café 日本 🚀', tab: 'a' + C(9) + 'b', nl: 'a' + C(10) + 'b', cr: 'a' + C(13) + 'b' }];
+    const path = join(dir, 'ok.json');
+    writeFileSync(path, JSON.stringify(rows), 'utf-8');
+    const xml = expectOk(spawnSync(process.execPath, [cli, path, '-o', 'xml'], { encoding: 'utf-8' }));
+    assert.ok(xml.includes('version="1.0"'), xml);
+    const back = expectOk(spawnSync(process.execPath, [cli, '-f', 'xml', '-o', 'json'], { encoding: 'utf-8', input: xml }));
+    assert.deepEqual(JSON.parse(back), rows);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the formats that can hold the character still do', () => {
+  // The error message tells the user to write CSV, JSON, SQL or YAML instead,
+  // so that advice is only honest if those runs really do produce the value.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'nul.json');
+    writeFileSync(path, JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]), 'utf-8');
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table']) {
+      const result = spawnSync(process.execPath, [cli, path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(result.status, 0, `${format}: exit ${result.status}: ${result.stderr}`);
+      assert.equal(result.stderr, '', `${format}: ${result.stderr}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

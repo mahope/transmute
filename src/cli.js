@@ -403,6 +403,7 @@ function showHelp(stream = process.stdout) {
   log('Exit codes:');
   log('  0  success                 2  usage error (bad flag or pipeline)');
   log('  1  transformation failed   3  input error (missing, unparseable, not UTF-8)');
+  log('     exit 1 also covers XML output holding a character XML 1.0 cannot write.');
   log();
   log('Examples:');
   log('  transmute data.json -p \'[{"op":"filter","expr":"item.status === \\"active\\""}]\'');
