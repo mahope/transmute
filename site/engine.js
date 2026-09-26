@@ -26,6 +26,46 @@ const XML_NAME = '[A-Za-z_][A-Za-z0-9._-]*(?::[A-Za-z_][A-Za-z0-9._-]*)?';
  */
 const XML_ATTR = '([A-Za-z_][A-Za-z0-9._:-]*)\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'=<>`]*[^\s"\'=<>`/]))';
 
+/**
+ * Find the close tag that ends the element named `rootTag`, opened just before
+ * `from`. Keeps the stack of open elements, so the answer is a question about
+ * nesting and not about which close tag happens to come last in the file.
+ * Returns `{ start, end }` for that `</name>` — `start` just before its `<`,
+ * `end` just past its `>` — or null when the file never closes what it opened,
+ * or closes it with the wrong name.
+ *
+ * Null means "this file is malformed, not concatenated", and the caller then
+ * answers with its own check: a count over a file whose tags do not match would
+ * be a made-up answer, and a wrong one.
+ */
+function findRootClose(text, from, rootTag) {
+  // The same tag pattern the reader uses, with the leading `/` of a close tag
+  // captured so both directions come from one scan.
+  const tag = new RegExp(`<(/?)(${XML_NAME})((?:[^>"']|"[^"]*"|'[^']*')*)>`, 'g');
+  tag.lastIndex = from;
+  // The root is open before the scan starts — its own tag is the one at `from`.
+  const open = [rootTag];
+  for (;;) {
+    // A CDATA section is text, not markup: a `<` and a `>` inside it are data,
+    // and counting them as elements is how a closed document gets reported as
+    // never closed.
+    if (text.startsWith('<![CDATA[', tag.lastIndex)) {
+      const end = text.indexOf(']]>', tag.lastIndex);
+      if (end === -1) return null;
+      tag.lastIndex = end + 3;
+      continue;
+    }
+    const m = tag.exec(text);
+    if (!m) return null;
+    if (m[1] === '/') {
+      if (open.pop() !== m[2]) return null;
+      if (open.length === 0) return { start: m.index, end: tag.lastIndex };
+    } else if (!m[3].trim().endsWith('/')) {
+      open.push(m[2]);
+    }
+  }
+}
+
 const parsers = {
   json: (text, opts) => {
     const data = JSON.parse(text);
@@ -65,9 +105,27 @@ const parsers = {
     if (!rootMatch) throw new Error('No XML root element found');
     const rootTag = rootMatch[1];
     const openLen = rootMatch[0].length;
-    const closeIdx = text.lastIndexOf('</' + rootTag + '>');
-    if (closeIdx === -1) throw new Error(`XML root element <${rootTag}> is never closed`);
-    const inner = text.slice(openLen, closeIdx);
+    // `<rootTag/>` is its own close tag. Treating it as a root that was never
+    // closed refused a well-formed document — the one message about XML this
+    // reader could say that was simply untrue.
+    const selfClosed = rootMatch[2].trim().endsWith('/');
+    const closeTag = '</' + rootTag + '>';
+    // Where the root element ends is a question about *nesting*, not about the
+    // last close tag in the file. `lastIndexOf` took the last one, so two
+    // documents sharing a root name — what a batch tool appending the same
+    // schema writes — hid the second document from the rule below and were
+    // reported by the child reader instead, pointing inside the file rather than
+    // at the rule the file broke. Counting also keeps `<root><root>x</root></root>`
+    // and `<root><roots>x</roots></root>` reading the way they always did, since
+    // the count is over nesting and not over names.
+    //
+    // A file whose tags do not match is not answered here: the scan returns null
+    // and the caller's own check names it, because no count can say where a
+    // malformed document's root ends.
+    const found = selfClosed ? null : findRootClose(text, openLen, rootTag);
+    const closeIdx = found ? found.start : text.lastIndexOf(closeTag);
+    if (!selfClosed && closeIdx === -1) throw new Error(`XML root element <${rootTag}> is never closed`);
+    const inner = selfClosed ? '' : text.slice(openLen, found ? found.start : closeIdx);
     // Whatever follows the root element was never read. Batch tools concatenate
     // XML documents, so `<one/>…</one><two/>…</two>` is a file a user really
     // has, and reading only the first document dropped the second with exit 0
@@ -75,10 +133,11 @@ const parsers = {
     // other checks in this reader refuse. An XML document has exactly one root
     // element, so the file is not well-formed and the reader says so instead of
     // choosing a document for the user.
-    const afterRoot = strip(text.slice(closeIdx + ('</' + rootTag + '>').length));
+    const endOfRoot = selfClosed ? openLen : closeIdx + closeTag.length;
+    const afterRoot = strip(text.slice(endOfRoot));
     if (afterRoot) {
       throw new Error(
-        `an XML document has one root element, but this file has more after </${rootTag}>: "${afterRoot.slice(0, 40)}". ` +
+        `an XML document has one root element, but this file has more after ${selfClosed ? `<${rootTag}/>` : closeTag}: "${afterRoot.slice(0, 40)}". ` +
         'Concatenated XML is not one document — split it first, or read the documents one at a time.'
       );
     }
@@ -903,6 +962,28 @@ function parseYAML(text, opts) {
   }
   if (start >= lines.length) return [];
 
+  const ctx = { warnings: (opts && opts.warnings) || null };
+
+  // A flow collection can be the whole document: `{a: 1, b: two}` or `[1, 2]`
+  // on the root line. The block reader below does not know that syntax, so it
+  // took `{a` for a key and the file's content came out as one field holding
+  // the text `1, b: two}` — exit 0, empty stderr, a conversion of a document
+  // nobody wrote. `parseYAMLFlow` is the reader for this syntax and already read
+  // the very same line correctly one level down, so the root gets it too.
+  //
+  // Two conditions, both there to keep today's behaviour for every other file:
+  // the flow has to *close* on the line (`parseYAMLFlow` only says ok when it
+  // consumed the whole line), and nothing may follow it, so a collection on the
+  // root line can never swallow the lines under it.
+  const rootLine = lines[start].content;
+  if (rootLine[0] === '{' || rootLine[0] === '[') {
+    const flow = parseYAMLFlow(stripYAMLComment(rootLine).trim(), ctx);
+    const rest = lines.slice(start + 1);
+    if (flow.ok && rest.every((l) => l.blank || isYAMLComment(l.content))) {
+      return Array.isArray(flow.value) ? flow.value : [flow.value];
+    }
+  }
+
   // The shapes a document can have for a pipeline: a sequence (one record per
   // item), a mapping (one record), or a run of bare scalars (one record per
   // line). The last one is not YAML, but the reader above it accepted it and
@@ -918,7 +999,7 @@ function parseYAML(text, opts) {
     return records;
   }
 
-  const parsed = parseYAMLBlock(lines, start, lines[start].indent, { warnings: (opts && opts.warnings) || null });
+  const parsed = parseYAMLBlock(lines, start, lines[start].indent, ctx);
   if (Array.isArray(parsed.value)) return parsed.value;
   if (parsed.value === null) return [];
   return [parsed.value];

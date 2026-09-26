@@ -1487,5 +1487,67 @@ t('a second XML root element is refused, not ignored', () => {
   }
 });
 
+t('a flow collection that is the whole document is read as its content', () => {
+  // `{a: 1}` on the root line reached the block reader, which took `{a` for a
+  // key: the file's content came out as one field holding the text `1, b: two`,
+  // exit 0 and clean stderr. The flow reader already existed and read the very
+  // same line correctly one level down, so the root was the only place the
+  // syntax was not read.
+  const map = run('{a: 1, b: two}', 'yaml', []);
+  assert.deepStrictEqual(map.data, [{ a: 1, b: 'two' }]);
+  // The same rule as everywhere else: a key the file gives twice, with two
+  // different values behind it, is named — never guessed at.
+  const dup = run('{a: 1, a: 2}', 'yaml', []);
+  assert.deepStrictEqual(dup.data, [{ a: 2 }]);
+  assert.strictEqual(dup.warnings.length, 1, JSON.stringify(dup.warnings));
+  assert.ok(dup.warnings[0].startsWith('YAML: key "a"'), dup.warnings[0]);
+  // A sequence at the root, and a comment after the collection.
+  assert.deepStrictEqual(run('[1, 2, 3]', 'yaml', []).data, [1, 2, 3]);
+  assert.deepStrictEqual(run('{a: 1} # a note', 'yaml', []).data, [{ a: 1 }]);
+  // An unbalanced `{` is a different file, and it reads the way it reads today.
+  assert.deepStrictEqual(run('{a: 1', 'yaml', []).data, [{ '{a': 1 }]);
+  // Nor does a collection on the root line swallow the lines under it, and a
+  // collection spread over several lines is not a document this rule reaches.
+  assert.deepStrictEqual(run('{a: 1}\nb: 2', 'yaml', []).data, [{ '{a': '1}', b: 2 }]);
+  assert.deepStrictEqual(run('[\n  {a: 1},\n  {a: 2}\n]', 'yaml', []).data, ['[']);
+  // A flow collection under an explicit document marker is the same document.
+  assert.deepStrictEqual(run('---\n{a: 1}\n', 'yaml', []).data, [{ a: 1 }]);
+});
+
+t('the root element ends where its own nesting ends, not at the last close tag', () => {
+  // `lastIndexOf('</rows>')` found the *last* close tag in the file, so two
+  // documents sharing a root name — the shape a batch tool appending the same
+  // schema actually writes — hid the second document from the one-root rule and
+  // were reported by the child reader instead, with a message pointing inside
+  // the file rather than at the rule the user broke.
+  for (const doc of [
+    '<rows>a</rows><rows>b</rows>',
+    '<rows><row><a>1</a></row></rows>\n<rows><row><b>2</b></row></rows>\n',
+    '<rows/><rows>b</rows>',
+    '<rows></rows><rows>b</rows>',
+    '<rows>a</rows>\n\n<rows>b</rows>',
+    '<ns:rows>a</ns:rows><ns:rows>b</ns:rows>'
+  ]) {
+    const r = run(doc, 'xml', []);
+    assert.ok(r.error, doc);
+    assert.ok(r.error.includes('one root element'), doc + ': ' + r.error);
+  }
+  // Nesting is what ends the root, not its name: the same name inside it, a
+  // longer name, and a self-closed child all still read the way they always did.
+  assert.deepStrictEqual(run('<root><root>x</root></root>', 'xml', []).data, [{ root: 'x' }]);
+  assert.deepStrictEqual(run('<root><roots>x</roots></root>', 'xml', []).data, [{ roots: 'x' }]);
+  assert.deepStrictEqual(run('<r><i a="1"/><i>2</i></r>', 'xml', []).data, [{ i: { '@a': '1' } }, { i: '2' }]);
+  // A root that closes itself is closed. That file used to be refused with
+  // "never closed", which is the one message about XML that was simply untrue.
+  assert.deepStrictEqual(run('<rows/>', 'xml', []).data, []);
+  assert.deepStrictEqual(run('<rows></rows>', 'xml', []).data, []);
+  assert.deepStrictEqual(run('<rows a="1"/>', 'xml', []).data, []);
+  // A close tag that does not match what it closes is still the child's problem
+  // to name, not a claim that the root was never closed.
+  const crossed = run('<data><item><a>1</a></b></data>', 'xml', []);
+  assert.ok(crossed.error, 'mismatched tags must not parse');
+  assert.ok(!crossed.error.includes('never closed'), crossed.error);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

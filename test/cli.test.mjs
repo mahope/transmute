@@ -1013,17 +1013,54 @@ test('a second XML root element stops the run with exit 3', () => {
     assert.ok(named.stderr.includes('one root element'), named.stderr);
     assert.ok(named.stderr.includes('<more>'), named.stderr);
     // The same file with the *same* root name twice — what a batch tool that
-    // appends records actually writes. The reader finds the second `</rows>`
-    // first, so this one is caught by the element check instead. Loud and empty
-    // is the contract; the message names the content it stopped on.
+    // appends records actually writes. The reader ends the root where the root's
+    // own nesting ends, so this one is named by the same rule as the case above.
     writeFileSync(path, '<rows><row><a>1</a></row></rows>\n<rows><row><b>2</b></row></rows>\n', 'utf-8');
     const same = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
     assert.equal(same.status, 3, `exit ${same.status}: ${same.stderr}`);
     assert.equal(same.stdout, '', 'a refused input must not write a partial file to stdout');
+    assert.ok(same.stderr.includes('one root element'), same.stderr);
     assert.ok(same.stderr.includes('</rows>'), same.stderr);
+    // A first document that closes itself is the same file, and used to be read
+    // as the root's one child instead of being named at all.
+    writeFileSync(path, '<rows/>\n<rows><row><b>2</b></row></rows>\n', 'utf-8');
+    const selfClosed = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(selfClosed.status, 3, `exit ${selfClosed.status}: ${selfClosed.stderr}`);
+    assert.equal(selfClosed.stdout, '');
+    assert.ok(selfClosed.stderr.includes('one root element'), selfClosed.stderr);
     // A single document with a prologue and a comment is still one document.
     writeFileSync(path, '<?xml version="1.0"?>\n<!-- two rows -->\n<rows><row><a>1</a></row></rows>\n', 'utf-8');
     assert.equal(spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' }).status, 0);
+    // And a root that closes itself is a document, not a truncated one.
+    writeFileSync(path, '<rows/>\n', 'utf-8');
+    const alone = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(alone.status, 0, `exit ${alone.status}: ${alone.stderr}`);
+    assert.equal(alone.stdout, '[]\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a flow collection that is the whole yaml file is read as its content', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'flow.yaml');
+    // The block reader took `{a` for a key, so the file's content came out as
+    // one field holding the text `1, b: two` — exit 0, empty stderr, and a
+    // conversion of a document nobody wrote.
+    writeFileSync(path, '{a: 1, b: two}\n', 'utf-8');
+    const out = expectOk(spawnSync(process.execPath, [cli, '-f', 'yaml', path, '-o', 'json'], { encoding: 'utf-8' }));
+    assert.equal(out, '[\n  {\n    "a": 1,\n    "b": "two"\n  }\n]\n');
+    // The same duplicate-key rule as everywhere else, on a file this shape.
+    writeFileSync(path, '{a: 1, a: 2}\n', 'utf-8');
+    const dup = spawnSync(process.execPath, [cli, '-f', 'yaml', path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(dup.status, 0, dup.stderr);
+    assert.equal(dup.stdout, '[\n  {\n    "a": 2\n  }\n]\n');
+    assert.ok(dup.stderr.includes('key "a"'), dup.stderr);
+    // An unbalanced brace is a different file and is not a flow document.
+    writeFileSync(path, '{a: 1\n', 'utf-8');
+    const open = expectOk(spawnSync(process.execPath, [cli, '-f', 'yaml', path, '-o', 'json'], { encoding: 'utf-8' }));
+    assert.equal(open, '[\n  {\n    "{a": 1\n  }\n]\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

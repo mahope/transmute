@@ -312,6 +312,67 @@ collision: there is nothing to decide, so it stays silent. Neither is a key that
 appears in two different records, or a key that merely looks like one inside a
 string value.
 
+### Flow collections, on one line and as the whole file
+
+`[a, b]` and `{k: v}` are read as collections, wherever they sit in a YAML
+file: under a key, on a line of their own, or as the entire document.
+
+```bash
+printf 'servers:\n  hosts: {a: 1, b: two}\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "servers": {
+      "hosts": {
+        "a": 1,
+        "b": "two"
+      }
+    }
+  }
+]
+```
+
+The whole file being a collection is the same syntax, so it is read the same
+way. That case used to reach the block reader, which took `{a` for a key and
+gave back one field holding the text `1, b: two}` — exit 0, nothing on stderr,
+and a conversion of a document nobody wrote.
+
+```bash
+printf '{a: 1, b: two}\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "a": 1,
+    "b": "two"
+  }
+]
+```
+
+A key the collection gives twice is still named, with the same words as a JSON
+or block-mapping collision. There is no line number to give, because the
+collection is one line:
+
+```bash
+printf '{a: 1, a: 2}\n' | transmute --format yaml --output csv
+```
+
+```
+a
+2
+```
+
+```
+Warning: YAML: key "a" has two different values — 1 and 2; the last one is kept. One of them is a mistake in the input.
+```
+
+A collection has to close on its own line to be read as a collection. A file
+that opens one and never closes it, and a collection spread over several lines,
+are read the way they always were — as the text they are.
+
 ### XML output: the characters XML itself cannot hold
 
 XML 1.0 is not able to represent every character. Its `Char` production is
@@ -1172,6 +1233,22 @@ Error: Could not parse input as xml: an XML document has one root element, but t
 Exit **3** — the input is not one document, and Transmute will not choose which
 document you meant. Split the file, or read the parts one at a time. A prologue,
 a `DOCTYPE` and comments are not extra documents and are read as usual.
+
+Both documents having the **same** root name is the form a batch tool writes,
+and it is the same rule: the root element ends where its own nesting ends, so
+the second document is the one after it.
+
+```bash
+printf '<rows><row><a>1</a></row></rows>\n<rows><row><b>2</b></row></rows>\n' | transmute --format xml --output json
+```
+
+```
+Error: Could not parse input as xml: an XML document has one root element, but this file has more after </rows>: "<rows><row><b>2</b></row></rows>". Concatenated XML is not one document — split it first, or read the documents one at a time.
+```
+
+A root element that closes itself — `<rows/>` — is closed, and is read as the
+document it is: no rows. It used to be refused as a root that was never closed,
+which was the one thing this reader said about XML that was simply untrue.
 
 JSON to SQL, with `--table` choosing the table name:
 
