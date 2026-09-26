@@ -765,5 +765,112 @@ test('a step that needs no field still runs on rows that are not records', () =>
   assert.deepEqual(JSON.parse(r.stdout), [{ count: 2 }]);
 });
 
+console.log('── input that is not UTF-8 ──');
+
+/** A file whose bytes are deliberately not UTF-8, written byte for byte. */
+function writeBytes(dir, name, bytes) {
+  const path = join(dir, name);
+  writeFileSync(path, Buffer.from(bytes));
+  return path;
+}
+
+test('a latin-1 file is refused, not silently mangled into U+FFFD', () => {
+  // `M\xf8ller` is `Møller` in ISO-8859-1, which is what a Windows export of a
+  // Danish customer list looks like. It used to come out as `M?ller`, exit 0,
+  // empty stderr, and the mangled name was written to the output file — the one
+  // failure in this list that destroyed the characters instead of hiding a wrong
+  // answer.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = writeBytes(dir, 'latin1.csv', [0x6e, 0x61, 0x76, 0x6e, 0x0a, 0x4d, 0xf8, 0x6c, 0x6c, 0x65, 0x72, 0x0a]);
+    const out = join(dir, 'out.json');
+    const result = spawnSync(process.execPath, [cli, path, '-o', 'json', '--out', out], { encoding: 'utf-8' });
+    assert.equal(result.status, 3, `expected exit 3, got ${result.status}: ${result.stderr}`);
+    assert.equal(result.stdout, '', `stdout should stay empty on error, got: ${result.stdout}`);
+    assert.ok(result.stderr.includes('is not valid UTF-8'), result.stderr);
+    assert.ok(result.stderr.includes('iconv'), 'the message should say how to convert the file');
+    assert.equal(existsSync(out), false, 'a file the CLI could not read must not produce output');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a latin-1 file is refused in the preview too, and nothing is printed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = writeBytes(dir, 'latin1.csv', [0x6e, 0x61, 0x76, 0x6e, 0x0a, 0x4d, 0xf8, 0x6c, 0x6c, 0x65, 0x72, 0x0a]);
+    const result = spawnSync(process.execPath, [cli, path], { encoding: 'utf-8' });
+    assert.equal(result.status, 3, `expected exit 3, got ${result.status}: ${result.stderr}`);
+    assert.equal(result.stdout, '', 'the preview must not print a table built from characters that were lost');
+    assert.ok(result.stderr.includes('is not valid UTF-8'), result.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('piped latin-1 is refused the same way, and the message says stdin', () => {
+  // A pipe is read as bytes too. Decoding with setEncoding('utf-8') in the stdin
+  // reader made a piped file behave exactly like a piped latin-1 one.
+  const result = spawnSync(process.execPath, [cli, '-f', 'csv', '-o', 'json'], { encoding: 'utf-8', input: Buffer.from([0x6e, 0x61, 0x76, 0x6e, 0x0a, 0x4d, 0xf8, 0x6c, 0x6c, 0x65, 0x72, 0x0a]) });
+  assert.equal(result.status, 3, `expected exit 3, got ${result.status}: ${result.stderr}`);
+  assert.equal(result.stdout, '', `stdout should stay empty on error, got: ${result.stdout}`);
+  assert.ok(result.stderr.includes('stdin is not valid UTF-8'), result.stderr);
+});
+
+test('a UTF-16 file is refused instead of becoming a field name of U+FFFD', () => {
+  // The worst case measured: the BOM and the NUL bytes between every character
+  // decoded into one header key, so the first record had a single field called
+  // "��n\u0000a\u0000v\u0000n" and the file looked like it had been read.
+  const bytes = [0xff, 0xfe];
+  for (const ch of 'navn\n') bytes.push(ch.charCodeAt(0), 0x00);
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = writeBytes(dir, 'utf16.csv', bytes);
+    const result = spawnSync(process.execPath, [cli, path, '-f', 'csv', '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(result.status, 3, `expected exit 3, got ${result.status}: ${result.stderr}`);
+    assert.equal(result.stdout, '', `stdout should stay empty on error, got: ${result.stdout}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the reported position is the character that could not be read', () => {
+  // "navn\nM\xf8ller\n" decodes to "navn\nM\uFFFDller\n", so the first character
+  // that is not what the file holds is at index 6. A number that points at the
+  // wrong place sends the user to the wrong byte.
+  const result = spawnSync(process.execPath, [cli, '-f', 'csv', '-o', 'json'], {
+    encoding: 'utf-8',
+    input: Buffer.from([0x6e, 0x61, 0x76, 0x6e, 0x0a, 0x4d, 0xf8, 0x6c, 0x6c, 0x65, 0x72, 0x0a]),
+  });
+  assert.ok(result.stderr.includes('position 6'), result.stderr);
+});
+
+test('a UTF-8 file that really contains U+FFFD is read, not refused', () => {
+  // The check is on the bytes and never on the decoded text, so a file whose
+  // author really typed U+FFFD is left alone. Refusing on the decoded text
+  // instead would break a valid file — the same over-refusal T26 warned about
+  // for field names.
+  const result = spawnSync(process.execPath, [cli, '-f', 'csv', '-o', 'json'], {
+    encoding: 'utf-8',
+    input: Buffer.from('navn\nM\uFFFDller\n', 'utf-8'),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [{ navn: 'M\uFFFDller' }]);
+});
+
+test('non-ASCII UTF-8 still round-trips: nordic letters, emoji and CJK', () => {
+  // The fix must not narrow what the tool accepts. These are the characters a
+  // Danish, Japanese or emoji-bearing export is made of.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'utf8.csv');
+    writeFileSync(path, 'navn\nMøller\n🚀日本\n', 'utf-8');
+    const out = JSON.parse(expectOk(spawnSync(process.execPath, [cli, '-f', 'csv', '-o', 'json'], { encoding: 'utf-8', input: readFileSync(path) })));
+    assert.deepEqual(out.map(row => row.navn), ['Møller', '🚀日本']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

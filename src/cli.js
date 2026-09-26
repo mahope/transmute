@@ -10,6 +10,7 @@
  */
 
 const fs = require('fs');
+const { isUtf8 } = require('node:buffer');
 const { run, parsers, validatePipeline, detectFormat } = require('./engine');
 const { version } = require('../package.json');
 
@@ -24,7 +25,7 @@ const DELIMITERS = { ',': ',', ';': ';', 'tab': '\t', '|': '|' };
  *   0  success
  *   1  the pipeline ran but the transformation failed
  *   2  usage error (unknown flag, bad flag value, invalid pipeline)
- *   3  input error (file missing, unreadable, or unparseable as the input format)
+ *   3  input error (file missing, unreadable, unparseable, or not UTF-8)
  */
 const EXIT = { ok: 0, transform: 1, usage: 2, input: 3 };
 
@@ -166,27 +167,31 @@ async function main() {
     );
   }
 
-  // Read input
+  // Read input. Both a file and a pipe are read as bytes, because the encoding
+  // is decided before the text exists — see decodeText.
   if (inputFile !== null) {
     if (inputFile === '-') {
-      inputText = await readStdin();
+      inputText = decodeText(await readStdin(), 'stdin');
     } else if (!fs.existsSync(inputFile)) {
       throw new InputError(`File not found: ${inputFile}`);
     } else {
+      let buffer;
       try {
-        inputText = fs.readFileSync(inputFile, 'utf-8');
+        buffer = fs.readFileSync(inputFile);
       } catch (err) {
         throw new InputError(`Could not read ${inputFile}: ${err.message}`);
       }
+      inputText = decodeText(buffer, inputFile);
     }
     if (!inputFormat) inputFormat = detectFormat(inputFile, inputText);
   } else {
     // Read from stdin (pipe)
-    inputText = await readStdin();
-    if (inputText === '' && process.stdin.isTTY) {
+    const buffer = await readStdin();
+    if (buffer.length === 0 && process.stdin.isTTY) {
       showHelp(process.stderr);
       throw new UsageError('No input. Pass a file or pipe data on stdin.');
     }
+    inputText = decodeText(buffer, 'stdin');
     if (!inputFormat) inputFormat = detectFormat(null, inputText);
   }
 
@@ -256,6 +261,39 @@ function flagValue(args, index, name) {
   const value = args[index];
   if (value === undefined) throw new UsageError(`${name} needs a value`);
   return value;
+}
+
+/**
+ * Text is UTF-8, and reading anything else as UTF-8 does not fail — every byte
+ * sequence that is not valid UTF-8 decodes to U+FFFD, one per bad sequence. So a
+ * Windows-1252 export came out as `M?ller` and a UTF-16 export as a field name
+ * of replacement characters, both with exit 0, an empty stderr, and the mangled
+ * text written to the output file where it looked perfectly healthy. That is the
+ * same silence the other tasks remove, and this is the one that costs data: the
+ * characters are gone, and nothing in the output says so.
+ *
+ * The bytes are therefore checked before they are decoded, and input that is not
+ * UTF-8 is an input error (exit 3) — T27's line: a value that cannot be read at
+ * all is an error, not a warning, and here not even the file is readable. There
+ * is no guessing and no repair, because every wrong guess would rewrite the
+ * user's bytes; the message says how to convert instead.
+ *
+ * A valid UTF-8 file that happens to contain U+FFFD is left alone — the check is
+ * on the bytes, never on the decoded text, so the only U+FFFD that can reach the
+ * output is one the file really has.
+ */
+function decodeText(buffer, source) {
+  if (isUtf8(buffer)) return buffer.toString('utf-8');
+  // Reached only on the failing path. The offset is a character position in the
+  // decoded text, which is where the user has to look; `isUtf8` says nothing
+  // about where, and every invalid sequence is guaranteed to produce a U+FFFD.
+  const at = buffer.toString('utf-8').indexOf('\uFFFD');
+  const where = at === -1 ? '' : ` (first invalid character at position ${at})`;
+  throw new InputError(
+    `${source} is not valid UTF-8${where}. Transmute reads text as UTF-8, so every non-ASCII ` +
+    'character would be replaced with U+FFFD and the result written out as if it were correct. ' +
+    'Convert the input to UTF-8 first, for example with: iconv -f iso-8859-1 -t utf-8 FILE > FILE-utf8'
+  );
 }
 
 function parsePipeline(raw) {
@@ -364,7 +402,7 @@ function showHelp(stream = process.stdout) {
   log();
   log('Exit codes:');
   log('  0  success                 2  usage error (bad flag or pipeline)');
-  log('  1  transformation failed   3  input error (missing or unparseable input)');
+  log('  1  transformation failed   3  input error (missing, unparseable, not UTF-8)');
   log();
   log('Examples:');
   log('  transmute data.json -p \'[{"op":"filter","expr":"item.status === \\"active\\""}]\'');
@@ -373,14 +411,19 @@ function showHelp(stream = process.stdout) {
   log();
 }
 
+/**
+ * stdin arrives as bytes, not as text. Decoding here with `setEncoding('utf-8')`
+ * is what made a piped latin-1 file come out mangled exactly like a piped file:
+ * the encoding is checked in decodeText, where a file is checked too.
+ */
 function readStdin() {
   return new Promise((resolve) => {
-    if (process.stdin.isTTY) return resolve('');
-    let data = '';
-    process.stdin.setEncoding('utf-8');
-    process.stdin.on('data', chunk => data += chunk);
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', () => resolve(data));
+    if (process.stdin.isTTY) return resolve(Buffer.alloc(0));
+    const chunks = [];
+    const done = () => resolve(Buffer.concat(chunks));
+    process.stdin.on('data', chunk => chunks.push(chunk));
+    process.stdin.on('end', done);
+    process.stdin.on('error', done);
   });
 }
 

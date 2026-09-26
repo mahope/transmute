@@ -252,6 +252,27 @@ test('an option that cannot do its job is refused before the input is read', () 
   assert.equal(runCli(['test/fixtures/nope.json', '--delimiter', ';', '-o', 'json']).status, 3, 'the delimiter needs the input format, so the missing file is still an input error');
 });
 
+test('docs/cli.md quotes the real error for input that is not UTF-8', () => {
+  // The tenth silence, and the only one that destroyed characters instead of
+  // hiding a wrong answer: a Windows-1252 export decoded to U+FFFD, exit 0 and
+  // an empty stderr, and the mangled names went into the output file. The docs
+  // have to carry the message the CLI now prints, or a reader meets it with no
+  // explanation — the same lock the two silences above are held under.
+  const result = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'csv', '-o', 'json'], {
+    cwd: root,
+    encoding: 'utf-8',
+    input: Buffer.from([0x6e, 0x61, 0x76, 0x6e, 0x2c, 0x62, 0x79, 0x0a, 0x4d, 0xf8, 0x6c, 0x6c, 0x65, 0x72, 0x0a]),
+  });
+  assert.equal(result.status, 3, `a non-UTF-8 input should be an input error, got exit ${result.status}`);
+  assert.equal(result.stdout, '', 'refused input must leave stdout empty');
+  // The message names the input it was given, so the docs quote a file of their own.
+  const message = result.stderr.trim().replace(/^Error: /, '').replace(/^stdin/, 'customers.csv');
+  assert.equal(docs.includes(message), true, `docs/cli.md does not quote the error verbatim: ${message}`);
+  assert.equal(help.includes('not UTF-8'), true, '--help does not list non-UTF-8 input as an input error');
+  const row = docs.split('\n').find(line => line.startsWith('| `3` |'));
+  assert.ok(row.includes('not UTF-8'), 'the exit 3 row in docs/cli.md does not mention it');
+});
+
 for (const testCase of CASES) {
   test(`docs/cli.md shows the exact output for: ${testCase.name}`, () => {
     assert.equal(docs.includes(testCase.command), true, `command not found in docs: ${testCase.command}`);

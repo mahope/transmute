@@ -127,7 +127,7 @@ transmute european.csv --delimiter ';' -o json
 | `0` | Success | — |
 | `1` | The transformation failed | The engine threw while transforming |
 | `2` | Usage error | Unknown option, bad option value, an option given twice, an option that cannot do its job (`--out` without `--output`, `--table` without `--output sql`, `--delimiter` without CSV input), `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
-| `3` | Input error | File missing, unreadable, or unparseable as the input format |
+| `3` | Input error | File missing, unreadable, unparseable as the input format, or not UTF-8 |
 
 Errors always go to stderr, prefixed with `Error:`, and stdout stays empty on
 failure — so `transmute in.json -o csv > out.csv` never leaves a half-written
@@ -247,6 +247,36 @@ Warning: 1 of 3 CSV rows has more fields than the header (row 3); the extra valu
   }
 ]
 ```
+
+### Text encoding
+
+Text is UTF-8, on a file and on a pipe alike. That is not a preference: reading
+anything else as UTF-8 does not fail, it *replaces*. Every byte sequence that is
+not valid UTF-8 decodes to `U+FFFD`, so a Windows-1252 export of a Danish
+customer list came out with `M?ller` instead of `Møller` — exit 0, nothing on
+stderr, and the mangled names written to the output file, where they looked
+healthy. A UTF-16 export was worse: the byte-order mark and the NUL bytes
+between every character became a single field name of `�` and ` `.
+
+So input that is not UTF-8 is an **input error** (exit 3), it is refused before
+anything is written, and the message says where to look:
+
+```bash
+iconv -f iso-8859-1 customers.csv > customers-utf8.csv
+```
+
+```bash
+transmute customers.csv --output json
+```
+
+```
+Error: customers.csv is not valid UTF-8 (first invalid character at position 9). Transmute reads text as UTF-8, so every non-ASCII character would be replaced with U+FFFD and the result written out as if it were correct. Convert the input to UTF-8 first, for example with: iconv -f iso-8859-1 -t utf-8 FILE > FILE-utf8
+```
+
+Transmute does not guess which encoding the file was in, because every wrong
+guess would rewrite your bytes. Convert the file, then run it again — everything
+valid UTF-8 is read, including `Møller`, `🚀` and `日本`, and including a file
+that really does contain a `U+FFFD` character.
 
 #### Writing: quote anything a reader could mistake for structure
 
