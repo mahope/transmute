@@ -179,6 +179,52 @@ function cellValue(val) {
   return String(val);
 }
 
+// A table is read by a terminal, not by a text editor, so a cell is as wide as
+// the columns it takes on screen. `.length` counts UTF-16 code units, which is
+// a different number: `🚀` is two code units and two columns, `日本` is two
+// code units and four columns, and a combining accent is two code units and
+// one column. Padding by `.length` put the right-hand border in the wrong
+// place on every line that held one of them — and `table` is the format every
+// user sees first, because it is the preview.
+//
+// The ranges below are the ones a Danish or general-European data file
+// actually meets: CJK, Hangul, kana, fullwidth forms and emoji. Ambiguous
+// width (`±`, `°`, the variation selector) is left at one column, which is
+// what most terminals do with it and is the choice that never over-pads
+// ordinary Latin text.
+const WIDE_RANGES = [
+  [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf],
+  [0x4e00, 0x9fff], [0xa000, 0xa4cf], [0xac00, 0xd7a3], [0xf900, 0xfaff],
+  [0xfe10, 0xfe19], [0xfe30, 0xfe6f], [0xff00, 0xff60], [0xffe0, 0xffe6],
+  [0x1f300, 0x1f64f], [0x1f680, 0x1f6ff], [0x1f900, 0x1f9ff], [0x20000, 0x3fffd]
+];
+const ZERO_WIDTH_RANGES = [
+  [0x0300, 0x036f], [0x20d0, 0x20f0], [0x200b, 0x200f], [0xfe00, 0xfe0f]
+];
+
+function inRanges(cp, ranges) {
+  for (const [lo, hi] of ranges) {
+    if (cp < lo) return false;
+    if (cp <= hi) return true;
+  }
+  return false;
+}
+
+function displayWidth(str) {
+  let width = 0;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    if (inRanges(cp, ZERO_WIDTH_RANGES)) continue;
+    width += inRanges(cp, WIDE_RANGES) ? 2 : 1;
+  }
+  return width;
+}
+
+function padDisplay(str, width) {
+  const w = displayWidth(str);
+  return w >= width ? str : str + ' '.repeat(width - w);
+}
+
 function sqlValue(val) {
   // `null` and `undefined` are the absence of a value, so they become NULL.
   // An empty string is a value: it becomes ''. Writing it as NULL silently
@@ -283,20 +329,28 @@ const serializers = {
   table: (data) => {
     if (data.length === 0) return '(empty)';
     const headers = unionKeys(data);
+    // Only the rows below are printed, so only they decide how wide a column
+    // is. Measuring the whole file made every printed line as wide as the
+    // widest cell in a file the table never shows.
+    const maxRows = 20;
+    const shown = data.length > maxRows ? data.slice(0, maxRows) : data;
     // Calculate column widths
-    const colWidths = headers.map(h => Math.max(
-      h.length,
-      ...data.map(row => cellValue(row[h]).length)
-    ));
+    const colWidths = headers.map(h => {
+      let width = displayWidth(h);
+      for (const row of shown) {
+        const w = displayWidth(cellValue(row[h]));
+        if (w > width) width = w;
+      }
+      return width;
+    });
     // Build separator
     const sep = '+-' + colWidths.map(w => '-'.repeat(w)).join('-+-') + '-+';
     // Header
-    const header = '| ' + headers.map((h, i) => h.padEnd(colWidths[i])).join(' | ') + ' |';
+    const header = '| ' + headers.map((h, i) => padDisplay(h, colWidths[i])).join(' | ') + ' |';
     const headerSep = '+-' + colWidths.map(w => '-'.repeat(w)).join('-+-') + '-+';
     // Rows (first 20)
-    const maxRows = 20;
-    const rows = data.slice(0, maxRows).map(row =>
-      '| ' + headers.map((h, i) => cellValue(row[h]).padEnd(colWidths[i])).join(' | ') + ' |'
+    const rows = shown.map(row =>
+      '| ' + headers.map((h, i) => padDisplay(cellValue(row[h]), colWidths[i])).join(' | ') + ' |'
     );
     let output = [headerSep, header, headerSep, ...rows, headerSep];
     if (data.length > maxRows) {

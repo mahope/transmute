@@ -256,7 +256,7 @@ not valid UTF-8 decodes to `U+FFFD`, so a Windows-1252 export of a Danish
 customer list came out with `M?ller` instead of `Møller` — exit 0, nothing on
 stderr, and the mangled names written to the output file, where they looked
 healthy. A UTF-16 export was worse: the byte-order mark and the NUL bytes
-between every character became a single field name of `�` and ` `.
+between every character became a single field name of `\uFFFD` and `\u0000`.
 
 So input that is not UTF-8 is an **input error** (exit 3), it is refused before
 anything is written, and the message says where to look:
@@ -1146,7 +1146,9 @@ transmute test/fixtures/orders.json --pipe '[{"op":"pick","fields":["id","status
 ```
 
 The `table` output is for reading, not for piping: it shows at most 20 rows
-plus a count.
+plus a count. Each column is as wide as the 20 rows it actually prints, counted
+in screen columns, so a name in Japanese or an emoji does not push the
+right-hand border out of line.
 
 ## Scripts, pipes and files
 

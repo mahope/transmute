@@ -313,6 +313,68 @@ To af dem sletter data: `-f json -f csv` læste JSON'en som én kolonne og skrev
 10. **NUL-bytes i input (fra T30, målt):** et NUL-byte i en CSV-overskrift bliver til et feltnavn med `\u0000` i, exit 0. Målt, ikke rettet: det er ikke en kodetning, men en beskadiget fil, og NUL i en tekstfil er sjældnere end cp1252. Det er skrevet ned, så den næste måling ikke genfinder det som nyt. Det ville være en kandidat til samme `decodeText`-kontrol, hvis nogen melder det.
 11. **`sort` på tal-strenge (fra T21/T22, stadig åben):** se afsnittet om de fire flader ovenfor. Det er en afvejning, ikke en tavs korruption — `jq`'s `sort_by` gør det samme — så det kræver en beslutning, ikke en fix.
 
+### 31. [x] Mål stier, locale, millionrækker og YAML-dybde — og ret den tavshed, de gemte
+
+**Status:** FÆRDIG med commit `837eb4a+` på `ceo/paths-locale-limits` — **ligger på branch, ikke mergeret**, fordi `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** Efter ti målte tavsheder (T20–T30) var der ingen ny fejl i køen, kun fire **uudforskede** stier, planen havde navngenet: filstier med mellemrum i `--out`, POSIX-locale, filer ≥ 100.000 rækker mod `Limits`-løftet, og YAML-mappingsdybde. Denne iteration målte alle fire på den rigtige binary. To af dem viste sig at være rene. Den tredje — millionrækkerne — viste sig at være **to fejl i én linje**, hvoraf den ene brød løftet i `docs/cli.md` direkte, og den anden gjorde previewen *synligt* skæv for enhver med et ikke-latin tegn i et navn. Den fjerde gav et målt fund, der er skrevet ned og bevidst urørt.
+
+**Målt før koden blev rørt (på den rigtige binary, `src/cli.js`):**
+
+| Måling | Resultat |
+|---|---|
+| input med mellemrum i stien, preview | exit 0, korrekt JSON — **rent** |
+| `--out "out dir/result file.json"` | exit 0, filen skrevet — **rent** |
+| `--out` med ny linje i filnavnet | exit 0, filen skrevet under det navn — **rent** |
+| `--out "no such dir/x.json"` (mellemrum + manglende mappe) | exit 3 med ENOENT — **rent** |
+| `LC_ALL=C` / `en_US.UTF-8` / `da_DK.UTF-8` på dansk data, json + table | exit 0, **byte-identisk** output i alle tre — **rent** |
+| 120.000 rækker → json / csv / sql / xml | exit 0, 0,3–0,7 s — **rent** |
+| 120.000 rækker gennem 10 pipeline-step | exit 0, ≤ 0,06 s hver — **rent** |
+| **120.000 rækker, preview (ingen `-o`)** | **exit 1, `Error: Maximum call stack size exceeded`, tom stdout** |
+| **120.000 rækker med `-o table --out`** | **samme krasch** |
+| samme som pipe (`cat big.csv \| transmute`) | **samme krasch** |
+| grænsen for kraschen | 110.000 rækker exit 0, **115.000 rækker exit 1** |
+| **1.000.000 rækker (23 MB), preview** | **exit 1, samme krasch** — efter rettelsen exit 0 på 1,6 s |
+| celle med 120 tegn i række 31 (tabellen viser række 1–20) | alle 20 trykte linjer paddet til 131 tegn for en celle, ingen viste |
+| `Møller` / `🚀` / `日本` i `table` | højre kant **ude af linje** på de to linjer med 🚀 og 日本 |
+| YAML-mapping 2.000 niveauer dyb | exit 0 |
+| YAML-mapping 2.500 niveauer dyb | exit 3, `Could not parse input as yaml: Maximum call stack size exceeded` |
+| JSON 2.000 niveauer dyb (V8's `JSON.parse` er iterativ) | exit 0 — **rent** |
+
+**Årsagen til de to fejl er den samme linje.** `serializers.table` målte kolonnebredder med
+
+```js
+const colWidths = headers.map(h => Math.max(h.length, ...data.map(row => cellValue(row[h]).length)));
+```
+
+Det har tre fejl i én linje. **(1)** `Math.max(...data.map(...))` spreder ét argument pr. record ind i et kald; V8 giver op et sted omkring 110.000, så `table` døde på en 4 MB-fil — og `table` er formatet previewen bruger, så den simple `transmute people.csv` døde med den. **(2)** `.length` er ikke et kolonnetantal: det tæller UTF-16-kodeenheder. `🚀` er to kodeenheder og to kolonner, `日本` er to kodeenheder og fire kolonner, `e` + kombinerende accent er to kodeenheder og én kolonne. **(3)** Bredderne blev målt over **hele filen**, mens tabellen kun printer 20 rækker, så én lang celle i række 31.000 paddede alle 20 trykte linjer til en bredde ingen af dem brugte.
+
+**Rettelse:**
+
+- `displayWidth(str)` tæller **skærmkolonner**: kode-punkter, ikke UTF-16-kodeenheder, og CJK/Hangul/kana/fullwidth/emoji tæller 2. `padDisplay(str, w)` bruger den. Intervallerne er dem en dansk eller generel-europæisk datafil møder; *ambiguous* bredde (`±`, `°`, variation selector) er bevidst ladt på 1 kolonne, fordi det er hvad de fleste terminaler gør, og fordi det aldrig over-padder almindelig latinisk tekst.
+- Kolonnebredderne måles i en **løkke over de 20 rækker, der printes** — ingen spread, intet `Math.max` over filen. Det fjerner kraschen, gør previewen uafhængig af hvor mange rækker der ligger bagved, og gør den *mindre* arbejde på en stor fil end før (før: alle rækker × alle kolonner).
+- `site/engine.js` er byte-identisk med `src/engine.js` og blev kopieret med, så playgroundet på `/` og `/da/` fik præcis samme rettelse. Det er grunden til at `check:site` *er* kørt i denne iteration, modsat T30.
+- `docs/cli.md` siger nu, at kolonnerne er så brede som de 20 rækker tabellen printer, og at de tælles i skærmkolonner.
+
+**Valg, der er bevidst:**
+
+- **Ingen advarsel, ingen ny fejlkode.** En krasch er ikke en advarselssag, og en skæv kant er synlig for alle — begge er den slags, hvor det er billigere at være konservativ end at forklare sig.
+- **Målt på de 20 trykte rækker, ikke på hele filen.** Det er en adfærdsændring ud over kraschen: en fil på 30 rækker, hvor række 31 bærer den lange værdi, får nu en smallere tabel. Det er pointen — tabellen skal have den bredde den viser — og ingen af de 27 eksisterende snapshots ændrer sig, fordi ingen af dem har mere end 20 rækker.
+- **Ingen ny afhængighed, intet wcwidth-bibliotek.** De seksten intervaller er en lokal konstant på otte linjer; et bibliotek ville være en runtime-afhængighelse i et værktøj, hvis største salgsargument er nul afhængigheder.
+
+**Acceptkriterier, verificeret:**
+
+- 150.000 rækker: preview exit 0 med `(150000 rows, 2 columns)` og `... 149980 more rows`; samme fil med `-o table --out` exit 0. 1.000.000 rækker (23 MB): preview exit 0 på 1,6 s, csv-skrivning exit 0 på 1,9 s — `Limits`-afsnittets løfte holder nu.
+- `Møller` / `🚀` / `日本`: alle otte linjer i tabellen har samme skærmbredde, målt med en uafhængig tæller i testen der kun kender de tre cases og derfor ikke kan genlære engineens egen.
+- Række 31 med en 120-tegns celle: de 21 trykte linjer er højst 14 kolonner brede, og `... 10 more rows` står der.
+- 4 nye engine-tests og 2 nye CLI-tests, kørt mod den gamle kode: de fire engine-tests fejler med henholdsvis `Maximum call stack size exceeded`, en tabel med to forskellige linjebredder, `café` der er bredere end `cafe`, og en 131 kolonner bred tabel; de to CLI-tests fejler med `exit 1: Error: Maximum call stack size exceeded` og `table is crooked`.
+
+**Verifikation:** `npm test` grøn med 138 engine-tests (134 → 138, 4 nye), 127 CLI-tests (125 → 127, 2 nye), 75 konformitets-, 6 README-, 39 workflow-regressioner, 4 workflow-kontrakter og 173 kontratkontroller over 28 filer. `npm pack --dry-run` uændret på 5 filer. `npm run check:site` kørt og grøn. Ingen snapshot ændret.
+
+**Noget ved siden af, samme klasse:** `docs/cli.md` indeholdt et **rigtigt NUL-byte** (offset 10138) indeni den sætning, der beskriver NUL-bytes i input — T30's egen diff. Følgen var at `grep` erklærede filen *binary* og derfor søgte i den med vilje, så ingen af planens, konformitetens eller README-kontrollerne kunne finde et ord i `docs/cli.md`. Én byte, erstattet af `\uFFFD` og `\u0000` som escaped tekst. Samme slags-fejl som den `6cb28f6` rettede i denne plan.
+
+**Deploy:** `npm run check:deploy` kørt først i iterationen: uændret for **sjette** gang i træk, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. `DEPLOY-MISSING` står derfor ved, diffen er **ikke** mergeret til `main`, og der er oprettet ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. Diffen rører `site/engine.js`, så den kræver en note, når bunken merges.
+
 ### 1. [x] Afslut den gamle RustSec-baseline efter desktopflytningen
 
 **Status:** FÆRDIG — ikke længere relevant i det offentlige repo

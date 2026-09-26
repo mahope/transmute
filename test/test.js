@@ -179,6 +179,73 @@ test('table output keeps keys that only later records carry', () => {
   assert.ok(r.text.includes('| b@x.dk |'), r.text);
 });
 
+/**
+ * Screen columns of a line, counted the way a terminal counts them. This is
+ * the expectation, not a copy of the engine's own helper: it only knows the
+ * three cases the table tests use, and it would disagree with the engine if
+ * the engine got one of them wrong.
+ */
+function displayWidthOfLine(line) {
+  let w = 0;
+  for (const ch of line) {
+    const cp = ch.codePointAt(0);
+    if (cp === 0xfe0f || (cp >= 0x0300 && cp <= 0x036f)) continue; // variation selector, combining accent
+    const wide =
+      (cp >= 0x1100 && cp <= 0x115f) || (cp >= 0x2e80 && cp <= 0xa4cf) ||
+      (cp >= 0xac00 && cp <= 0xd7a3) || (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xfe30 && cp <= 0xfe6f) || (cp >= 0xff00 && cp <= 0xff60) ||
+      (cp >= 0x1f300 && cp <= 0x1f9ff);
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
+
+test('a table measures a cell in screen columns, not in UTF-16 code units', () => {
+  // `.length` is not a column count. `🚀` is two code units and two columns,
+  // `日本` is two code units and four columns, and `é` written as `e` plus a
+  // combining accent is two code units and one column. Padding by `.length`
+  // moved the right-hand border on the very line it had just printed.
+  const r = serializers.table([{ who: '🚀', where: 'Danmark' }, { who: '日本', where: 'Danmark' }]);
+  const lines = r.split('\n');
+  // Every rule and every row line is the same length once measured in columns.
+  const widths = lines.filter(l => l.startsWith('|') || l.startsWith('+-'));
+  assert.equal(new Set(widths.map(displayWidthOfLine)).size, 1, r);
+  // The border, the header, the middle border, the two rows and the closing
+  // border: six lines, all the same width once counted in columns.
+  assert.equal(widths.length, 6, r);
+});
+
+test('a combining accent does not push the rest of the cell to the right', () => {
+  const plain = serializers.table([{ a: 'cafe' }]);
+  const accented = serializers.table([{ a: 'cafe\u0301' }]);
+  const w = s => displayWidthOfLine(s.split('\n').find(l => l.startsWith('| ')));
+  assert.equal(w(plain), w(accented), `${plain}\n---\n${accented}`);
+});
+
+test('a table sizes its columns from the rows it prints, not from rows it hides', () => {
+  // The table prints the first 20 rows. It used to measure every row in the
+  // file, so one long value in row 5,000 padded all 20 printed lines to a
+  // width no printed line used.
+  const rows = Array.from({ length: 30 }, (_, i) => ({ id: i, note: 'short' }));
+  rows[29].note = 'x'.repeat(120);
+  const r = serializers.table(rows);
+  const bodyLines = r.split('\n').filter(l => l.startsWith('| '));
+  assert.equal(bodyLines.length, 21, r); // header + 20 rows
+  assert.equal(Math.max(...bodyLines.map(displayWidthOfLine)), 14, r);
+  assert.equal(r.includes('... 10 more rows'), true, r);
+});
+
+test('a table of 150,000 records is a table, not a stack overflow', () => {
+  // `Math.max(...data.map(...))` spread one argument per record into a call.
+  // V8's limit is somewhere around 110,000, so a perfectly ordinary 4 MB CSV
+  // died with "Maximum call stack size exceeded" — and `table` is the format
+  // the preview uses, so it took the plain `transmute people.csv` with it.
+  const rows = Array.from({ length: 150000 }, (_, i) => ({ id: i, name: `person-${i}` }));
+  const r = serializers.table(rows);
+  assert.equal(r.includes('(150000 rows, 2 columns)'), true, r.slice(-200));
+  assert.equal(r.includes('... 149980 more rows'), true, r.slice(-200));
+});
+
 test('csv and table column order is the first-seen order of every key', () => {
   const records = [{ b: 1 }, { a: 2, c: 3 }];
   assert.strictEqual(serializers.csv(records), 'b,a,c\n1,,\n,2,3');

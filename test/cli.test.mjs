@@ -112,6 +112,44 @@ test('50 records in one run — no purchase, no run limit', () => {
   assert.equal(out.trim().split('\n').length, 51);
 });
 
+test('a 150,000-row file previews instead of dying on a stack overflow', () => {
+  // The default run has no `-o`, so it prints the table. That is the path a
+  // 4 MB CSV took: `Math.max(...data.map(...))` spread one argument per record
+  // into a call, and V8 gives up somewhere around 110,000 of them. Exit 1, no
+  // output, on a file no larger than a screenshot.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-big-'));
+  try {
+    const input = join(dir, 'people.csv');
+    const rows = ['id,name'];
+    for (let i = 0; i < 150000; i++) rows.push(`${i},person-${i}`);
+    writeFileSync(input, rows.join('\n') + '\n');
+    const out = expectOk(sh(`"${process.execPath}" "${cli}" ${JSON.stringify(input)}`));
+    assert.equal(out.includes('(150000 rows, 2 columns)'), true, out.slice(-300));
+    assert.equal(out.includes('person-0 '), true, out.slice(0, 400));
+    // And the same file written out as a table, which is the other half of it.
+    const target = join(dir, 'out table.txt');
+    expectOk(sh(`"${process.execPath}" "${cli}" ${JSON.stringify(input)} -o table --out ${JSON.stringify(target)}`));
+    const written = readFileSync(target, 'utf-8');
+    assert.equal(written.includes('(150000 rows, 2 columns)'), true, written.slice(-200));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a name with a wide character does not break the table it is printed in', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f csv`, { input: 'name,city\nMøller,København\n🚀,Aarhus\n日本,Odense\n' }));
+  const rules = out.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'));
+  const columns = l => {
+    let w = 0;
+    for (const ch of l) {
+      const cp = ch.codePointAt(0);
+      w += (cp >= 0x1f300 && cp <= 0x1f9ff) || (cp >= 0x4e00 && cp <= 0x9fff) ? 2 : 1;
+    }
+    return w;
+  };
+  assert.equal(new Set(rules.map(columns)).size, 1, `table is crooked:\n${out}`);
+});
+
 test('--out writes the output to a file and prints nothing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
   try {
