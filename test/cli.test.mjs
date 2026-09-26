@@ -345,6 +345,29 @@ test('unwritable --out target → exit 3', () => {
   expectFail(`"${process.execPath}" "${cli}" test/fixtures/people.csv -o json --out /nope/dir/out.json`, 3, 'Could not write');
 });
 
+test('an expression that is not JavaScript → exit 2, no rows, nothing on stdout', () => {
+  // `item.age >` used to keep every row and exit 0 with an empty stderr, so a
+  // filter that did not filter looked exactly like one that worked.
+  expectFail(`transmute test/fixtures/people.csv -p '[{"op":"filter","expr":"item.age >"}]' -o csv`, 2, 'Invalid expression "item.age >"');
+});
+
+test('an unclosed parenthesis in an expression → exit 2', () => {
+  expectFail(`transmute test/fixtures/people.csv -p '[{"op":"map","expr":"item.age > 5)"}]' -o csv`, 2, 'Invalid expression "item.age > 5)"');
+});
+
+test('a bad expression in add → exit 2 instead of a column of nulls', () => {
+  expectFail(`transmute test/fixtures/people.csv -p '[{"op":"add","fields":{"x":"item.age >"}}]' -o csv`, 2, 'Invalid expression');
+});
+
+test('an expression that throws at runtime → exit 1', () => {
+  expectFail(`transmute test/fixtures/people.csv -p '[{"op":"map","expr":"item.nope.deep"}]' -o csv`, 1, "reading 'deep'");
+});
+
+test('add still turns a per-record failure into null', () => {
+  const out = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"add","fields":{"x":"item.nope.deep"}}]' -o csv`));
+  assert.equal(out.includes(','), true, 'the null field must be in the output');
+});
+
 console.log('── help and version ──');
 
 test('--help exits 0 and lists every option and operation', () => {

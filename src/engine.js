@@ -415,13 +415,21 @@ const operations = {
   },
   add: (data, params) => {
     const fields = params.fields ?? {};
+    // Compile every expression before the first record. One that is not valid
+    // JavaScript is broken in the same way in every row, so it is a bad
+    // pipeline and must not be averaged away into a field full of nulls. An
+    // expression that compiles but throws on one record still yields null for
+    // that field, as documented.
+    const compiled = Object.entries(fields).map(([name, spec]) => {
+      const expr = typeof spec === 'object' && spec !== null ? spec.expr : spec;
+      return [name, compileExpression(expr)];
+    });
     return data.map((item, i) => {
       const out = { ...item };
-      for (const [name, spec] of Object.entries(fields)) {
-        const expr = typeof spec === 'object' && spec !== null ? spec.expr : spec;
+      for (const [name, fn] of compiled) {
         try {
-          out[name] = compileExpression(expr)(item, i);
-        } catch (e) {
+          out[name] = fn(item, i);
+        } catch {
           out[name] = null;
         }
       }
@@ -1242,18 +1250,27 @@ function decodeXML(val) {
 }
 
 /**
- * Compile a safe JS expression for filter/map operations.
+ * Compile a safe JS expression for filter/map/add operations.
  * The expression receives `item` (current row) and `i` (index).
- * Returns a function or the default identity passthrough.
+ *
+ * An expression that is not valid JavaScript throws. It used to fall back to
+ * the identity passthrough, so a typo the user can see and fix — `item.age >`
+ * — kept every row, exited 0 and said nothing, which is a filter that silently
+ * did not filter. The error carries `usage`, so the CLI reports a bad
+ * expression as a usage error (exit 2) and `run` still returns an ordinary
+ * `{ error }` result, which the browser playground renders like any other.
  */
 function compileExpression(expr) {
   if (!expr || expr === 'item') return (item) => item;
+  let fn;
   try {
-    const fn = new Function('item', 'i', `"use strict"; return (${expr});`);
-    return fn;
-  } catch {
-    return (item) => item;
+    fn = new Function('item', 'i', `"use strict"; return (${expr});`);
+  } catch (err) {
+    const error = new Error(`Invalid expression ${JSON.stringify(expr)}: ${err.message}`);
+    error.usage = true;
+    throw error;
   }
+  return fn;
 }
 
 // ─── Main pipeline function ──────────────────────────────────────────────
@@ -1266,7 +1283,9 @@ function compileExpression(expr) {
  * @param {Array} pipeline - Array of { op, ...params }
  * @param {string} outputFormat - 'json' | 'csv' | 'yaml' | 'xml' | 'table' | 'sql'
  * @param {object} opts - serializer options, e.g. { tableName: 'users' } for sql
- * @returns {object} { data, text, error }
+ * @returns {object} { data, text, error, warnings, usage } — `usage` is true
+ *   when the error is a bad argument rather than a failing transformation, so
+ *   the caller can pick a different exit code
  */
 function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts = {}) {
   // Collected here so a parse can report what it had to work around, and the
@@ -1291,7 +1310,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
 
     return { data, text, warnings };
   } catch (err) {
-    return { error: err.message, warnings };
+    return { error: err.message, warnings, usage: err.usage === true };
   }
 }
 

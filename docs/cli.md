@@ -59,7 +59,7 @@ input, which is the quickest way to check what a file contains.
 |---|---|---|
 | `0` | Success | — |
 | `1` | The transformation failed | The engine threw while transforming |
-| `2` | Usage error | Unknown option, bad option value, `--pipe` that is not a valid pipeline |
+| `2` | Usage error | Unknown option, bad option value, `--pipe` that is not a valid pipeline, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, or unparseable as the input format |
 
 Errors always go to stderr, prefixed with `Error:`, and stdout stays empty on
@@ -319,6 +319,12 @@ of the previous one.
 Keep the records where a JavaScript expression is true. `item` is the record,
 `i` is its index.
 
+An expression that is not valid JavaScript is a usage error (exit 2) and prints
+the parser's own message. It used to be treated as "no filter", so `item.age >`
+returned every row with exit 0 and an empty stderr — the one answer that looks
+exactly like a filter that worked. An expression that *compiles* but throws on a
+record, such as `item.nope.deep`, is a transformation error (exit 1).
+
 ```bash
 transmute test/fixtures/people.csv --pipe '[{"op":"filter","expr":"item.age > 26"}]' --output json
 ```
@@ -575,8 +581,11 @@ id,sku,qty
 
 ### add
 
-Add computed fields without rewriting the record. A failing expression yields
-`null` for that field rather than stopping the run. Accepts either
+Add computed fields without rewriting the record. An expression that throws on a
+record yields `null` for that field rather than stopping the run, because one
+odd record should not cost you the export. An expression that is not valid
+JavaScript is different: it is broken in every record, so it fails as a usage
+error (exit 2) instead of quietly filling the column with `null`. Accepts either
 `{"fields": {"total": "expr"}}` or a single `{"expr": "…"}` pair per field.
 
 ```bash

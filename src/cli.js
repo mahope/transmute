@@ -129,7 +129,10 @@ async function main() {
   const result = run(inputText, inputFormat, pipeline, outputFormat, { tableName, delimiter });
   if (result.error) {
     console.error(`Error: ${result.error}`);
-    process.exit(EXIT.transform);
+    // A bad argument in the pipeline — an expression that is not valid
+    // JavaScript — is what the user typed, so it is a usage error, not a
+    // transformation that failed. Both leave stdout empty.
+    process.exit(result.usage ? EXIT.usage : EXIT.transform);
   }
   // Warnings go to stderr so stdout stays exactly the data, pipeable and
   // redirectable. A CSV row with more fields than the header still succeeds —

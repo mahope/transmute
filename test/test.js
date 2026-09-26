@@ -41,6 +41,39 @@ test('add with bad expression yields null, not crash', () => {
   assert.strictEqual(r.data.length, 1);
 });
 
+test('add with an expression that is not JavaScript fails instead of nulling every row', () => {
+  // The per-record catch turned a typo into a whole table of nulls, which is
+  // the same silent answer the identity passthrough gave filter and map.
+  const r = run('[{"a":1},{"a":2}]', 'json', [{op:'add',fields:{x:'item.a >'}}]);
+  assert.ok(/Invalid expression "item\.a >"/.test(r.error), r.error);
+  assert.strictEqual(r.usage, true);
+});
+
+test('an expression that cannot be compiled fails as a usage error', () => {
+  const r = run('[{"age":10},{"age":30}]', 'json', [{ op: 'filter', expr: 'item.age >' }]);
+  assert.ok(/Invalid expression/.test(r.error), r.error);
+  assert.strictEqual(r.usage, true);
+  assert.strictEqual(r.text, undefined);
+});
+
+test('a missing parenthesis in an expression is caught too', () => {
+  const r = run('[{"age":10}]', 'json', [{ op: 'map', expr: 'item.age > 5)' }]);
+  assert.ok(/Invalid expression "item\.age > 5\)"/.test(r.error), r.error);
+  assert.strictEqual(r.usage, true);
+});
+
+test('an expression that throws at runtime stays a transformation error', () => {
+  const r = run('[{"a":1}]', 'json', [{ op: 'map', expr: 'item.nope.deep' }]);
+  assert.ok(/reading 'deep'/.test(r.error), r.error);
+  assert.notStrictEqual(r.usage, true);
+});
+
+test('a valid expression is still compiled and run', () => {
+  const r = run('[{"x":1},{"x":5}]', 'json', [{ op: 'filter', expr: 'item.x > 2' }]);
+  assert.strictEqual(r.error, undefined);
+  assert.deepStrictEqual(r.data, [{ x: 5 }]);
+});
+
 test('join merges matching rows on key', () => {
   const r = run('[{"id":"a"},{"id":"b"}]', 'json',
     [{op:'join',on:'id',with:[{id:'a',city:'X'}]}]);
