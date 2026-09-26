@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -290,7 +290,7 @@ test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () =>
     assert.equal(result.stdout, '', 'a refused conversion must leave stdout empty');
     const message = result.stderr.trim().replace(/^Error: /, '');
     assert.equal(docs.includes(message), true, `docs/cli.md does not quote the error verbatim: ${message}`);
-    assert.equal(help.includes('holding a character that format cannot'), true, '--help does not mention the refusal');
+    assert.equal(help.includes('holding something that format cannot'), true, '--help does not mention the refusal');
     const row = docs.split('\n').find(line => line.startsWith('| `1` |'));
     assert.ok(row.includes('XML 1.0'), 'the exit 1 row in docs/cli.md does not mention it');
     // The escape route the message names has to exist, or the advice is a lie.
@@ -328,6 +328,79 @@ test('docs/cli.md quotes the real error for every format that cannot write a NUL
     }
     // The docs must not repeat the claim this iteration measured to be false.
     assert.ok(!docs.includes('carry a `U+0000` faithfully'), 'docs/cli.md still claims CSV, SQL and YAML carry a NUL');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('docs/cli.md quotes the real error for a number no format can carry', () => {
+  // The third kind of impossible, and the only one that is not about a single
+  // format. `1e400` is a legal JSON literal, so the input is a file any JSON tool
+  // accepts — and all six writers answered differently at exit 0 with empty
+  // stderr: `json` wrote `null` in place of the number, and the five text
+  // formats wrote the bare word, which PyYAML, SQLite and every XML parser hand
+  // back as a string. So the number changed type in five formats and stopped
+  // existing in the sixth.
+  //
+  // The lock has a harder job here than for the characters above: those messages
+  // all end in "Write JSON instead", and that advice is *false* for this value —
+  // JSON is the writer that destroys it. So the test also requires that no
+  // message names a way out, and that a real run on the same input produces
+  // exit 1 with no file, which is the only proof the advice was not invented.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-conf-'));
+  try {
+    const path = join(dir, 'inf.json');
+    writeFileSync(path, '[{"id":1,"a":1e400,"ok":1e308}]', 'utf-8');
+    for (const format of ['json', 'xml', 'yaml', 'csv', 'sql', 'table']) {
+      const out = join(dir, `out.${format}`);
+      const result = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', format, '--out', out], { encoding: 'utf-8' });
+      assert.equal(result.status, 1, `${format}: exit ${result.status}: ${result.stderr}`);
+      assert.equal(result.stdout, '', `${format}: a refused run must leave stdout empty`);
+      assert.equal(existsSync(out), false, `${format}: a refused run must not write a file`);
+      const message = result.stderr.trim().replace(/^Error: /, '');
+      assert.equal(docs.includes(message), true, `docs/cli.md does not quote the ${format} error verbatim: ${message}`);
+      assert.ok(message.includes('Infinity') && message.includes('field "a"'), `${format}: the message must name value and field: ${message}`);
+      // The advice that the character refusals end on is a lie for this value.
+      assert.ok(!message.includes('Write JSON instead'), `${format}: no format carries a non-finite number: ${message}`);
+      assert.ok(message.includes('not finite'), `${format}: the message must say why: ${message}`);
+    }
+    // The boundary is finiteness, so the largest finite double must still be
+    // written — a rule written against "big" rather than "not finite" fails here.
+    const finite = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.notEqual(finite.status, 0, 'this run must refuse the file, because field "a" is not finite');
+    const okPath = join(dir, 'finite.json');
+    writeFileSync(okPath, '[{"v":1.7976931348623157e308}]', 'utf-8');
+    const ok = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), okPath, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(ok.status, 0, `the largest finite double must be writable: ${ok.stderr}`);
+    assert.equal(help.includes('a number that is not finite'), true, '--help does not mention the non-finite refusal');
+    // The exit 1 row is the third surface: the docs, the error and --help.
+    const row = docs.split('\n').find(line => line.startsWith('| `1` |'));
+    assert.ok(row && row.includes('not finite'), 'the exit 1 row in docs/cli.md does not mention a value that is not finite');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the frame and the CLI agree that a value no format can carry is refused', () => {
+  // The frame is the second customer of the engine, and the one that decides
+  // whether the download button is armed. If the browser's own engine ever
+  // answers "null" here while the CLI refuses, the playground hands the user a
+  // file with a number replaced by a null — which is the whole finding. So the
+  // two answers are compared, not assumed: the site's engine is loaded the way
+  // `try.html` loads it, and the refusals have to be the same sentence.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-conf-'));
+  try {
+    const path = join(dir, 'inf.json');
+    writeFileSync(path, '[{"id":1,"a":1e400}]', 'utf-8');
+    const input = readFileSync(path, 'utf-8');
+    for (const format of ['json', 'yaml', 'csv']) {
+      const viaSite = browser.run(input, 'json', [], format);
+      assert.ok(viaSite.error, `the site's engine must refuse ${format}, not write it: ${viaSite.text}`);
+      assert.ok(viaSite.text === undefined || viaSite.text === '', `${format}: the frame must write nothing`);
+      const viaCli = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(viaCli.stderr.trim().replace(/^Error: /, ''), viaSite.error,
+        `frame and CLI must print the same refusal for ${format}`);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

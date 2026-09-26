@@ -125,7 +125,7 @@ transmute european.csv --delimiter ';' -o json
 | Code | Meaning | Typical cause |
 |---|---|---|
 | `0` | Success | — |
-| `1` | The transformation failed | The engine threw while transforming, or the chosen `--output` was asked for data that format cannot represent (a character outside XML 1.0 `Char` or YAML `c-printable`, or a `U+0000` in CSV, SQL or a text table) |
+| `1` | The transformation failed | The engine threw while transforming, or the chosen `--output` was asked for data that format cannot represent (a character outside XML 1.0 `Char` or YAML `c-printable`, a `U+0000` or a lone surrogate anywhere, or a number that is not finite in **any** format) |
 | `2` | Usage error | Unknown option, bad option value, an option given twice, an option that cannot do its job (`--out` without `--output`, `--table` without `--output sql`, `--delimiter` without CSV input), `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, unparseable as the input format, or not UTF-8 |
 
@@ -508,6 +508,70 @@ three, and that asymmetry is deliberate: unlike a lone surrogate, they *can* be
 encoded in UTF-8, they survive the round trip exactly, and `file(1)` calls a file
 containing them text. The rule here is whether a reader can read the file, and
 for these three it can.
+
+#### The value no format carries: a number that is not finite
+
+`1e400` is a **legal JSON number literal**, so this file is one any JSON tool
+accepts — and it parses to `Infinity`:
+
+```bash
+printf '[{"id":1,"a":1e400,"ok":1e308}]' > inf.json && transmute inf.json --output json
+```
+
+```
+Error: JSON cannot write Infinity, which is in row 1, field "a". There is no way to keep it: JSON has no form for it, so the number is written as null — a different value, and one that reads as nothing there at all. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+```
+
+This is the one refusal that is **not** about a single format, and it is the one
+worth measuring twice, because the six writers did not agree on what to do with
+one value. Every row below was measured on the real binary, then read back with
+the reference reader for that format. All six were **exit 0 with empty stderr**:
+
+| `--output` | What it wrote | What the reference reader says |
+|---|---|---|
+| `json` | `null` | the number is **gone**, replaced by a value that reads as "nothing here" |
+| `yaml` | `Infinity` | PyYAML: **`str`**, not float — YAML's own spelling is `.inf` |
+| `sql` | `'Infinity'` | SQLite: `typeof(x)` = **`text`** |
+| `csv` | `Infinity` | a cell is text, so a reader gets a word |
+| `table` | `Infinity` | a cell is text |
+| `xml` | `<Infinity>` | every element is text, so a parser reads a word |
+
+So the number silently became a **string** in five formats and stopped existing
+in the sixth. Each says so in its own words now:
+
+```
+Error: YAML 1.2 cannot write Infinity, which is in row 1, field "a". There is no way to keep it: a YAML reader takes the bare word for a string and not a float — YAML's own spelling is .inf, so the number would change type. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+Error: CSV cannot write Infinity, which is in row 1, field "a". There is no way to keep it: a CSV cell is text, so what a reader gets back is the word and not the number. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+Error: SQL cannot write Infinity, which is in row 1, field "a". There is no way to keep it: it would be written as a string literal, and SQLite stores that with type text. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+Error: a text table cannot write Infinity, which is in row 1, field "a". There is no way to keep it: a cell in a text table is text, so the number would be printed as a word. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+Error: XML 1.0 cannot write Infinity, which is in row 1, field "a". There is no way to keep it: every XML element is text, so a parser reads the word and not a number. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+```
+
+Note what these messages do **not** say. Every other refusal names a way out —
+`Write JSON instead` — because JSON escapes every character the other five
+refuse. Here there is no way out to name, so they say that instead of pointing at
+an escape that does not exist. That is also why `json` is in the table at all: it
+is the route out of every *character* refusal and the **worst** answer to this one.
+
+The second way in is a pipeline, and it is the one a user actually meets. JSON
+cannot spell `NaN`, but an expression divides by zero all the time — an
+`amount / units` on a row where `units` is `0`:
+
+```bash
+printf '[{"amount":10,"units":0}]' > rate.json
+transmute rate.json --output csv --pipe '[{"op":"add","fields":{"price":"item.amount / item.units"}}]'
+```
+
+```
+Error: CSV cannot write Infinity, which is in row 1, field "price". There is no way to keep it: a CSV cell is text, so what a reader gets back is the word and not the number. No format here carries a value that is not finite, so fix the number before converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.
+```
+
+Before this it exited **0** and wrote `null` for the field — a value the next step
+carries on with as if it were data.
+
+The boundary is **finiteness, not size**. `1e308`, `1.7976931348623157e308`,
+`5e-324`, `0` and `-0` are ordinary numbers and every format writes them; only
+`Infinity`, `-Infinity` and `NaN` are refused.
 
 #### What XML output does not keep: types
 

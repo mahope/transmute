@@ -936,6 +936,72 @@ test('a value XML 1.0 cannot write → exit 1, and no file is written', () => {
   }
 });
 
+test('a value that is not finite stops every writer, and no file is left behind', () => {
+  // `1e400` is a legal JSON number literal, so this input is a file any JSON tool
+  // accepts — and it parses to Infinity. From there the six writers disagreed
+  // about one value, all of them at exit 0 with empty stderr: `json` wrote
+  // `null` in its place, and `csv`, `yaml`, `sql`, `table` and `xml` wrote the
+  // bare word, which PyYAML, SQLite and every XML parser hand back as a string.
+  // So the number silently changed type in five formats and stopped existing in
+  // the sixth. Measured here on the real binary, then refused by all six.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'inf.json');
+    writeFileSync(path, '[{"id":1,"a":1e400,"ok":1e308}]', 'utf-8');
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+      const out = join(dir, `out.${format}`);
+      const result = spawnSync(process.execPath, [cli, path, '-o', format, '--out', out], { encoding: 'utf-8' });
+      assert.equal(result.status, 1, `${format}: expected exit 1, got ${result.status}: ${result.stderr}`);
+      assert.equal(result.stdout, '', `${format}: stdout should stay empty on error, got: ${result.stdout}`);
+      assert.ok(result.stderr.includes('Infinity'), `${format}: the message must name the value: ${result.stderr}`);
+      assert.ok(result.stderr.includes('field "a"'), `${format}: the message must name the field: ${result.stderr}`);
+      assert.equal(existsSync(out), false, `${format}: a file the CLI refused to write must not exist`);
+    }
+    // The boundary is finiteness, not size: the largest finite double is written
+    // like any other number, and no format may refuse it.
+    const finite = join(dir, 'finite.json');
+    writeFileSync(finite, '[{"v":1.7976931348623157e308,"w":5e-324}]', 'utf-8');
+    const text = expectOk(spawnSync(process.execPath, [cli, finite, '-o', 'json'], { encoding: 'utf-8' }));
+    assert.strictEqual(JSON.parse(text)[0].v, 1.7976931348623157e308);
+    assert.ok(text.includes('5e-324'), text);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a division by zero in a pipeline is refused by name, not written as null', () => {
+  // The second way in, and the one a user meets: JSON cannot spell NaN or
+  // Infinity, but an `add` expression divides by zero all the time — an `amount
+  // / units` on a row where units is 0. Before this the run exited 0 and wrote
+  // `null` for the field, which is a value the next step will happily carry on
+  // as if it were data.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'rows.json');
+    writeFileSync(path, '[{"amount":10,"units":0}]', 'utf-8');
+    const out = join(dir, 'out.csv');
+    const result = spawnSync(
+      process.execPath,
+      [cli, path, '-o', 'csv', '--out', out, '--pipe', '[{"op":"add","fields":{"price":"item.amount / item.units"}}]'],
+      { encoding: 'utf-8' }
+    );
+    assert.equal(result.status, 1, `expected exit 1, got ${result.status}: ${result.stderr}`);
+    assert.ok(result.stderr.includes('field "price"'), result.stderr);
+    assert.ok(result.stderr.includes('1/0'), 'the message should name the usual cause: ' + result.stderr);
+    assert.equal(existsSync(out), false, 'a refused run must not leave a file');
+    // The same pipeline with a denominator that is not zero is ordinary work.
+    writeFileSync(path, '[{"amount":10,"units":4}]', 'utf-8');
+    const ok = expectOk(spawnSync(
+      process.execPath,
+      [cli, path, '-o', 'csv', '--pipe', '[{"op":"add","fields":{"price":"item.amount / item.units"}}]'],
+      { encoding: 'utf-8' }
+    ));
+    assert.ok(ok.includes('2.5'), ok);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the character XML can write is still written, byte for byte', () => {
   // The guard must not narrow what the tool accepts. Tab, newline and carriage
   // return are inside the `Char` production, and CJK, emoji and astral

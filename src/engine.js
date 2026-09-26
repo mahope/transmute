@@ -504,7 +504,13 @@ const serializers = {
     return lines[0] + '\n' + lines[1] + '\n' + rows.join(',\n') + ';';
   },
 
-  json: (data, pretty = true) => pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data),
+  json: (data, pretty = true) => {
+    // JSON escapes every character the other five refuse, so it is the route out
+    // of all of them — and it is the one writer that answers `null` to a value
+    // that is not finite, which is why it needs the walk too.
+    assertWritable(data, 'json');
+    return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+  },
   csv: (data) => {
     if (data.length === 0) return '';
     assertWritable(data, 'csv');
@@ -1629,21 +1635,48 @@ function textRefuses(cp) {
   return nulRefuses(cp) || loneSurrogateRefuses(cp);
 }
 
-/* One rule per output format, plus the words the refusal is written in. `json` is
-   absent on purpose: it escapes every one of these characters (`"a\u0000b"`,
-   `"a\ud800b"`), which is what makes it the route out of every refusal below.
+/* One rule per output format, plus the words the refusal is written in.
+
+   `json` has no *character* rule on purpose: it escapes every one of them
+   (`"a\u0000b"`, `"a\ud800b"`), which is what makes it the route out of every
+   character refusal below. It is in the table for the second kind of impossible
+   instead, which no format can carry and which JSON answers worst of all — see
+   `nonFiniteWhy` below.
 
    `why` is a function of the character, not of the format alone, because these
    formats refuse two different kinds of impossible and a reader who is told the
    wrong reason is left guessing. A NUL is dropped by the format's own rules; a
    lone surrogate is replaced with a different character by the encoder. */
 const UNWRITABLE = {
-  xml:   { refuses: xmlRefuses,   label: 'XML 1.0',      why: () => 'a numeric character reference is refused by the same rule', out: 'CSV, JSON, SQL or YAML' },
-  yaml:  { refuses: yamlRefuses,  label: 'YAML 1.2',     why: () => 'YAML has no escape for it either',                         out: 'JSON' },
-  csv:   { refuses: textRefuses,  label: 'CSV',          why: (ch) => textWhy(ch, 'a NUL ends the record for every reader of CSV'), out: 'JSON' },
-  sql:   { refuses: textRefuses,  label: 'SQL',          why: (ch) => textWhy(ch, 'a NUL ends the string literal'),            out: 'JSON' },
-  table: { refuses: textRefuses,  label: 'a text table', why: (ch) => textWhy(ch, 'a NUL ends the cell for every reader'),      out: 'JSON' },
+  xml:   { refuses: xmlRefuses,   label: 'XML 1.0',      why: () => 'a numeric character reference is refused by the same rule', out: 'CSV, JSON, SQL or YAML', nonFinite: 'every XML element is text, so a parser reads the word and not a number' },
+  yaml:  { refuses: yamlRefuses,  label: 'YAML 1.2',     why: () => 'YAML has no escape for it either',                         out: 'JSON', nonFinite: "a YAML reader takes the bare word for a string and not a float — YAML's own spelling is .inf, so the number would change type" },
+  csv:   { refuses: textRefuses,  label: 'CSV',          why: (ch) => textWhy(ch, 'a NUL ends the record for every reader of CSV'), out: 'JSON', nonFinite: 'a CSV cell is text, so what a reader gets back is the word and not the number' },
+  sql:   { refuses: textRefuses,  label: 'SQL',          why: (ch) => textWhy(ch, 'a NUL ends the string literal'),            out: 'JSON', nonFinite: "it would be written as a string literal, and SQLite stores that with type text" },
+  table: { refuses: textRefuses,  label: 'a text table', why: (ch) => textWhy(ch, 'a NUL ends the cell for every reader'),      out: 'JSON', nonFinite: 'a cell in a text table is text, so the number would be printed as a word' },
+  json:  { refuses: null,         label: 'JSON',         why: () => 'JSON escapes every character above',                       out: 'CSV, SQL or YAML', nonFinite: 'JSON has no form for it, so the number is written as null — a different value, and one that reads as nothing there at all' },
 };
+
+/* A number that is not finite is not a number at all as far as a file is
+   concerned, and it is the one value here that *every* writer got wrong in a
+   different way. Measured on these six writers, from an input any JSON tool
+   accepts (`1e400` is a legal literal) and from an ordinary pipeline
+   (`add ratio 1/0`):
+
+     json   -> null        the value is replaced, not written
+     yaml   -> Infinity    PyYAML reads it as str; YAML's float form is `.inf`
+     sql    -> 'Infinity'  SQLite: typeof = text
+     csv    -> Infinity    a cell is text
+     table  -> Infinity    a cell is text
+     xml    -> <Infinity>  an element is text
+
+   All six at exit 0 with empty stderr, so the number silently became a string in
+   five formats and became `null` in the sixth. Unlike a NUL or a lone surrogate
+   this is not a question of a format's rules — there is no output format here
+   that carries a value which is not finite, so there is no way out to name, and
+   the message says so instead of pointing at an escape that does not exist. */
+function nonFiniteRefuses(value) {
+  return typeof value === 'number' && !Number.isFinite(value);
+}
 
 /* The sentence for the character in hand: the format's own reason for a NUL, and
    the one reason every encoder shares for a lone surrogate. */
@@ -1703,6 +1736,16 @@ function describeChar(ch) {
  * this character exist in the file at all", and for a surrogate the answer is no
  * whatever the format. It now gets the same refusal, for the same reason and
  * with the same escape route out, as the NUL beside it.
+ *
+ * A third kind is not about characters at all. A number that is not finite —
+ * `Infinity`, `-Infinity`, `NaN` — is a value no file of any of these formats
+ * carries as a number: JSON writes `null` in its place, which is data loss, and
+ * the five text formats write the bare word, which every one of their readers
+ * hands back as a string. All six did that at exit 0 with empty stderr, and two
+ * ordinary ways in reach it: a legal JSON literal (`1e400`) and an `add`
+ * expression that divides by zero. This is why `json` is in the table after all —
+ * it is the route out of every *character* refusal and the worst answer to this
+ * one, so the message names no escape at all.
  */
 function assertWritable(data, format) {
   const rule = UNWRITABLE[format];
@@ -1715,7 +1758,18 @@ function assertWritable(data, format) {
 }
 
 function scanWritable(value, at, rule) {
+  if (nonFiniteRefuses(value)) {
+    throw new Error(
+      `${rule.label} cannot write ${String(value)}, which is in ${at}. ` +
+      `There is no way to keep it: ${rule.nonFinite}. ` +
+      `No format here carries a value that is not finite, so fix the number before ` +
+      `converting: 1/0 and 0/0 in an expression, and a literal like 1e400, all produce one.`
+    );
+  }
   if (typeof value === 'string') {
+    // `json` has no character rule — it escapes them all — so the walk stops at
+    // the value check above when the target is JSON.
+    if (!rule.refuses) return;
     const bad = firstUnrepresentable(value, rule.refuses);
     if (bad !== null) {
       throw new Error(

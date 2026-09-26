@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T37)
+Opdateret: 2026-09-26 (T38)
 
 
 ## Mission
@@ -9,13 +9,13 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund. T29 er færdig med commit `e156dec` på `ceo/dead-options`, bygget oven på `ceo/repeated-flags`, og har samme grund — den rører heller ingen `site/`-fil. T30 er færdig med commit `837eb4a` på `ceo/utf8-input`, bygget oven på `ceo/dead-options`, og har samme grund: den rører kun `src/cli.js`, `docs/cli.md` og to testfiler, ingen `site/`-fil. T31 er færdig med commit `c5e7d4b` på `ceo/paths-locale-limits`, bygget oven på `ceo/utf8-input`, og har samme grund — den rører `site/engine.js`, så den kræver en `VERIFICÉR DEPLOY`-note når bunken merges. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje. T34 er færdig med commit `e8641c1` på `ceo/reader-gaps`, bygget oven på `ceo/reader-ambiguity`, og har samme grund — den rører `site/engine.js`. T36 er færdig med commit `6c13df1` på `ceo/download-guard`, bygget oven på `ceo/playground-warnings`, og har samme grund. T35 er færdig med commit `7fdd7d8` på `ceo/playground-warnings`, bygget oven på `ceo/reader-gaps`, og har **samme grund, men en anden**: den rører hverken `engine.js` (motoren er urørt) eller andet end rammen, `site.js` og CSS — men `DEPLOY-MISSING` gælder alle merges til `main`, uanset hvor lille diffen er.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund. T29 er færdig med commit `e156dec` på `ceo/dead-options`, bygget oven på `ceo/repeated-flags`, og har samme grund — den rører heller ingen `site/`-fil. T30 er færdig med commit `837eb4a` på `ceo/utf8-input`, bygget oven på `ceo/dead-options`, og har samme grund: den rører kun `src/cli.js`, `docs/cli.md` og to testfiler, ingen `site/`-fil. T31 er færdig med commit `c5e7d4b` på `ceo/paths-locale-limits`, bygget oven på `ceo/utf8-input`, og har samme grund — den rører `site/engine.js`, så den kræver en `VERIFICÉR DEPLOY`-note når bunken merges. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje. T34 er færdig med commit `e8641c1` på `ceo/reader-gaps`, bygget oven på `ceo/reader-ambiguity`, og har samme grund — den rører `site/engine.js`. T38 er færdig med commit (se punkt 38) på `ceo/nonfinite-numbers`, bygget oven på `ceo/lone-surrogate-loss`, og har samme grund: rører `site/engine.js`. T36 er færdig med commit `6c13df1` på `ceo/download-guard`, bygget oven på `ceo/playground-warnings`, og har samme grund. T35 er færdig med commit `7fdd7d8` på `ceo/playground-warnings`, bygget oven på `ceo/reader-gaps`, og har **samme grund, men en anden**: den rører hverken `engine.js` (motoren er urørt) eller andet end rammen, `site.js` og CSS — men `DEPLOY-MISSING` gælder alle merges til `main`, uanset hvor lille diffen er.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T37-iterationen):** uændret for **tolvte** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T38-iterationen):** uændret for **trettende** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
 **VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/dead-options` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
-**Næste iteration:** T37 er færdig (se punkt 37) og ligger på `ceo/lone-surrogate-loss`, bygget oven på `ceo/download-guard`, med samme grund: rører `site/engine.js`. Deploy-stillen er uændret, og derfor ligger **enogtyve plus en** færdig commit på sytten branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; er `DEPLOY-MISSING` væk, merges hele bunken (T36 `6c13df1`, T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12 `6516fdb`, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3`, T28 `763efbc`, T29 `e156dec`, T30 `837eb4a`, T31 `c5e7d4b`, T32 `88ea6f6`, T33 `46b5567`, T34 `e8641c1` og T35 `7fdd7d8`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal den næste opgave være **T37**, og den skal **måles før den skrives**: de tretten tavsheder T20–T35 har lukket var alle fund ved at måle en flade. Den næste målbare flade er den, ingen af dem rørte — **hvad der sker med output, der ikke kan skrives**: `site.js`'s download-knap bygger en `Blob` af `outEl.textContent` og lader browseren gemme den, så en kørsel hvis tekst er et NUL-tegn (T32's fund) eller en kolliderende nøgle (T33's) **gemmer en fil, ingen læser kan åbne**. CLI'en går den anden vej: den skriver til disk og fejler med exit 1, fordi `fs.writeFileSync` kaster på U+0000. Den skal måles i browseren på de samme tegn T32 målte på disk, og spørgsmålet er det samme som altid: advarsel, fejl eller ingenting.
+**Næste iteration:** T38 er færdig (se punkt 38) og ligger på `ceo/nonfinite-numbers`, bygget oven på `ceo/lone-surrogate-loss`, med samme grund: rører `site/engine.js`. Deploy-stillen er uændret, og derfor ligger **syvogtyve** færdige commits på atten branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; er `DEPLOY-MISSING` væk, merges hele bunken (T36 `6c13df1`, T37 `6891d75`, T38 den nye, T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12 `6516fdb`, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3`, T28 `763efbc`, T29 `e156dec`, T30 `837eb4a`, T31 `c5e7d4b`, T32 `88ea6f6`, T33 `46b5567`, T34 `e8641c1` og T35 `7fdd7d8`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal den næste opgave være **T39**, og den skal måles før den skrives. Den skal fortsætte i den flade T38 lige målte, fordi T38's måling fandt **to ting den ikke rettede** — se punkt 38's afsnit om de to tal, der hver især er en målt tavshed: `9007199254740993` skrives som `9007199254740992` i alle seks formater, fordi `JSON.parse` runder ved læsningen, og `1e-7` skrives af YAML-skriveren som `1e-7`, som PyYAML læser som **str** (YAML's float-syntaks kræver `1.0e-7`). Den anden af de to er lille nok til at være en skrivefejl; den første er en ændret værdi i en fil, ingen kan se, og den kan **ikke** fanges ved skrivningen — tallet er allerede tabt, når motoren ser det — så den kræver enten en tabsfrit læser eller en advarsel ved læsningen. Begge skal måles på den rigtige binary, og den første skal have en målbar acceptkriterium-formulering, fordi `jq` *beholder* de store heltal, så "det er sådan tal er" ikke holder.
 
 **Den flade hvor advarslerne dør, er lukket af T35.** Den lå i **én** linje: `site/try.html` svarte `{ text, error, rows, format }` og ikke `warnings`, så alle otte advarselsproducerende stier T13–T34 har lavet endte i samme sted. De var ikke otte fejl og heller ikke otte fund — de var ét fund med otte ansigter, fordi motoren har sagt det hele tiden og CLI'en har printet det hele tiden, og det eneste der manglede var at rammen videresendte det. Nu males advarslerne i **deres eget element under output**, aldrig i det, fordi kopier og download læser outputelementet, og en advarsel dér ville blive kopieret som data — samme skelnelinestandard som CLI'ens stderr/stdout-adskillelse. Den farligste af de to målte tilfælde var `unique --by` på et felt ingen rækker har: **én række ud af tre skrevet, exit 0, tom stderr**, altså tabt data uden en eneste linje til brugeren.
 
@@ -59,7 +59,7 @@ Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bru
 
 ## Deploy
 
-**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26, **ellevte** måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
+**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26, **trettende** måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
 
 **Den tidligere diagnose var fejl, og det er den vigtigste rettelse i denne plan.** Planen hævdede i fem iterationer, at batchdeployeren ikke havde kørt siden 2026-09-08. Beviset var `sitemap.xml`'s `lastmod 2026-09-08` plus et 404 på `/support/`. Den første halvdel var en **målefejl**: `lastmod` skrives kun, når `site_chrome.py` regenererer sitemap'en (`tools/site_chrome.py:629`), altså ikke når der deployes. Commit `3d90812` — som *er* live — har selv `lastmod 2026-09-08` i sin sitemap. Først da indholdet sammenlignes mod git, bliver tallene rigtige:
 
@@ -124,6 +124,121 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Den automatiske site-deploy er stadig aktiv i kode, selv om kontrakten siger, at den er slået fra. Den afvigelse bliver T5, før sitearbejde merges.
 
 ## Prioriteret opgavekø
+
+### 38. [x] Et tal uden en repræsentation må ikke blive til `null` eller en streng i stilhed
+
+**Status:** FÆRDIG med commit `see planen` på `ceo/nonfinite-numbers` (bygget oven på `ceo/lone-surrogate-loss`) — **ligger på branch, ikke mergeret**, fordi `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Metode:** Som T20–T37: målt på de rigtige skrivere **før** koden blev rørt, fundene skrevet som tests mod output og kørt mod den gamle kode, låsen testet mod mutationer.
+
+**Begrundelse:** T37's måling pegede på den næste flade efter den, den lukkede, og
+den lå i de data der går *igennem* motoren uden at nogen spørger: **tal**.
+T36 og T37 handlede om tegn, der ikke kan skrives, og deres tabeller sluttede
+ved `yaml` og `xml` som de strengeste formater. Ingen af dem havde spurgt, om
+selve *værdien* kan overleve — og svaret er nej for én klasse af tal, i alle seks
+formater.
+
+**Målingen, samme input gennem alle seks skrivere på den rigtige binary.** Input
+er `[{"id":1,"a":1e400,"b":-1e400,"ok":1e308}]`. `1e400` er en **lovlig
+JSON-talliteral**, så filen er en fil ethvert JSON-værktøj accepterer, og den
+parser til `Infinity`:
+
+| `--output` | exit | hvad der kom ud | hvad reference-læseren siger |
+|---|---|---|---|
+| `json` | **0, tom stderr** | `null` | værdien er **væk**: `JSON.stringify` skriver null i stedet for tallet |
+| `yaml` | **0, tom stderr** | `Infinity` | PyYAML: **`str`**, ikke float — YAML's egen skrivemåde er `.inf` |
+| `sql` | **0, tom stderr** | `'Infinity'` | SQLite: `typeof(x)` = **`text`** |
+| `csv` | **0, tom stderr** | `Infinity` | en celle er tekst, så læseren får et ord |
+| `table` | **0, tom stderr** | `Infinity` | en celle er tekst |
+| `xml` | **0, tom stderr** | `<Infinity>` | ethvert element er tekst, så en parser læser et ord |
+
+Alle seks ved exit 0 og tom stderr. Så tallet skjulte **typen** i fem formater og
+holdt op at eksistere i den sjette, og ingen af dem sagde det. Det er den
+første gang i planen at en tavshed ikke er en *fejl læseren kan se*, men en
+**type ændret uden ord** — og den er værre, fordi `null` er et gyldigt svar,
+der ligner et resultat.
+
+**Den anden vej ind er den, en bruger faktisk møder.** JSON kan ikke skrive
+`NaN`, men et udtryk dividerer med nul hele tiden: `add price
+item.amount / item.units` på en række hvor `units` er `0`. Målt samme sted:
+`Infinity` og `NaN` fra `1/0` og `0/0`, samme exit 0, samme tavshed, og feltet
+`price` skrevet som `null` — en værdi næste step kører videre på som om den var
+data. Det er ikke et eksotisk input, det er en almindelig beregnet kolonne.
+
+**Valget er T32/T36/T37's, brugt for fjerde gang, og den er den modsatte af de
+tre forgående.** Advarsel, fejl eller ingenting: **fejl, exit 1, tom stdout,
+ingen fil.** Der findes ingen repræsentation — og der er **ingen flugtvej at
+navngene**, fordi JSON er den *værste* af de seks her, ikke bedst. Derfor får
+beskederne en anden afslutning end tegnafvisningerne: i stedet for `Write JSON
+instead` siger de, at ingen format bærer værdien, og at tallet skal rettes
+først. At pege på en flugtvej, der ikke findes, ville have været den samme løgn
+som T32's `carry a U+0000 faithfully`, bare mere aktiv.
+
+**Rettelsen er én tabel og én betingelse.** `UNWRITABLE` er nu total over alle
+seks formater: `json` har `refuses: null` (den escaper alle tegn, så den er
+flugtvejen for *tegn*afvisningerne) og `nonFinite` med sin egen sætning, og
+`scanWritable` starter med `nonFiniteRefuses(value)`. `serializers.json` kalder
+`assertWritable` for første gang — det var den eneste skriver, der slet ikke gik
+gennem v walksen. Grænsen er **finiteness, ikke størrelse**: `1e308`,
+`1.7976931348623157e308`, `5e-324`, `0` og `-0` skrives af alle seks, kun
+`Infinity`, `-Infinity` og `NaN` afvises.
+
+**Test: tre engine-tests (152 → 155), to CLI-tests på den rigtige binary (135 →
+137) og to konformitester (81 → 83), alle kørt mod den gamle kode.** Den første
+engine-test faldt med præcis det målte symptom — `json must refuse a value that
+is not finite, not write it: [{"id": 1, "a": null, ...}]` — fordi påstanden var
+det, der var fundet. Den negative assert er den vigtigste linje igen: en refusal
+skriver intet, så der er ingen tekst, der kan holde hverken ordet eller null.
+Den anden konformitetstest er den vanskeligere lås: den sammenligner **sitets
+egen `engine.js` indlæst i en `vm`** med CLI'ens exit, fordi rammen er den anden
+kunde af motoren, og fordi det er den der afgør om download-knappen låses. Den
+negative konformitetskrivning — at ingen af de seks beskeder må sige `Write JSON
+instead` — er den linje, der låser den løgn, der lå i de forgående beskeder.
+Mutationstestet fire gange: json uden reglen (fanget af alle tre suiter),
+`Number.isSafeInteger` i stedet for `Number.isFinite` (fanget af fem
+engine-tests, fordi den så fanger `1e308`), beskeden med en opfundet flugtvej
+(fanget af den negative konformitetskrivning) og en ordlydsændring i beskeden
+(fanget af docslåsen).
+
+**Playgroundet arvæder rettelsen, fordi motoren er den samme.** `site/engine.js`
+er byte-identisk med `src/engine.js` og blev kopieret, så forsiden på `/` og
+`/da/` får samme fejl og download-knappen blokeres af `has-error` præcis som ved
+T32 og T37. `tools/site_chrome.py` regenererede kun `engine.js`-hashen i
+`try.html` (`bf248f55` → `79a50e59`), søgeindeks uændret på 104. Derfor **er**
+`check:site` kørt. Lokalt grøn: `npm test` 155+137+83+6+39+4+173,
+`npm pack --dry-run` uændret på 5 filer, `npm run check:site` grøn med 0 fund
+på 20 sider og alle selftester grønne inkl. deploy-friskheds-selvfesten.
+
+**Målingen fandt to ting mere i samme flade, som denne iteration kun målte og
+ikke rettede.** Begge er tal, og begge er tavsheder af samme slags som fundet
+ovenfor, så de står her, målt på den rigtige binary, med de tal der gør dem
+reproducerbare:
+
+| input | hvad der kom ud | hvad læseren siger |
+|---|---|---|
+| `9007199254740993` (et heltal over 2^53) | `9007199254740992` i **alle seks** formater, exit 0, tom stderr | tallet er **et andet tal**; `jq` skriver `9007199254740993` |
+| `1e-7` (til `-o yaml`) | `1e-7` | PyYAML: **`str`** — YAML's float-syntaks kræver `1.0e-7`, så et tal blev en streng |
+| `1.0` (til `-o yaml`) | `1` | PyYAML: **`int`** — float-identiteten er væk |
+
+Den første er den alvorlige: en 64-bit id (`9007199254740993` er den klassiske
+snowflake-grænse), et ordrenummer eller et beløb i minorenheder kommer ud som et
+**andet tal**, i alle seks formater, uden en linje. Den kan **ikke** fanges ved
+skrivningen, fordi tabet sker i `JSON.parse` (og i YAML's tal-coercion) — motoren
+ser et tal, der ikke er det, der stod i filen. Derfor er den en beslutning, ikke
+en vagt: enten en tabsfrit læser (egen tal-grammatik, som bevarer heltallet) eller
+en advarsel ved læsningen, der siger at cifrene kan være ændret. Se
+`❓ Til Mads` punkt 15. Den anden og tredje er skrivefejl i YAML-skriverens
+talskalar — en linje — og er den naturlige T39, hvis Mads vil have den lavet
+før den store.
+
+**Deploy-stillen er uændret, og derfor merger denne commit ikke til `main`.**
+
+VERIFICÉR DEPLOY: playgroundet afviser et tal uden en repræsentation i alle seks
+formater i stedet for at skrive `null` eller `Infinity`, `site/engine.js`, se
+commit ovenfor. Verificér på https://transmute.run/ med input
+`[{"a":1e400}]` — alle formater skal vise fejlen og download-knappen skal intet
+gøre; med input `[{"a":1}]` og pipelinen
+`[{"op":"add","fields":{"p":"item.a/0"}}]` skal den sige `field "p"`.
 
 ### 37. [x] Lad en enslig surrogat ikke blive til U+FFFD i stilhed
 
@@ -1929,6 +2044,7 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
    svar, da den er én commit at rulle tilbage til. **Hvis du vil have `NULL` for tomme
    felter, så sig det** — så bytter jeg regex'en tilbage og justerer `docs/cli.md`.
 13. **De to læserhuller er lukket (fra T33, rettet af T34).** (a) En YAML-flowsamling som *hele dokumentet* — `{a: 1, a: 2}` på roden — læstes som den bogstavlige streng `"{a": "1, a: 2}"`, exit 0. (b) To XML-dokumenter med **samme** rodnavn fangedes kun af elementkontrollen. Begge er rettet og målt i T34, som desuden fandt en tredje fejl scope ikke havde set: `<rows/>` alene blev afvist som et rod, der aldrig lukkes. **Bemærkningen fra T33 om `<rows><rows/></rows>` holdt ikke** — målingen viser, at det er ét velformet dokument, og `[{}]` er det svar læseren allerede giver `<r><i/></r>`. T34's egen målingstabel står med alle tyve stier. **Ingen beslutning nødvendig.**
+15. **Hele tal over 2^53 taber deres sidste cifre i stilhed (fra T38, målt, ikke rettet):** `9007199254740993` skrives som `9007199254740992` i alle seks formater, exit 0, tom stderr, fordi `JSON.parse` runder ved læsningen — motoren ser aldrig det tal, der stod i filen. `jq` bevarer de samme heltal, så "det er sådan tal er" holder ikke, og Python's `json.loads` gør det samme som Transmute. Det rammer 64-bit id'er (snowflake, ordrenumre), beløb i minorenheder og andre tal, hvor én af 16 cifre er hele værdien. Rettelsen kan **ikke** ligge i skriveren, så der er to muligheder: (a) en tabsfrit læser, der genkender heltalsliteraler i inputteksten og bevarer dem som streng indtil en bruger spørger om et tal, eller (b) en advarsel ved læsningen — samme skelneline som T26: kørslen lykkes, men én linje på stderr siger at cifrene kan være ændret. (a) er mere arbejde og en reel adfærdsændring i output; (b) er billig og ærlig, men lader tallet være ændret. **Mads: advarsel ved læsningen (b), eller tabsfrit læser (a)?** Uden svar beholder loopet den nuværende adfærd og skriver fundet ned her, fordi en ny læsevej er mere kode end fundet fortjener på egen hånd.
 14. **Browserplaygroundet får ingen advarsler — LUKKET af T35.** Det var en sideeffekt, da T26 skrev det ned; efter T33 og T34 var advarslerne en *dokumenteret* del af læserne, og de døde i den flade, flest brugere ser. Fundet var **én linje** — `site/try.html` videresendte `text`, `error` og `rows` men ikke `warnings` — og de otte advarselsproducerende stier fra T13–T34 endte derfor alle i samme sted. Advarslerne males nu i deres eget element under output på `/` og `/da/`, aldrig i outputelementet, fordi kopier og download læser netop det. Låst af tre konformitester, hvoraf den første kører sitets egen `try.html`-script og kræver at rammens `warnings` er tegn for tegn lig CLI'ens stderr. **Ingen beslutning nødvendig.**
 - 2026-09-26 ca. 06:2x–07:0x CEST: **T26 gennemført på `ceo/missing-fields`, ikke mergeret til `main`.** Deploy genverificeret **først** i iterationen med `npm run check:deploy`: uændret, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig, så `DEPLOY-MISSING` står ved; intet er mergeret, og der er derfor oprettet ingen `VERIFICÉR DEPLOY`-note. T20–T25-metoden kørt på den flade T25's research efterlod: **et feltnavn, ingen rækker har.** Otte fund, alle kørt på den gamle kode før rettelsen. (1) `unique` med `by: "ag"` på en fil med `age` sammenlignede `undefined` med `undefined`, kaldte alle fire rækker identiske og skrev **én** række — exit 0, tom stderr, og det eneste sted i værktøjet hvor en fejl fjerner data. (2) `sort` sorterede ikke, `pick` droppede feltet, `omit` fjernede intet, `rename` omdøbte intet, `group` lagde alle rækker i `(null)`, `flatten` udvidede ingen, og `join` med `on` ingen side har droppede **alle** rækker — alle exit 0, alle tavse. (3) `sort`s comparator svarede `1` for to rækker der begge manglede feltet, altså ikke en orden. Rettelse: `reportMissingFields` i engine'en med to tabeller (`STEP_FIELDS`, `FIELD_EFFECTS`), kaldt i `run`s transform-løkke **før** hvert step, så den advarser om `pick: no record has a field named "emial"; it is in no output` på stderr med exit 0 og ren stdout. **Resultatet er bevidst uændret** — et feltnavn er en antagelse om data, som kan være rigtig for næste fil, så det er T14's advarselsklasse, ikke T25's exit 2. Tjekket sker per step mod data som de er der, så felter `add`/`map` lige har lavet mangler ikke; **et felt nogle rækker har advares aldrig**, fordi heterogene data er det `pick` er bygget til (syv tests låser det); `join`s `on` tjekkes mod begge sider; rækker der ikke er records springes over; `sort` returnerer `0` når begge rækker mangler feltet. `docs/cli.md` fik afsnittet **When a field name is in no row** med to kørte eksempler — det ene med advarsel, det andet et heterogent input der *ikke* advares — og en linje om at stdout aldrig ændrer sig. 8 nye engine-tests (121 → 129) og 3 nye CLI-tests (92 → 95). `tools/site_chrome.py` regenererede `site/engine.js` (byte-identisk med `src/engine.js`) og asset-hash'en i `try.html`; søgeindeks uændret på 104. Lokalt grøn: `npm test` 129+95+69+6+39+4+173, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0` ved 360/768/1280 px og alle selftester grønne inkl. deploy-friskheds-selftesten. Ingen af de 17 `CASES` ændrede sig, så ingen snapshot regenereres. Tænder: 5 af 8 engine-tests og 2 af 3 CLI-tests fejler på den gamle kode, de sidste med *tom stderr* — præcis den fejl de er skrevet til at fange. Procesfund: den nye kode fangede min egen test (`omit` efter `pick` i en pipeline), hvilket bekræfter at advarslen ikke er støjende for korrekt input. Næste flade er fundet undervejs og kræver en beslutning, se `Næste iteration`.
 - 2026-09-26 ca. 05:5x–06:3x CEST: **T25 gennemført på `ceo/pipeline-validation`, ikke mergeret til `main`.** Deploy genverificeret **først** i iterationen med `npm run check:deploy`: uændret, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, så `DEPLOY-MISSING` står ved; intet er mergeret, og der er derfor oprettet ingen `VERIFICÉR DEPLOY`-note. T23's research pegede på `run`s fejlklassificering, og den viste sig at have en enklere form: **hver operation var kørbar uden den parameter, den ikke kan arbejde uden, og svarede med et andet svar end det, brugeren bad om.** Fire fund, alle kørt på den gamle kode før rettelsen. (1) `{"op":"pick"}` skrev `{}` for hver record — hele filens indhold væk, exit 0, tom stderr, gyldig CSV med det rigtige antal rækker; (2) `filter`/`map` uden `expr` var identiteten, `sort`/`group` uden `by`, `rename` uden `mapping`, `flatten` uden `field`, `omit`/`add` uden `fields` var tavse no-ops, og `join` med tomt eller ikke-array `with` droppede **alle** rækker; (3) `tail` med `n: 0` gav alle tolv rækker, fordi `data.slice(-0)` er `data.slice(0)`, og `head "abc"` gav nul rækker, fordi `slice` coerced strengen uden at nogen sagde det; (4) `operations[step.op]` fandt arvede properties, så `{"op":"toString"}` kørte `Object.prototype.toString` som en transformation og svarede `[object Object]`. Rettet med én `validatePipeline` i engine'en: `STEP_PARAMS` + `PARAM_CHECKS` + `OPTIONAL_PARAMS`, fejl med `usage: true` altså exit 2 i CLI'en og fejlboks i browseren. **Én regel, to kaldere** — `parsePipeline` kalder den før inputfiles læses, så en tastefejl i en pipeline ikke længere rapporteres som et filproblem (den gamle kode læste først, så `-f json` på en CSV gav exit 3), og `run` kalder den for alle andre, altså også browserplaygroundet. Ops-opslaget bruger nu `hasOwnProperty`. `docs/cli.md` fik afsnittet **What a step must bring with it** med en tabel over alle 14 operationer og den konkrete fejlmeddelelse verificeret character for character; exit-code-tabellen er opdateret. 13 nye engine-tests (108 → 121) og 6 nye CLI-tests (86 → 92). **Tænder kørt og dokumenteret:** mod den gamle kode fejler 10 af de 13 engine-tests med deres eget symptom (`{}`, `["[object Object]"]`, 12 rækker, `Unexpected token 'h'`) og 5 af de 6 CLI-tests (exit 0 hvor der skulle være 2, exit 3 i stedet for 2). De 4 der ikke fejler, låser at `unique` uden `by`, `head`/`tail` uden `n`, tom `mapping` og tom `fields`-liste stadig er lovlige — de skal ikke fejle, fordi en overgrebende validator er lige så skadelig som ingen. **Ingen af de 17 `CASES` ændrede sig**, så ingen snapshot er regenereret; det er beviset på, at rettelsen kun rammer de pipelines, den handler om. Lokalt grøn: `npm test` 121+92+69+6+39+4+173, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0` og alle selftester grønne inkl. deploy-friskheds-selftesten. `tools/site_chrome.py` (Python 3.13.15 fra `.venv-site`) regenererede asset-hash'en i `try.html` (`?v=0c816101` → `?v=fdffc4f0`); søgeindekset uændret på 104 entries. Implementationscommit `5fd4648`, pushet til `ceo/pipeline-validation`, **ikke mergeret til `main`**. Næste flade står i `Næste iteration`: et resultat, der afviser det, der blev bedt om, uden at sige det — `pick` med et felt ingen record har, `sort` med `by` på et felt ingen rækker har.

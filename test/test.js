@@ -1496,6 +1496,80 @@ t('a lone surrogate is refused by the text writers, not quietly replaced', () =>
   }
 });
 
+t('a number that is not finite is refused by every writer, not written as null or as text', () => {
+  // Measured on the rigtige writers, before the fix: `1e400` is a legal JSON
+  // number literal, so this input is a file any JSON tool accepts, and it parses
+  // to Infinity. From there the six formats disagreed about one value:
+  //
+  //   json   -> `null`                     the value is gone
+  //   csv    -> `Infinity`                 a cell that is text
+  //   yaml   -> `Infinity`                 PyYAML: str, not float (YAML's own form is `.inf`)
+  //   sql    -> 'Infinity'                 SQLite: typeof = `text`
+  //   table  -> `Infinity`                 text in a box
+  //   xml    -> <Infinity>                 text in an element
+  //
+  // All six at exit 0 with empty stderr. So the number's *type* changed in five
+  // of them and the number itself was replaced in the sixth, and nothing said so.
+  const input = '[{"id":1,"a":1e400,"b":-1e400,"ok":1e308}]';
+  for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+    const r = runSQL(input, 'json', [], format);
+    assert.ok(r.error, `${format} must refuse a value that is not finite, not write it: ${r.text}`);
+    assert.ok(r.error.includes('Infinity'), `${format}: the message must name the value: ${r.error}`);
+    assert.ok(r.error.includes('field "a"'), `${format}: the message must name the field: ${r.error}`);
+    // The negative assertion is the one that matters: a fix that *replaced* the
+    // value with something writable would pass the checks above.
+    assert.ok(!r.text, `${format}: nothing may be written: ${r.text}`);
+  }
+  // A finite number of the same size must not be caught by the rule, and neither
+  // may the largest finite double — the boundary is finiteness, not magnitude.
+  const finite = runSQL(input, 'json', [], 'json');
+  assert.ok(!finite.error.includes('ok'), `a finite number must be writable: ${finite.error}`);
+  assert.ok(runSQL('[{"v":1e308}]', 'json', [], 'json').error === undefined);
+  // 0, -0 and the smallest doubles are ordinary numbers.
+  for (const v of ['0', '-0', '5e-324', '1.7976931348623157e308']) {
+    assert.strictEqual(runSQL(`[{"v":${v}}]`, 'json', [], 'json').error, undefined, v);
+  }
+});
+
+t('NaN from an expression is refused too, and the path to it is named', () => {
+  // JSON cannot spell NaN, so the only way in is a computation: `1/0` and `0/0`
+  // in an `add` expression. That makes this a user-reachable value, not an exotic
+  // input — `amount / units` on a row where units is 0 is an ordinary pipeline.
+  // One expression per run, because the walk names the *first* value it refuses.
+  for (const [expr, name] of [['1/0', 'Infinity'], ['0/0', 'NaN']]) {
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+      const r = runSQL('[{"n":1}]', 'json', [{ op: 'add', fields: { out: expr } }], format);
+      assert.ok(r.error, `${format} must refuse ${name} from ${expr}: ${r.text}`);
+      assert.ok(r.error.includes(name), `${format}: the message must name the value: ${r.error}`);
+      assert.ok(r.error.includes('field "out"'), `${format}: the field must be named: ${r.error}`);
+      // A refusal writes nothing at all, so there is no text that could hold
+      // either the word or the null it used to become.
+      assert.ok(!r.text, `${format}: must not become null or the word: ${r.text}`);
+    }
+  }
+  // A division that comes out finite is ordinary arithmetic and must not be
+  // caught by the rule, in either direction.
+  for (const [expr, want] of [['1/2', 0.5], ['4/2', 2]]) {
+    const r = runSQL('[{"n":1}]', 'json', [{ op: 'add', fields: { out: expr } }], 'json');
+    assert.strictEqual(r.error, undefined, `${expr}: ${r.error}`);
+    assert.strictEqual(r.data[0].out, want, expr);
+  }
+});
+
+t('the value refusal finds a non-finite number deep inside and in a field name position', () => {
+  // The walk that finds a NUL in a key and a surrogate in a nested array is the
+  // same one, so a number three levels down must be named with its full path.
+  const deep = runSQL('[{"a":[{"b":[{"c":1e400}]}]}]', 'json', [], 'json');
+  assert.ok(deep.error, `a nested value must be refused: ${deep.text}`);
+  assert.ok(deep.error.includes('[0]'), deep.error);
+  assert.ok(deep.error.includes('field "c"'), deep.error);
+  // A non-finite number as a *value* beside a string in the same record is found
+  // by the same walk, and a record that has none is written as it always was.
+  const mixed = runSQL('[{"s":"ok","n":1e400}]', 'json', [], 'table');
+  assert.ok(mixed.error.includes('field "n"'), mixed.error);
+  assert.strictEqual(runSQL('[{"s":"ok","n":1.5}]', 'json', [], 'table').error, undefined);
+});
+
 t('a key the JSON input gives twice is named, not resolved in silence', () => {
   // `JSON.parse` has already dropped the first value by the time the reader
   // sees the object, so the collision is found in the text. The value is kept
