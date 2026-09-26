@@ -114,8 +114,18 @@ transmute.run produce identical output for every documented example, and that
 
 ## Releasing
 
-`npm run release -- patch` (or `minor`/`major`) bumps the version, commits and pushes the tag.
-CI publishes to npm and creates the GitHub release.
+`npm run release -- patch` (or `minor`/`major`, or an explicit `x.y.z`) bumps the
+version, commits and pushes the tag. CI publishes to npm and creates the GitHub release.
+
+The release refuses to run, with a message naming the reason, when the working
+tree is dirty, when `HEAD` is not on the default branch, or when `package.json`'s
+version no longer describes `src/` — the last one is what `npm run check:release`
+reports, and a tag is never pushed for a version that does not describe the code
+it ships. An explicit version that `package.json` already carries is tagged as it
+is, so a hand-written bump does not have to be repeated.
+
+Nothing here publishes, tags or releases by itself: the loop cannot run
+`npm run release`, and a version tag only publishes from a commit on `main`.
 
 ## License
 

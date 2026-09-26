@@ -218,6 +218,23 @@ check('npm, the CLI and the site agree on the version', () => {
   assert(contractVersion === null || contractVersion === version, `tools/product-contract.json pins version ${contractVersion}, package.json is ${version}`);
 });
 
+check('only a version that describes the code and sits on the default branch can be published', () => {
+  // Three of these were measured missing on 2026-09-26: the release script
+  // tagged a feature branch, `npm run release -- <committed version>` died in an
+  // npm error, and nothing asked whether the version still described src/ — which
+  // is how 39 commits of fixes reached no user behind 0.2.1. See
+  // tools/release_guard.mjs and test/release.test.mjs.
+  const script = readFileSync(join(root, 'scripts', 'release.mjs'), 'utf8');
+  assert(script.includes('inspectRelease'), 'scripts/release.mjs no longer asks tools/release_guard.mjs whether the release may happen, so the three guards are gone');
+
+  const publish = readFileSync(join(root, '.github', 'workflows', 'publish.yml'), 'utf8');
+  assert(/merge-base --is-ancestor/.test(publish), 'publish.yml publishes any v* tag whose number matches package.json, so a tag on an unmerged branch reaches npm and cannot be taken back');
+  assert(/fetch-depth:\s*0/.test(publish), 'publish.yml checks out a shallow clone, which cannot answer whether the tagged commit is on the default branch');
+
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert(readme.includes('npm run check:release'), 'README.md no longer mentions npm run check:release, so the drift report has no documented place in the checklist');
+});
+
 check('the Danish support page says what the English one says', () => {
   const en = readFileSync(join(root, 'site', 'support', 'index.html'), 'utf8');
   const da = readFileSync(join(root, 'site', 'da', 'support', 'index.html'), 'utf8');
