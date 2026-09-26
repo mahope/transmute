@@ -991,6 +991,85 @@ test('a NUL stops every writer but JSON, and no file is left behind', () => {
   }
 });
 
+test('a lone surrogate stops every writer but JSON, and is never replaced by U+FFFD', () => {
+  // A lone surrogate is not a character a file can hold: it is half of a UTF-16
+  // pair whose other half never arrived, and UTF-8 has no encoding of it. So it
+  // is reachable from plain ASCII input — JSON's `\udXXX` escape produces one —
+  // and every writer silently substituted U+FFFD for it. `csv`, `sql` and `table`
+  // wrote `61 efbf bd 62` at exit 0 with empty stderr while `json`, `yaml` and
+  // `xml` disagreed in the same run, so the value that came out was a different
+  // value from the one that went in and no reader could tell.
+  //
+  // The assertion that matters is the negative one: U+FFFD must not appear in
+  // what any writer produces. Checking only for exit 1 would pass against a fix
+  // that stripped the character instead of refusing it — the silent data loss
+  // this exists to prevent — so every format is read back and searched.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'half.json');
+    writeFileSync(path, '[{"id":1,"note":"a\\ud800b"}]', 'utf-8');
+    for (const format of ['xml', 'csv', 'yaml', 'sql', 'table']) {
+      const out = join(dir, `half.${format}`);
+      for (const argv of [['-o', format], ['-o', format, '--out', out]]) {
+        const result = spawnSync(process.execPath, [cli, path, ...argv], { encoding: 'utf-8' });
+        assert.equal(result.status, 1, `${format} ${argv.join(' ')}: exit ${result.status}: ${result.stderr}`);
+        assert.equal(result.stdout, '', `${format} ${argv.join(' ')}: stdout must stay empty`);
+        assert.ok(result.stderr.includes('U+D800 (half of a surrogate pair'), `${format}: ${result.stderr}`);
+        assert.ok(result.stderr.includes('field "note"'), `${format}: ${result.stderr}`);
+        assert.ok(!result.stdout.includes('\uFFFD'), `${format}: stdout must not carry the substitute`);
+        assert.ok(!existsSync(out), `${format}: ${out} must not be written`);
+      }
+    }
+    // JSON escapes it as seven ASCII bytes that parse back to the same value, so
+    // the advice the message gives is honest and the round trip is lossless.
+    const json = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(json.status, 0, json.stderr);
+    assert.equal(json.stderr, '', json.stderr);
+    assert.ok(json.stdout.includes('a\\ud800b'), json.stdout);
+    const back = spawnSync(process.execPath, [cli, '-', '-o', 'json'], { input: json.stdout, encoding: 'utf-8' });
+    assert.equal(back.status, 0, back.stderr);
+    assert.ok(back.stdout.includes('a\\ud800b'), back.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a full surrogate pair is written by every format, and a noncharacter is not confused with one', () => {
+  // The refusal is a surrogate, not an astral character. 🚀 is one character made
+  // of two UTF-16 units, and a rule written against the code units instead of
+  // the code points would refuse every emoji on earth. U+FFFE is the neighbour
+  // that really is refused by YAML and XML, and the three text writers do write
+  // it: it encodes, it survives the round trip and `file(1)` calls the result
+  // text, so the line the plan draws is "can a reader read the file", not
+  // "does a grammar mention it".
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'emoji.json');
+    writeFileSync(path, JSON.stringify([{ note: 'a' + String.fromCodePoint(0x1f600) + 'b' }]), 'utf-8');
+    for (const format of ['json', 'csv', 'yaml', 'table', 'sql', 'xml']) {
+      const result = spawnSync(process.execPath, [cli, path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(result.status, 0, `${format} must carry an emoji: ${result.stderr}`);
+      assert.equal(result.stderr, '', `${format}: ${result.stderr}`);
+      assert.ok(result.stdout.includes('\u{1F600}'), `${format}: ${JSON.stringify(result.stdout)}`);
+    }
+    const noncharacter = join(dir, 'fffe.json');
+    writeFileSync(noncharacter, JSON.stringify([{ note: 'a' + String.fromCodePoint(0xfffe) + 'b' }]), 'utf-8');
+    for (const format of ['yaml', 'xml']) {
+      const result = spawnSync(process.execPath, [cli, noncharacter, '-o', format], { encoding: 'utf-8' });
+      assert.equal(result.status, 1, `${format} must refuse U+FFFE: ${result.stderr}`);
+      assert.ok(result.stderr.includes('U+FFFE'), `${format}: ${result.stderr}`);
+    }
+    for (const format of ['csv', 'table', 'sql', 'json']) {
+      const out = join(dir, `fffe.${format}`);
+      const result = spawnSync(process.execPath, [cli, noncharacter, '-o', format, '--out', out], { encoding: 'utf-8' });
+      assert.equal(result.status, 0, `${format} must carry U+FFFE: ${result.stderr}`);
+      assert.ok(readFileSync(out, 'utf-8').includes(String.fromCodePoint(0xfffe)), `${format} lost U+FFFE`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a key given twice is warned about on stderr and stdout stays data', () => {
   // The warning is the whole point, and the split is the contract: stdout is
   // what a script pipes onward, so it must parse without the reader stripping

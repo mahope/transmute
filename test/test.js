@@ -1456,6 +1456,46 @@ t('CSV, SQL and the table refuse a NUL in a field name, not only in a value', ()
   }
 });
 
+t('a lone surrogate is refused by the text writers, not quietly replaced', () => {
+  // The measurement that found this: the same input, six output formats, one
+  // answer. `yaml` and `xml` refused U+D800 by their own grammars, and `json`
+  // escaped it, while `csv`, `sql` and `table` had no rule and wrote U+FFFD in
+  // its place — exit 0, no warning, and a value that had become a different
+  // value. U+FFFD is an ordinary character once it is in a file, so nothing
+  // downstream can notice. A lone surrogate has no UTF-8 encoding at all, so
+  // this is not a question of what a format's rules allow.
+  const lone = 0xd800;
+  for (const format of ['csv', 'sql', 'table', 'yaml', 'xml']) {
+    const r = runSQL(JSON.stringify([{ v: 'a' + String.fromCodePoint(lone) + 'b' }]), 'json', [], format);
+    assert.ok(r.error, `${format} must refuse a lone surrogate: ${r.text}`);
+    assert.ok(r.error.includes('U+D800 (half of a surrogate pair'), `${format}: ${r.error}`);
+    assert.ok(r.error.includes('no UTF-8 encoding') || r.error.includes('no escape for it') || r.error.includes('numeric character reference'), `${format}: ${r.error}`);
+    assert.ok(!r.text || !r.text.includes('\uFFFD'), `${format}: must not write the substitute`);
+  }
+  // JSON is the way out the message names, so it has to be lossless: the escape
+  // is seven ASCII bytes that parse back to the same lone surrogate.
+  const json = runSQL(JSON.stringify([{ v: 'a' + String.fromCodePoint(lone) + 'b' }]), 'json', [], 'json');
+  assert.strictEqual(json.error, undefined, json.error);
+  assert.ok(json.text.includes('a\\ud800b'), json.text);
+  const back = runSQL(json.text, 'json', [], 'json');
+  assert.ok(back.text.includes('a\\ud800b'), back.text);
+
+  // A full pair is one character above #xFFFF and no writer may refuse it, so a
+  // rule written against UTF-16 code units instead of code points cannot pass.
+  for (const format of ['csv', 'sql', 'table', 'yaml', 'xml', 'json']) {
+    const r = runSQL(JSON.stringify([{ v: 'a\u{1f600}b' }]), 'json', [], format);
+    assert.strictEqual(r.error, undefined, `${format} must carry an emoji: ${r.error}`);
+  }
+
+  // The last code unit of the range is not a special case: D800 and DBFF are
+  // both halves of nothing, and a rule that stopped at the first would be a
+  // rule about a number rather than about the character.
+  for (const cp of [0xd800, 0xdbff, 0xdc00, 0xdfff]) {
+    const r = runSQL(JSON.stringify([{ v: 'a' + String.fromCodePoint(cp) + 'b' }]), 'json', [], 'csv');
+    assert.ok(r.error, `U+${cp.toString(16)} must be refused: ${r.text}`);
+  }
+});
+
 t('a key the JSON input gives twice is named, not resolved in silence', () => {
   // `JSON.parse` has already dropped the first value by the time the reader
   // sees the object, so the collision is found in the text. The value is kept

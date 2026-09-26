@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T36)
+Opdateret: 2026-09-26 (T37)
 
 
 ## Mission
@@ -15,7 +15,7 @@ Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1'
 
 **VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/dead-options` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
-**Næste iteration:** deploy-stillen er uændret, og derfor ligger **enogtyve plus en** færdig commit på sytten branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; er `DEPLOY-MISSING` væk, merges hele bunken (T36 `6c13df1`, T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12 `6516fdb`, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3`, T28 `763efbc`, T29 `e156dec`, T30 `837eb4a`, T31 `c5e7d4b`, T32 `88ea6f6`, T33 `46b5567`, T34 `e8641c1` og T35 `7fdd7d8`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal den næste opgave være **T37**, og den skal **måles før den skrives**: de tretten tavsheder T20–T35 har lukket var alle fund ved at måle en flade. Den næste målbare flade er den, ingen af dem rørte — **hvad der sker med output, der ikke kan skrives**: `site.js`'s download-knap bygger en `Blob` af `outEl.textContent` og lader browseren gemme den, så en kørsel hvis tekst er et NUL-tegn (T32's fund) eller en kolliderende nøgle (T33's) **gemmer en fil, ingen læser kan åbne**. CLI'en går den anden vej: den skriver til disk og fejler med exit 1, fordi `fs.writeFileSync` kaster på U+0000. Den skal måles i browseren på de samme tegn T32 målte på disk, og spørgsmålet er det samme som altid: advarsel, fejl eller ingenting.
+**Næste iteration:** T37 er færdig (se punkt 37) og ligger på `ceo/lone-surrogate-loss`, bygget oven på `ceo/download-guard`, med samme grund: rører `site/engine.js`. Deploy-stillen er uændret, og derfor ligger **enogtyve plus en** færdig commit på sytten branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; er `DEPLOY-MISSING` væk, merges hele bunken (T36 `6c13df1`, T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12 `6516fdb`, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3`, T28 `763efbc`, T29 `e156dec`, T30 `837eb4a`, T31 `c5e7d4b`, T32 `88ea6f6`, T33 `46b5567`, T34 `e8641c1` og T35 `7fdd7d8`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal den næste opgave være **T37**, og den skal **måles før den skrives**: de tretten tavsheder T20–T35 har lukket var alle fund ved at måle en flade. Den næste målbare flade er den, ingen af dem rørte — **hvad der sker med output, der ikke kan skrives**: `site.js`'s download-knap bygger en `Blob` af `outEl.textContent` og lader browseren gemme den, så en kørsel hvis tekst er et NUL-tegn (T32's fund) eller en kolliderende nøgle (T33's) **gemmer en fil, ingen læser kan åbne**. CLI'en går den anden vej: den skriver til disk og fejler med exit 1, fordi `fs.writeFileSync` kaster på U+0000. Den skal måles i browseren på de samme tegn T32 målte på disk, og spørgsmålet er det samme som altid: advarsel, fejl eller ingenting.
 
 **Den flade hvor advarslerne dør, er lukket af T35.** Den lå i **én** linje: `site/try.html` svarte `{ text, error, rows, format }` og ikke `warnings`, så alle otte advarselsproducerende stier T13–T34 har lavet endte i samme sted. De var ikke otte fejl og heller ikke otte fund — de var ét fund med otte ansigter, fordi motoren har sagt det hele tiden og CLI'en har printet det hele tiden, og det eneste der manglede var at rammen videresendte det. Nu males advarslerne i **deres eget element under output**, aldrig i det, fordi kopier og download læser outputelementet, og en advarsel dér ville blive kopieret som data — samme skelnelinestandard som CLI'ens stderr/stdout-adskillelse. Den farligste af de to målte tilfælde var `unique --by` på et felt ingen rækker har: **én række ud af tre skrevet, exit 0, tom stderr**, altså tabt data uden en eneste linje til brugeren.
 
@@ -124,6 +124,71 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Den automatiske site-deploy er stadig aktiv i kode, selv om kontrakten siger, at den er slået fra. Den afvigelse bliver T5, før sitearbejde merges.
 
 ## Prioriteret opgavekø
+
+### 37. [x] Lad en enslig surrogat ikke blive til U+FFFD i stilhed
+
+**Målt i browseren, som T37 krævede, og målingen faldt på en anden måde end opgaven
+forudså.** Planen sagde, at `site.js`'s download-knap ville gemme en fil, ingen
+læser kan åbne, fordi den bygger en `Blob` af `outEl.textContent`. **Den påstand
+er gammel: T36 lukkede den, og jeg målte den til at være lukket.** 6 tilfælde × 6
+formater i rigtig Chromium med rigtige downloads, fanget byte for byte:
+
+| tegn | json | csv | yaml | table | sql | xml |
+|---|---|---|---|---|---|---|
+| `U+0000` (escaped) | skrevet | exit 1 | exit 1 | exit 1 | exit 1 | exit 1 |
+| `U+0000` (rå) | exit 1 (JSON.parse afviser det) | exit 1 | exit 1 | exit 1 | exit 1 | exit 1 |
+| kolliderende nøgle | advarsel + skrevet | advarsel + skrevet | advarsel + skrevet | advarsel + skrevet | advarsel + skrevet | advarsel + skrevet |
+
+Knappen er varetaget af `has-error` i `site/site.js:511`, så **nul downloads nåede
+disken med uwritebart output**, og T33's kolliderende nøgle er en advarsel plus
+det sidste værdi-par, altså præcis hvad CLI'en gør. T37 som skrevet var altså
+lukket, og det er derfor denne opgave måler den næste flade i stedet.
+
+**Målingen fandt et rigtigt fund i samme fej.** En *enslig surrogat* — halvdelen
+af et UTF-16-par, hvis anden halvdel aldrig kom — kan ikke encodes i UTF-8 over
+hovedet, så den kan ikke stå i en fil af noget format. Alligevel skrev **tre af
+seks** skrivere den stille ud som U+FFFD. målt på den rigtige binary med
+`[{"id":1,"note":"a\ud800b"}]`, en fil der er ren ASCII og gyldig JSON:
+
+| `--output` | exit | hvad der kom ud |
+|---|---|---|
+| `csv` | **0, tom stderr** | `61 ef bf bd 62` — `a` + **U+FFFD** + `b` |
+| `table` | **0, tom stderr** | `61 ef bf bd 62` |
+| `sql` | **0, tom stderr** | `61 ef bf bd 62` |
+| `json` | 0 | `a\ud800b`, tabt intet |
+| `yaml` | 1 | præcis afvisning, egen grammatik |
+| `xml` | 1 | præcis afvisning, egen grammatik |
+
+Samme kørsel, samme tegn, to forskellige svar, og det forkerede svar var det
+stille. Det er **data tabt i stilhed** — U+FFFD er et ganske almindeligt tegn i
+en fil, så intet senere kan opdage det. Og det er nået af helt almindelig
+input, fordi JSON's `\udXXX`-escape producerer en enslig surrogat.
+
+**Hvorfor det ikke er en smagssag, selv om CSV, SQL og `table` ingen spec har.**
+Det var grunden til at T36 gav dem `nulRefuses`: de måles på om en læser kan læse
+filen, ikke på om en grammatik nævner tegnet. For en NUL er det det rigtige
+spørgsmål. For en enslig surrogat er det det forkerte spørgsmål — der er ingen
+fil, der kan holde den, uanset format, så spørgsmålet er ikke hvad reglerne
+tillader men om tegnet kan skrives overhovedet. Derfor får den samme afvisning,
+samme grund og samme flugtvej som NUL'en ved siden af.
+
+**Rettelsen** er én tabel (`UNWRITABLE` i `src/engine.js`): `csv`, `sql` og
+`table` deler nu `textRefuses`, som er `nulRefuses` plus en surrogatregel, og
+`why` blev en funktion af tegnet, fordi de to nægter af forskellig grund, og en
+læser der får den forkerte grund gætter. `U+FFFE`/`U+FFFF` er bevidst **ikke**
+afvist af de tre: de kan encodes, de overleverer tur-returen præcist, og
+`file(1)` kalder filen tekst. Asymmetrien med `yaml`/`xml` er med vilje, og er
+låst af en test.
+
+To engine-tests, to CLI-tests på den rigtige binary og en konformitest, der
+låser alle fem meddelelser ordret til `docs/cli.md` og **verificerer med en rigtig
+kørsel, at JSON virkelig kan bære tegnet tabsfrit**, så rådet ikke kan blive en
+løgn. DenNegative assert er den vigtigste linje i CLI-testen: `U+FFFD` må ikke
+forekomme i nogen writers output, for ellers ville en fix, der *stripper*
+tegnet i stedet for at afvise det, også bestå testen.
+
+`site/engine.js` er byte-identisk med `src/engine.js` og blev kopieret, så
+playgroundet fik samme rettelse — browser-målingen ovenfor er den samme kode.
 
 ### 36. [x] Hold det eneste format, der kan bære tegnet, som det eneste escape
 

@@ -1609,16 +1609,49 @@ function nulRefuses(cp) {
   return cp === 0;
 }
 
+/* A lone surrogate is a different kind of impossible. A NUL is a real character
+   that these formats cannot carry; a lone surrogate is not a character any file
+   can hold at all — it is half of a UTF-16 pair whose other half never arrived,
+   and UTF-8 has no encoding of it. `fs.writeFileSync` and the browser's `Blob`
+   both put U+FFFD in its place without a word, so the value that comes out is a
+   *different* value from the one that went in, and no reader can tell. YAML and
+   XML refuse it by their own specifications; these three refuse it because there
+   is nowhere to put it.
+
+   It is reachable from ordinary input, because JSON's `\udXXX` escape produces
+   one: `[{"note":"a\ud800b"}]` is a valid JSON file, seven ASCII bytes of
+   punctuation around an escape, and it parses. */
+function loneSurrogateRefuses(cp) {
+  return cp >= 0xd800 && cp <= 0xdfff;
+}
+
+function textRefuses(cp) {
+  return nulRefuses(cp) || loneSurrogateRefuses(cp);
+}
+
 /* One rule per output format, plus the words the refusal is written in. `json` is
-   absent on purpose: it escapes every one of these characters (`"a\u0000b"`), which
-   is what makes it the route out of every refusal below. */
+   absent on purpose: it escapes every one of these characters (`"a\u0000b"`,
+   `"a\ud800b"`), which is what makes it the route out of every refusal below.
+
+   `why` is a function of the character, not of the format alone, because these
+   formats refuse two different kinds of impossible and a reader who is told the
+   wrong reason is left guessing. A NUL is dropped by the format's own rules; a
+   lone surrogate is replaced with a different character by the encoder. */
 const UNWRITABLE = {
-  xml:   { refuses: xmlRefuses,   label: 'XML 1.0',      why: 'a numeric character reference is refused by the same rule', out: 'CSV, JSON, SQL or YAML' },
-  yaml:  { refuses: yamlRefuses,  label: 'YAML 1.2',     why: 'YAML has no escape for it either',                            out: 'JSON' },
-  csv:   { refuses: nulRefuses,   label: 'CSV',          why: 'a NUL ends the record for every reader of CSV',              out: 'JSON' },
-  sql:   { refuses: nulRefuses,   label: 'SQL',          why: 'a NUL ends the string literal',                              out: 'JSON' },
-  table: { refuses: nulRefuses,   label: 'a text table', why: 'a NUL ends the cell for every reader',                       out: 'JSON' },
+  xml:   { refuses: xmlRefuses,   label: 'XML 1.0',      why: () => 'a numeric character reference is refused by the same rule', out: 'CSV, JSON, SQL or YAML' },
+  yaml:  { refuses: yamlRefuses,  label: 'YAML 1.2',     why: () => 'YAML has no escape for it either',                         out: 'JSON' },
+  csv:   { refuses: textRefuses,  label: 'CSV',          why: (ch) => textWhy(ch, 'a NUL ends the record for every reader of CSV'), out: 'JSON' },
+  sql:   { refuses: textRefuses,  label: 'SQL',          why: (ch) => textWhy(ch, 'a NUL ends the string literal'),            out: 'JSON' },
+  table: { refuses: textRefuses,  label: 'a text table', why: (ch) => textWhy(ch, 'a NUL ends the cell for every reader'),      out: 'JSON' },
 };
+
+/* The sentence for the character in hand: the format's own reason for a NUL, and
+   the one reason every encoder shares for a lone surrogate. */
+function textWhy(ch, forNul) {
+  return loneSurrogateRefuses(ch.codePointAt(0))
+    ? 'a lone surrogate has no UTF-8 encoding, so every writer puts U+FFFD in its place — a different value from the one you gave it'
+    : forNul;
+}
 
 function describeChar(ch) {
   const cp = ch.codePointAt(0);
@@ -1658,6 +1691,18 @@ function describeChar(ch) {
  * PyYAML answers `unacceptable character #x0000`, and `file(1)` calls all three
  * `data` rather than text. Only JSON escapes them all, which is why it is the
  * route out of every refusal, and why it is the one format with no rule.
+ *
+ * A second kind of impossible arrived later and is not a question of a format's
+ * rules at all. A lone surrogate cannot be encoded in UTF-8, so it cannot appear
+ * in a file of any format; every writer here substitutes U+FFFD for it silently.
+ * XML and YAML were already refusing it, because their grammars exclude it, but
+ * CSV, SQL and the text table had no rule and wrote the substitute out as if it
+ * were the data: exit 0, empty stderr, and a value that had quietly become a
+ * different value. Asking "can a reader read this file" was the right question
+ * for a NUL and the wrong one for a surrogate — the right question there is "can
+ * this character exist in the file at all", and for a surrogate the answer is no
+ * whatever the format. It now gets the same refusal, for the same reason and
+ * with the same escape route out, as the NUL beside it.
  */
 function assertWritable(data, format) {
   const rule = UNWRITABLE[format];
@@ -1675,7 +1720,7 @@ function scanWritable(value, at, rule) {
     if (bad !== null) {
       throw new Error(
         `${rule.label} cannot write ${describeChar(bad)}, which is in ${at}. ` +
-        `There is no way to keep it: ${rule.why}. ` +
+        `There is no way to keep it: ${rule.why(bad)}. ` +
         `Write ${rule.out} instead, or remove the character before converting.`
       );
     }

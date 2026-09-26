@@ -333,6 +333,40 @@ test('docs/cli.md quotes the real error for every format that cannot write a NUL
   }
 });
 
+test('docs/cli.md quotes the real error for every format that cannot write a lone surrogate', () => {
+  // The same three-surface lock as the NUL above, widened to the second kind of
+  // impossible. The NUL is a real character these formats cannot carry; a lone
+  // surrogate is not a character any file can hold, and every writer here used to
+  // put U+FFFD in its place at exit 0. So the docs have to carry five more
+  // messages verbatim, and "Write JSON instead" has to stay true — which is why
+  // each refusal is checked against a real JSON run, not against the sentence.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-conf-'));
+  try {
+    const path = join(dir, 'half.json');
+    // Plain ASCII on disk: JSON's `\udXXX` escape is what produces a lone
+    // surrogate, so this is a file any JSON tool would accept.
+    writeFileSync(path, '[{"id":1,"note":"a\\ud800b"}]', 'utf-8');
+    for (const format of ['xml', 'yaml', 'csv', 'sql', 'table']) {
+      const result = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(result.status, 1, `${format}: exit ${result.status}: ${result.stderr}`);
+      const message = result.stderr.trim().replace(/^Error: /, '');
+      assert.equal(docs.includes(message), true, `docs/cli.md does not quote the ${format} error verbatim: ${message}`);
+      // The refusal must name the character, or the message is unactionable.
+      assert.ok(message.includes('U+D800'), `${format}: ${message}`);
+      if (format !== 'xml') {
+        assert.ok(message.includes('Write JSON instead'), `${format}: ${message}`);
+        const ok = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', 'json'], { encoding: 'utf-8' });
+        assert.equal(ok.status, 0, `json should carry the character: ${ok.stderr}`);
+        assert.ok(ok.stdout.includes('a\\ud800b'), `json must keep the value: ${ok.stdout}`);
+      }
+    }
+    // And the docs must not claim the character survives where it does not.
+    assert.ok(docs.includes('a lone surrogate has no UTF-8 encoding'), 'docs/cli.md does not explain the lone surrogate');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log('── the browser frame must forward what stderr prints ──');
 
 /** Run site/try.html's own frame script, driven the way the parent page drives it. */

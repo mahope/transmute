@@ -459,6 +459,56 @@ Error: YAML 1.2 cannot write U+0007 (BEL), which is in row 1, field "v". There i
 Tab, newline and carriage return are inside *every* format's character set, so
 none of them refuse those, and neither does `café`, `日本` or `🚀`.
 
+#### The character no file can hold: a lone surrogate
+
+The `U+0000` above is a real character that these formats cannot carry. A **lone
+surrogate** is not a character at all — it is half of a UTF-16 pair whose other
+half never arrived, and UTF-8 has no encoding of it. It is reachable from ordinary
+input, because JSON’s `\udXXX` escape produces one, so this file is valid JSON
+made only of ASCII:
+
+```bash
+printf '[{"id":1,"note":"a\\ud800b"}]' > half.json && transmute half.json --output csv
+```
+
+```
+Error: CSV cannot write U+D800 (half of a surrogate pair — the other half is missing), which is in row 1, field "note". There is no way to keep it: a lone surrogate has no UTF-8 encoding, so every writer puts U+FFFD in its place — a different value from the one you gave it. Write JSON instead, or remove the character before converting.
+Error: SQL cannot write U+D800 (half of a surrogate pair — the other half is missing), which is in row 1, field "note". There is no way to keep it: a lone surrogate has no UTF-8 encoding, so every writer puts U+FFFD in its place — a different value from the one you gave it. Write JSON instead, or remove the character before converting.
+Error: a text table cannot write U+D800 (half of a surrogate pair — the other half is missing), which is in row 1, field "note". There is no way to keep it: a lone surrogate has no UTF-8 encoding, so every writer puts U+FFFD in its place — a different value from the one you gave it. Write JSON instead, or remove the character before converting.
+```
+
+`yaml` and `xml` were refusing it before this was found, each by its own grammar,
+and they still do, in their own words:
+
+```
+Error: YAML 1.2 cannot write U+D800 (half of a surrogate pair — the other half is missing), which is in row 1, field "note". There is no way to keep it: YAML has no escape for it either. Write JSON instead, or remove the character before converting.
+Error: XML 1.0 cannot write U+D800 (half of a surrogate pair — the other half is missing), which is in row 1, field "note". There is no way to keep it: a numeric character reference is refused by the same rule. Write CSV, JSON, SQL or YAML instead, or remove the character before converting.
+```
+
+Until this was refused, `csv`, `sql` and `table` wrote `61 efbf bd 62` — the `a` and
+the `b` with `U+FFFD` wedged between them — at **exit 0 with empty stderr**, while
+`json`, `yaml` and `xml` in the very same run disagreed with them. The value that
+came out was a different value from the one that went in, and no reader could
+tell, because `U+FFFD` is a perfectly ordinary character once it is in the file.
+
+The other three now refuse it for the reason that applies to all five: the
+character cannot exist in a file of any format, so the question is not what a
+format’s rules allow but whether the character can be written at all.
+
+`json` is still the way out the messages name, and it is lossless —
+`JSON.stringify` escapes the surrogate as `\ud800`, seven ASCII bytes that parse
+back to the very same lone surrogate:
+
+```bash
+transmute half.json --output json    # [{"id": 1, "note": "a\ud800b"}]
+```
+
+`U+FFFE` and `U+FFFF` are refused by `yaml` and `xml` and written by the other
+three, and that asymmetry is deliberate: unlike a lone surrogate, they *can* be
+encoded in UTF-8, they survive the round trip exactly, and `file(1)` calls a file
+containing them text. The rule here is whether a reader can read the file, and
+for these three it can.
+
 #### What XML output does not keep: types
 
 XML has no types, so every element comes back as a string. `{"id": 1}` becomes
