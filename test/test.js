@@ -1386,19 +1386,74 @@ t('an unrepresentable character is found in a field name and in an attribute', (
   assert.ok(deep.error.includes('field "b"'), deep.error);
 });
 
-t('the other formats keep the characters XML has to refuse', () => {
-  // The refusal belongs to the XML writer, not to the data. CSV, SQL, JSON and
-  // YAML all carry a NUL faithfully, so a run that XML refuses still produces
-  // the same data in a format that can hold it — the escape route the error
-  // message names has to be a real one.
+t('JSON is the only format that can carry the characters the others must refuse', () => {
+  // This test used to assert the opposite — that CSV, SQL, YAML and the table all
+  // "carry a NUL faithfully". It was written from the wrong side: it asked whether
+  // the character survived the write, not whether anything could read the file.
+  // Measured with the reference readers, a NUL survives and then breaks all four:
+  // Python's csv raises `line contains NUL`, SQLite reports `unrecognized token`
+  // inside the literal, PyYAML answers `unacceptable character #x0000`, and
+  // `file(1)` calls each of them `data` rather than text. So the refusal is the
+  // target's, and JSON is the route out of every one of them — which the error
+  // message names, so the way out it gives has to be a real one.
   const input = JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]);
   const expected = JSON.parse(input);
-  for (const format of ['json', 'csv', 'yaml', 'sql', 'table']) {
+  for (const format of ['xml', 'csv', 'yaml', 'sql', 'table']) {
     const r = runSQL(input, 'json', [], format);
-    assert.strictEqual(r.error, undefined, `${format}: ${r.error}`);
-    assert.ok(r.text.includes('a'), `${format} must keep the value: ${r.text}`);
+    assert.ok(r.error, `${format} must refuse a NUL, not write it: ${r.text}`);
+    assert.ok(r.error.includes('U+0000 (NUL)'), `${format}: ${r.error}`);
+    assert.ok(r.error.includes('field "note"'), `${format}: ${r.error}`);
+    if (format !== 'xml') assert.ok(r.error.includes('Write JSON instead'), `${format}: ${r.error}`);
   }
-  assert.strictEqual(runSQL(input, 'json', [], 'json').text, JSON.stringify(expected, null, 2));
+  const j = runSQL(input, 'json', [], 'json');
+  assert.strictEqual(j.error, undefined, j.error);
+  assert.strictEqual(j.text, JSON.stringify(expected, null, 2));
+});
+
+t('YAML refuses every character its c-printable production excludes', () => {
+  // YAML 1.2 `c-printable` is #x9 | #xA | #xD | [#x20-#x7E] | #x85 | [#xA0-#xD7FF]
+  // | [#xE000-#xFFFD] | [#x10000-#x10FFFF]. A YAML reader checks it before it
+  // parses anything, and YAML has no escape for these: `\0` is not a YAML escape,
+  // so quoting the scalar does not make room either. Measured against PyYAML, the
+  // three characters it accepts out of this set are exactly the three inside it.
+  const inside = [0x09, 0x0a, 0x0d, 0x20, 0x7e, 0x85, 0xa0, 0xd7ff, 0xe000, 0xfffd];
+  const outside = [0x00, 0x01, 0x07, 0x08, 0x0b, 0x0c, 0x1b, 0x1f, 0x7f, 0x9f, 0xfffe, 0xffff];
+  for (const cp of inside) {
+    const input = JSON.stringify([{ v: 'x' + String.fromCodePoint(cp) + 'y' }]);
+    const r = runSQL(input, 'json', [], 'yaml');
+    assert.strictEqual(r.error, undefined, `U+${cp.toString(16)} must be writable: ${r.error}`);
+    assert.ok(r.text.includes('x'), `U+${cp.toString(16)} must keep its value: ${r.text}`);
+  }
+  for (const cp of outside) {
+    const input = JSON.stringify([{ v: 'x' + String.fromCodePoint(cp) + 'y' }]);
+    const r = runSQL(input, 'json', [], 'yaml');
+    assert.ok(r.error, `U+${cp.toString(16)} must be refused: ${r.text}`);
+    assert.ok(r.error.startsWith('YAML 1.2 cannot write U+'), r.error);
+  }
+  // A real surrogate pair is one character above #xFFFF, so it is inside both
+  // productions and neither writer may refuse it.
+  const pair = JSON.stringify([{ v: 'x\u{1f600}y' }]);
+  assert.strictEqual(runSQL(pair, 'json', [], 'yaml').error, undefined);
+  assert.strictEqual(runSQL(pair, 'json', [], 'xml').error, undefined);
+});
+
+t('CSV, SQL and the table refuse a NUL in a field name, not only in a value', () => {
+  // The same walk that finds it in a value has to find it in a key, or a NUL
+  // would slip through in the one position no reader expects it.
+  for (const format of ['csv', 'sql', 'table', 'yaml']) {
+    const r = runSQL('[{"a\\u0000b":"c"}]', 'json', [], format);
+    assert.ok(r.error, `${format} must refuse a NUL in a key: ${r.text}`);
+    assert.ok(r.error.includes('the field name'), `${format}: ${r.error}`);
+  }
+  // Tab, newline and carriage return are inside every one of these formats'
+  // character sets, so none of them may refuse those.
+  for (const format of ['csv', 'sql', 'table', 'yaml', 'xml']) {
+    for (const cp of [0x09, 0x0a, 0x0d]) {
+      const input = JSON.stringify([{ v: 'a' + String.fromCharCode(cp) + 'b' }]);
+      const r = runSQL(input, 'json', [], format);
+      assert.strictEqual(r.error, undefined, `${format} U+${cp.toString(16)}: ${r.error}`);
+    }
+  }
 });
 
 t('a key the JSON input gives twice is named, not resolved in silence', () => {

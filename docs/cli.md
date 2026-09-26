@@ -125,7 +125,7 @@ transmute european.csv --delimiter ';' -o json
 | Code | Meaning | Typical cause |
 |---|---|---|
 | `0` | Success | — |
-| `1` | The transformation failed | The engine threw while transforming, or XML output was asked for data XML 1.0 cannot represent |
+| `1` | The transformation failed | The engine threw while transforming, or the chosen `--output` was asked for data that format cannot represent (a character outside XML 1.0 `Char` or YAML `c-printable`, or a `U+0000` in CSV, SQL or a text table) |
 | `2` | Usage error | Unknown option, bad option value, an option given twice, an option that cannot do its job (`--out` without `--output`, `--table` without `--output sql`, `--delimiter` without CSV input), `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, unparseable as the input format, or not UTF-8 |
 
@@ -405,11 +405,59 @@ printf '[{"id":1,"note":"a\x00b"}]' > nul.json && transmute nul.json --output xm
 Error: XML 1.0 cannot write U+0000 (NUL), which is in row 1, field "note". There is no way to keep it: a numeric character reference is refused by the same rule. Write CSV, JSON, SQL or YAML instead, or remove the character before converting.
 ```
 
-This belongs to the XML writer, not to the data: **CSV, JSON, SQL and YAML all
-carry a `U+0000` faithfully**, so `--output json` or `--output csv` on the same
-file succeeds and keeps the value. That is the escape route the message names,
-so it is a real one. Everything XML *can* hold is unaffected — `café`, `日本`,
-`🚀`, tab, newline and carriage return all round-trip unchanged.
+This belongs to the *target format*, not to the data, and the other writers
+apply the same rule to the characters **they** cannot hold. A `U+0000` is the
+clearest case, because it survives into four of the five text formats and breaks
+every one of them:
+
+| `--output` | A `U+0000` in a value | What the reference reader says |
+|---|---|---|
+| `xml` | **refused**, exit 1 | `expat`: `not well-formed (invalid token)` |
+| `yaml` | **refused**, exit 1 | PyYAML: `unacceptable character #x0000: special characters are not allowed` |
+| `csv` | **refused**, exit 1 | Python `csv`: `_csv.Error: line contains NUL` |
+| `sql` | **refused**, exit 1 | SQLite: `OperationalError: unrecognized token` |
+| `table` | **refused**, exit 1 | `file(1)`: `data`, not text — and the box is misaligned |
+| `json` | written | escaped as `\u0000`, so every reader keeps the value |
+
+The other three name it the same way, one per line, with the file they refuse to
+write:
+
+```
+Error: CSV cannot write U+0000 (NUL), which is in row 1, field "note". There is no way to keep it: a NUL ends the record for every reader of CSV. Write JSON instead, or remove the character before converting.
+Error: SQL cannot write U+0000 (NUL), which is in row 1, field "note". There is no way to keep it: a NUL ends the string literal. Write JSON instead, or remove the character before converting.
+Error: a text table cannot write U+0000 (NUL), which is in row 1, field "note". There is no way to keep it: a NUL ends the cell for every reader. Write JSON instead, or remove the character before converting.
+```
+
+So the escape route is **JSON**, and only JSON: it is the one format with an
+escape for every character. A character that survives the write is not the same
+as a file something can read — and Transmute's own reader is lenient enough to
+read all of these back, so a round trip through Transmute hides it completely.
+Nothing is written when a writer refuses: `stdout` stays empty and `--out`
+leaves no file, so `> out.csv` is never a broken file.
+
+The same `U+0000` read as YAML says this, and names the same way out:
+
+```bash
+printf '[{"id":1,"note":"a\x00b"}]' > nul.json && transmute nul.json --output yaml
+```
+
+```
+Error: YAML 1.2 cannot write U+0000 (NUL), which is in row 1, field "note". There is no way to keep it: YAML has no escape for it either. Write JSON instead, or remove the character before converting.
+```
+
+YAML is the strictest of the five because `c-printable` excludes fifteen
+characters, not one:
+
+```bash
+printf '[{"v":"x\u0007y"}]' > bell.json && transmute bell.json --output yaml
+```
+
+```
+Error: YAML 1.2 cannot write U+0007 (BEL), which is in row 1, field "v". There is no way to keep it: YAML has no escape for it either. Write JSON instead, or remove the character before converting.
+```
+
+Tab, newline and carriage return are inside *every* format's character set, so
+none of them refuse those, and neither does `café`, `日本` or `🚀`.
 
 #### What XML output does not keep: types
 

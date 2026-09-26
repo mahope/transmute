@@ -955,18 +955,37 @@ test('the character XML can write is still written, byte for byte', () => {
   }
 });
 
-test('the formats that can hold the character still do', () => {
-  // The error message tells the user to write CSV, JSON, SQL or YAML instead,
-  // so that advice is only honest if those runs really do produce the value.
+test('a NUL stops every writer but JSON, and no file is left behind', () => {
+  // The error message tells the user to write JSON instead, so that advice is
+  // only honest if the JSON run really does produce the value — and every other
+  // writer has to stop, because a NUL that survives into the file is a file no
+  // reader of that format opens. Measured, not assumed: Python's csv raises
+  // `line contains NUL`, SQLite reports `unrecognized token` inside the literal,
+  // PyYAML answers `unacceptable character #x0000`, and `file(1)` calls all of
+  // them `data` rather than text. This test used to assert the opposite for CSV,
+  // SQL, YAML and the table, having asked only whether the byte survived the
+  // write. `--out` is the part that matters most: nothing may reach the disk.
   const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
   try {
     const path = join(dir, 'nul.json');
     writeFileSync(path, JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]), 'utf-8');
-    for (const format of ['json', 'csv', 'yaml', 'sql', 'table']) {
-      const result = spawnSync(process.execPath, [cli, path, '-o', format], { encoding: 'utf-8' });
-      assert.equal(result.status, 0, `${format}: exit ${result.status}: ${result.stderr}`);
-      assert.equal(result.stderr, '', `${format}: ${result.stderr}`);
+    for (const format of ['xml', 'csv', 'yaml', 'sql', 'table']) {
+      const out = join(dir, `nul.${format}`);
+      for (const argv of [['-o', format], ['-o', format, '--out', out]]) {
+        const result = spawnSync(process.execPath, [cli, path, ...argv], { encoding: 'utf-8' });
+        assert.equal(result.status, 1, `${format} ${argv.join(' ')}: exit ${result.status}: ${result.stderr}`);
+        assert.equal(result.stdout, '', `${format} ${argv.join(' ')}: stdout must stay empty`);
+        assert.ok(result.stderr.startsWith('Error: '), `${format}: ${result.stderr}`);
+        assert.ok(result.stderr.includes('U+0000 (NUL)'), `${format}: ${result.stderr}`);
+        assert.ok(result.stderr.includes('field "note"'), `${format}: ${result.stderr}`);
+        assert.ok(!existsSync(out), `${format}: ${out} must not be written`);
+      }
     }
+    // JSON escapes it, so the value survives byte for byte and stderr is empty.
+    const json = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(json.status, 0, json.stderr);
+    assert.equal(json.stderr, '', json.stderr);
+    assert.ok(json.stdout.includes('a\\u0000b'), json.stdout);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

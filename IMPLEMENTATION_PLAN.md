@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T35)
+Opdateret: 2026-09-26 (T36)
 
 
 ## Mission
@@ -11,7 +11,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund. T29 er færdig med commit `e156dec` på `ceo/dead-options`, bygget oven på `ceo/repeated-flags`, og har samme grund — den rører heller ingen `site/`-fil. T30 er færdig med commit `837eb4a` på `ceo/utf8-input`, bygget oven på `ceo/dead-options`, og har samme grund: den rører kun `src/cli.js`, `docs/cli.md` og to testfiler, ingen `site/`-fil. T31 er færdig med commit `c5e7d4b` på `ceo/paths-locale-limits`, bygget oven på `ceo/utf8-input`, og har samme grund — den rører `site/engine.js`, så den kræver en `VERIFICÉR DEPLOY`-note når bunken merges. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje. T34 er færdig med commit `e8641c1` på `ceo/reader-gaps`, bygget oven på `ceo/reader-ambiguity`, og har samme grund — den rører `site/engine.js`. T35 er færdig med commit `7fdd7d8` på `ceo/playground-warnings`, bygget oven på `ceo/reader-gaps`, og har **samme grund, men en anden**: den rører hverken `engine.js` (motoren er urørt) eller andet end rammen, `site.js` og CSS — men `DEPLOY-MISSING` gælder alle merges til `main`, uanset hvor lille diffen er.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 09:5x CEST med `npm run check:deploy`, starten på T35-iterationen):** uændret for **tiende** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T36-iterationen):** uændret for **ellevte** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
 **VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/dead-options` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
@@ -59,7 +59,7 @@ Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bru
 
 ## Deploy
 
-**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26 09:5x CEST, tiende måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
+**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26, **ellevte** måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
 
 **Den tidligere diagnose var fejl, og det er den vigtigste rettelse i denne plan.** Planen hævdede i fem iterationer, at batchdeployeren ikke havde kørt siden 2026-09-08. Beviset var `sitemap.xml`'s `lastmod 2026-09-08` plus et 404 på `/support/`. Den første halvdel var en **målefejl**: `lastmod` skrives kun, når `site_chrome.py` regenererer sitemap'en (`tools/site_chrome.py:629`), altså ikke når der deployes. Commit `3d90812` — som *er* live — har selv `lastmod 2026-09-08` i sin sitemap. Først da indholdet sammenlignes mod git, bliver tallene rigtige:
 
@@ -124,6 +124,38 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Den automatiske site-deploy er stadig aktiv i kode, selv om kontrakten siger, at den er slået fra. Den afvigelse bliver T5, før sitearbejde merges.
 
 ## Prioriteret opgavekø
+
+### 36. [x] Hold det eneste format, der kan bære tegnet, som det eneste escape
+
+**Status:** FÆRDIG med commit `HEAD36` på `ceo/download-guard` (bygget oven på `ceo/playground-warnings`) — **ligger på branch, ikke mergeret**, fordi `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Metode:** Som T20–T35: målt på de rigtige læsere **før** koden blev rørt, fundene skrevet som tests mod output og kørt mod den gamle kode, og låsen testet mod mutationer.
+**Begrundelse:** Planen pegede på fladen — *hvad der sker med output, der ikke kan skrives* — og dens egen forudsætning var **fejl**, så den måtte måles, ikke implementeres. Den sagde at `fs.writeFileSync` kaster på `U+0000`. Den gør ikke: `nul.json -o csv --out n.csv` skriver exit 0, tom stderr og en fil med **råt NUL-byte** i den.
+
+**Fundet er T32's egen målefejl, én række oppe i tabellen.** T32's tabel sluttede med rækken `samme tegn i csv / sql / json / yaml | exit 0, tegnet **bevares** — formaterne kan godt holde det`. Den spurgte, om tegnet overlevede skrivningen, og ikke om noget kunne læse filen. **Fjorten målinger på de reference-læsere, én række ad gangen** (Python `csv`, SQLite, PyYAML, `file(1)`):
+
+| `--output` | NUL i den skrevne fil |Hvad læseren siger | Før → nu |
+|---|---|---|---|
+| `json` | **nej** (escapes til `\u0000`) | `json.loads` → værdien er der | exit 0 — uændret |
+| `csv` | **ja** | `csv.Error: line contains NUL` | exit 0, tom stderr → **exit 1** |
+| `sql` | **ja** | `OperationalError: unrecognized token: "'a"` | exit 0, tom stderr → **exit 1** |
+| `yaml` | **ja** | `ReaderError: unacceptable character #x0000` | exit 0, tom stderr → **exit 1** |
+| `table` | **ja** | `file(1)`: `data`, ikke tekst | exit 0, tom stderr → **exit 1** |
+| `xml` | — | `expat: not well-formed` | allerede exit 1 (T32) |
+
+Alle fem skrev *exit 0, tom stderr* før denne iteration. Det er den samme tavshed som de foregående tretten, kun målt fra den anden side.
+
+**YAML er den strengeste, og dens regel er en specifikation, ikke en gæt.** Seksten tegn målt gennem PyYAML: **elleve af dem afvises**, og de er præcis dem YAML 1.2's `c-printable` udelukker — `c-printable ::= #x9 | #xA | #xD | [#x20-#x7E] | #x85 | [#xA0-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]`. De tre i sættet PyYAML *accepterer* er præcis de tre der er *inde* i det. YAML har ingen escape for dem: `\0` er ikke et YAML-escape, så quoting af skalarværdien gør det heller ikke til plads. Derfor er YAML præcis samme sag som XML hos T32 — ude af `Char`/`c-printable` **og** uden en måde at skrive det på — og derfor samme svar.
+
+**Valget er T32's, anvendt en gang til.** Advarsel, fejl eller ingenting: **fejl, exit 1, tom stdout, ingen fil.** Der findes intet repræsenterbart svar i det valgte format, og en fil der påstår at være YAML 1.2 og ikke er det, er værre end ingen fil. CSV, SQL og tabellen har ingen tegnsæt at slå op, men de skriver alle tekst, og **NUL afslutter posten for enhver læser af dem** — Python's `csv` siger det ordret, SQLite melder `unrecognized token` *inde i* literalet, og `file(1)` kalder alle tre `data`. Ingen quoting hjælner i nogen af dem.
+
+**Rettelsen er én tabel, ikke fem vagter.** T32's `firstUnrepresentableXMLChar` og `scanXMLValue` blev generaliseret til `firstUnrepresentable(str, refuses)` + `scanWritable(value, at, rule)` + `assertWritable(data, format)`, og `UNWRITABLE` rummer én regel pr. format: `xmlRefuses` (Char), `yamlRefuses` (c-printable) og `nulRefuses` (CSV, SQL, table). Alle fem skrivere kalder den nu, og **beskeden er byte-identisk med T32's for XML**, så de konformitetslåse fra T32 holder uden at blive rørt. `json` står **ikke** i tabellen med vilje: det escaper dem alle, og det er derfor det er den eneste flugtvej, beskeden navner.
+
+**Playgroundet arvæder rettelsen uden kode.** Rammen sender `r.error` videre, `site.js` sætter `has-error` og download-knappen returnerer tidligt på den klasse — så `-o yaml` med et NUL viser præcis den samme fejl i fejlboksen, og der gemmes intet. Det er samme svar som T23 fandt: der er ikke to steder.
+
+**Test: tre nye engine-tests (142 → 145) og to nye konformiteter (79 → 80), alle kørt mod den gamle kode.** Den ene engine-test er fundet selv: den hed *the other formats keep the characters XML has to refuse* og **påstod fire formatters kan bære NUL'en** — den faldt rødt med præcis det målte symptom, fordi påstanden var det, der var fundet. Den anden låser YAML's `c-printable` i begge retninger (elleve ude → exit 1, ti inde → exit 0) plus at et rigtigt surrogatpar ikke kvæles. Den tredje låser at NUL'en findes i et **feltnavn** som i en værdi, og at tab, linjeskift og vognskifte ikke afvises af nogen af de fem. Konformitesten låser **alle fem** beskeder ordret i `docs/cli.md`, at hver af dem navner `Write JSON instead` når det er sandt, at `json`-kørslen virker, og at docs **ikke** længere gentager den falske påstand. Mutationstestet to gange: slettet en regel fra `UNWRITABLE` — fanget af formatlåsen — og en besked ændret — fanget af docslåsen.
+
+`site/engine.js` er byte-identisk med `src/engine.js` og blev kopieret med, så **playgroundet på `/` og `/da/` fik samme rettelse**; `tools/site_chrome.py` regenererede kun `engine.js`-hashen i `try.html` (ingen anden side ændrede sig, søgeindeks uændret på 104). Derfor **er** `check:site` kørt. Lokalt grøn: `npm test` 145+133+80+6+39+4+173, `npm pack --dry-run` uændret på 5 filer, `npm run check:site` `0 finding(s) across 20 pages` + `deviations: 0` + alle selftester grønne inkl. deploy-friskheds-selvfesten.
 
 ### 35. [x] Få advarslerne fra de sidste tre iterationer frem foran en browserbruger
 

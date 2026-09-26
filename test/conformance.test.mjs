@@ -290,14 +290,44 @@ test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () =>
     assert.equal(result.stdout, '', 'a refused conversion must leave stdout empty');
     const message = result.stderr.trim().replace(/^Error: /, '');
     assert.equal(docs.includes(message), true, `docs/cli.md does not quote the error verbatim: ${message}`);
-    assert.equal(help.includes('XML 1.0 cannot write'), true, '--help does not mention the XML refusal');
+    assert.equal(help.includes('holding a character that format cannot'), true, '--help does not mention the refusal');
     const row = docs.split('\n').find(line => line.startsWith('| `1` |'));
     assert.ok(row.includes('XML 1.0'), 'the exit 1 row in docs/cli.md does not mention it');
     // The escape route the message names has to exist, or the advice is a lie.
-    for (const format of ['json', 'csv', 'yaml', 'sql']) {
-      const ok = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', format], { encoding: 'utf-8' });
-      assert.equal(ok.status, 0, `${format} should carry the character: ${ok.stderr}`);
+    const ok = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(ok.status, 0, `json should carry the character: ${ok.stderr}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('docs/cli.md quotes the real error for every format that cannot write a NUL', () => {
+  // The XML refusal above was, for a long time, the only one — and the reason it
+  // was believed to be enough was a measurement that asked the wrong question.
+  // T32 recorded that "CSV, SQL, JSON and YAML all hold a NUL faithfully", which
+  // is true of the byte and false of the file: Python's csv raises `line contains
+  // NUL`, SQLite reports `unrecognized token`, PyYAML answers `unacceptable
+  // character #x0000` and `file(1)` calls all three `data`. So the refusal now
+  // belongs to the target format, four more writers have it, and the docs have to
+  // carry all five messages verbatim — the same three-surface lock, widened.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-conf-'));
+  try {
+    const path = join(dir, 'nul.json');
+    writeFileSync(path, JSON.stringify([{ id: 1, note: 'a' + String.fromCharCode(0) + 'b' }]), 'utf-8');
+    for (const format of ['xml', 'yaml', 'csv', 'sql', 'table']) {
+      const result = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(result.status, 1, `${format}: exit ${result.status}: ${result.stderr}`);
+      const message = result.stderr.trim().replace(/^Error: /, '');
+      assert.equal(docs.includes(message), true, `docs/cli.md does not quote the ${format} error verbatim: ${message}`);
+      // Naming JSON as the way out is only honest if JSON really is the way out.
+      if (format !== 'xml') {
+        assert.ok(message.includes('Write JSON instead'), `${format}: ${message}`);
+        const ok = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), path, '-o', 'json'], { encoding: 'utf-8' });
+        assert.equal(ok.status, 0, `json should carry the character: ${ok.stderr}`);
+      }
     }
+    // The docs must not repeat the claim this iteration measured to be false.
+    assert.ok(!docs.includes('carry a `U+0000` faithfully'), 'docs/cli.md still claims CSV, SQL and YAML carry a NUL');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

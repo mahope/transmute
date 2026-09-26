@@ -493,6 +493,7 @@ function unionKeys(data) {
 const serializers = {
   sql: (data, tableName = 'my_table') => {
     if (!Array.isArray(data)) data = [data];
+    assertWritable(data, 'sql');
     if (data.length === 0 || typeof data[0] !== 'object') return '';
     const cols = [...new Set(data.flatMap(r => Object.keys(r)))];
     const colList = cols.map(c => `"${c}"`).join(', ');
@@ -506,6 +507,7 @@ const serializers = {
   json: (data, pretty = true) => pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data),
   csv: (data) => {
     if (data.length === 0) return '';
+    assertWritable(data, 'csv');
     const headers = unionKeys(data);
     const lines = [headers.map(escapeCSV).join(',')];
     for (const row of data) {
@@ -515,6 +517,7 @@ const serializers = {
   },
   yaml: (data) => {
     if (!Array.isArray(data)) data = [data];
+    assertWritable(data, 'yaml');
     return data.map(item => {
       // A record is a mapping; the dash carries the first line and the keys
       // sit in the column the reader will look for them in.
@@ -524,7 +527,7 @@ const serializers = {
   },
   xml: (data, rootName = 'data') => {
     if (!Array.isArray(data)) data = [data];
-    assertXMLWritable(data);
+    assertWritable(data, 'xml');
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<${rootName}>\n`;
     for (const row of data) {
       if (typeof row !== 'object' || row === null) {
@@ -538,6 +541,7 @@ const serializers = {
   },
   table: (data) => {
     if (data.length === 0) return '(empty)';
+    assertWritable(data, 'table');
     const headers = unionKeys(data);
     // Only the rows below are printed, so only they decide how wide a column
     // is. Measuring the whole file made every printed line as wide as the
@@ -1550,31 +1554,73 @@ const C0_NAMES = ['NUL', 'SOH', 'STX', 'ETX', 'EOT', 'ENQ', 'ACK', 'BEL',
   'DC4', 'NAK', 'SYN', 'ETB', 'CAN', 'EM', 'SUB', 'ESC', 'FS', 'GS', 'RS', 'US'];
 
 /**
- * The first character in `str` that XML 1.0 cannot represent, or `null`.
+ * The first character in `str` that the target format cannot represent, or `null`.
  *
- * This is the `Char` production from the XML 1.0 specification, written out
- * rather than approximated:
- *
- *     Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
- *
- * So tab, newline and carriage return are in, and #x0-#x8, #xB, #xC, #xE-#x1F,
- * #xFFFE, #xFFFF and a lone surrogate are out. Iterating with `for...of` walks
- * code points, so a valid surrogate pair arrives as one character above
- * #xFFFF and is allowed, while a lone one arrives alone and is not.
+ * `refuses` is the rule for one output format; the walk itself is shared.
+ * Iterating with `for...of` walks code points, so a valid surrogate pair arrives
+ * as one character above #xFFFF and is allowed by both XML and YAML, while a lone
+ * one arrives alone and is refused by both.
  */
-function firstUnrepresentableXMLChar(str) {
+function firstUnrepresentable(str, refuses) {
   for (const ch of str) {
-    const cp = ch.codePointAt(0);
-    if (cp === 0x9 || cp === 0xA || cp === 0xD) continue;
-    if (cp >= 0x20 && cp <= 0xd7ff) continue;
-    if (cp >= 0xe000 && cp <= 0xfffd) continue;
-    if (cp >= 0x10000 && cp <= 0x10ffff) continue;
-    return ch;
+    if (refuses(ch.codePointAt(0))) return ch;
   }
   return null;
 }
 
-function describeXMLChar(ch) {
+/* XML 1.0, `Char`, written out rather than approximated:
+
+     Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+
+   So tab, newline and carriage return are in, and #x0-#x8, #xB, #xC, #xE-#x1F,
+   #xFFFE, #xFFFF and a lone surrogate are out. */
+function xmlRefuses(cp) {
+  if (cp === 0x9 || cp === 0xa || cp === 0xd) return false;
+  if (cp >= 0x20 && cp <= 0xd7ff) return false;
+  if (cp >= 0xe000 && cp <= 0xfffd) return false;
+  if (cp >= 0x10000 && cp <= 0x10ffff) return false;
+  return true;
+}
+
+/* YAML 1.2, `c-printable` — the same list a YAML reader checks before it parses
+   anything, and the reason PyYAML answers `unacceptable character #x0000` while
+   accepting a tab:
+
+     c-printable ::= #x9 | #xA | #xD | [#x20-#x7E] | #x85 | [#xA0-#xD7FF]
+                   | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+
+   YAML has no escape for these either: `\0` is not a YAML escape, so quoting the
+   scalar does not make room. */
+function yamlRefuses(cp) {
+  if (cp === 0x9 || cp === 0xa || cp === 0xd || cp === 0x85) return false;
+  if (cp >= 0x20 && cp <= 0x7e) return false;
+  if (cp >= 0xa0 && cp <= 0xd7ff) return false;
+  if (cp >= 0xe000 && cp <= 0xfffd) return false;
+  if (cp >= 0x10000 && cp <= 0x10ffff) return false;
+  return true;
+}
+
+/* CSV, SQL and the text table have no character set to consult, but they all
+   write text, and a NUL ends the record for every reader of them. Python's csv
+   module raises `line contains NUL`, SQLite reports `unrecognized token: "'a"`
+   inside the literal, and `file(1)` answers `data` rather than `CSV text`. No
+   quoting helps in any of the three. */
+function nulRefuses(cp) {
+  return cp === 0;
+}
+
+/* One rule per output format, plus the words the refusal is written in. `json` is
+   absent on purpose: it escapes every one of these characters (`"a\u0000b"`), which
+   is what makes it the route out of every refusal below. */
+const UNWRITABLE = {
+  xml:   { refuses: xmlRefuses,   label: 'XML 1.0',      why: 'a numeric character reference is refused by the same rule', out: 'CSV, JSON, SQL or YAML' },
+  yaml:  { refuses: yamlRefuses,  label: 'YAML 1.2',     why: 'YAML has no escape for it either',                            out: 'JSON' },
+  csv:   { refuses: nulRefuses,   label: 'CSV',          why: 'a NUL ends the record for every reader of CSV',              out: 'JSON' },
+  sql:   { refuses: nulRefuses,   label: 'SQL',          why: 'a NUL ends the string literal',                              out: 'JSON' },
+  table: { refuses: nulRefuses,   label: 'a text table', why: 'a NUL ends the cell for every reader',                       out: 'JSON' },
+};
+
+function describeChar(ch) {
   const cp = ch.codePointAt(0);
   const hex = 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
   if (cp <= 0x1f) return `${hex} (${C0_NAMES[cp]})`;
@@ -1585,58 +1631,67 @@ function describeXMLChar(ch) {
 }
 
 /**
- * Refuse data that XML 1.0 has no room for, before any of it is written.
+ * Refuse data the target format has no room for, before any of it is written.
  *
  * A control character inside a value is ordinary data: a NUL left by a
  * fixed-width export, a bell from a terminal capture, the vertical tab in a
- * legacy file. The writer above escaped `&`, `<`, `>`, `"` and `'`, and wrote
- * everything else through untouched, so those characters landed in the file
- * raw. The result declared `version="1.0"` and no XML parser would accept it —
- * Expat refuses it as `not well-formed (invalid token)` — while this tool's own
- * reader is lenient enough to read the file back, so a round trip through
- * Transmute hid it completely. Exit was 0 and stderr was empty.
+ * legacy file. Every writer here escapes what its format can escape — `&`, `<`,
+ * `>`, `"` and `'` in XML, `\n` in CSV — and writes everything else through
+ * untouched, so a character the format cannot hold lands in the file raw. The
+ * result names a format it is not, and this tool's own reader is lenient enough
+ * to read the file back, so a round trip through Transmute hid it completely.
+ * Exit was 0 and stderr was empty.
  *
- * There is no way to keep these characters, which is why the run stops instead
- * of inventing an answer. A numeric character reference is not a way out
- * either: `&#0;` is refused by the very production above, so an entity would not
- * make the file valid. Dropping the character would be the silent data loss
- * that T13 and T30 exist to remove, and a file that claims to be XML 1.0 and is
- * not is worse than no file at all.
+ * There is no way to keep these characters in the format that was asked for,
+ * which is why the run stops instead of inventing an answer. For XML a numeric
+ * character reference is not a way out either: `&#0;` is refused by the very
+ * production above, so an entity would not make the file valid. Dropping the
+ * character would be the silent data loss that T13 and T30 exist to remove, and a
+ * file that claims to be YAML 1.2 and is not is worse than no file at all.
  *
- * The formats that *can* carry these characters are untouched: CSV, SQL, JSON
- * and YAML all hold a NUL faithfully, so `json -> xml` refuses at exactly the
- * point where the target format runs out of room, and nothing else changes.
+ * The refusal belongs to the *target*, never to the data, which is why the rules
+ * live in one table instead of one guard per writer. An earlier version of this
+ * comment claimed that "CSV, SQL, JSON and YAML all hold a NUL faithfully". That
+ * was measured from the wrong side — it asked whether the character survived the
+ * write, not whether anything could read the file. Python's `csv` module raises
+ * `line contains NUL`, SQLite reports `unrecognized token` inside the literal,
+ * PyYAML answers `unacceptable character #x0000`, and `file(1)` calls all three
+ * `data` rather than text. Only JSON escapes them all, which is why it is the
+ * route out of every refusal, and why it is the one format with no rule.
  */
-function assertXMLWritable(data) {
+function assertWritable(data, format) {
+  const rule = UNWRITABLE[format];
+  if (!rule) return;
   const rows = Array.isArray(data) ? data : [data];
   for (const [index, row] of rows.entries()) {
     const at = Array.isArray(data) ? `row ${index + 1}` : 'the input';
-    scanXMLValue(row, at);
+    scanWritable(row, at, rule);
   }
 }
 
-function scanXMLValue(value, at) {
+function scanWritable(value, at, rule) {
   if (typeof value === 'string') {
-    const bad = firstUnrepresentableXMLChar(value);
+    const bad = firstUnrepresentable(value, rule.refuses);
     if (bad !== null) {
       throw new Error(
-        `XML 1.0 cannot write ${describeXMLChar(bad)}, which is in ${at}. ` +
-        'There is no way to keep it: a numeric character reference is refused by the same rule. ' +
-        'Write CSV, JSON, SQL or YAML instead, or remove the character before converting.'
+        `${rule.label} cannot write ${describeChar(bad)}, which is in ${at}. ` +
+        `There is no way to keep it: ${rule.why}. ` +
+        `Write ${rule.out} instead, or remove the character before converting.`
       );
     }
     return;
   }
   if (value === null || typeof value !== 'object') return;
   if (Array.isArray(value)) {
-    value.forEach((item, i) => scanXMLValue(item, `${at}[${i}]`));
+    value.forEach((item, i) => scanWritable(item, `${at}[${i}]`, rule));
     return;
   }
   for (const [key, item] of Object.entries(value)) {
-    // A key is checked too: a key that is not a legal tag name travels in a
-    // `name` attribute (see `writeXMLElement`), which is text like any other.
-    scanXMLValue(key, `the field name ${JSON.stringify(key)} in ${at}`);
-    scanXMLValue(item, `${at}, field ${JSON.stringify(key)}`);
+    // A key is checked too: in XML a key that is not a legal tag name travels in
+    // a `name` attribute (see `writeXMLElement`), and in YAML and CSV it is a
+    // scalar beside the values — text like any other.
+    scanWritable(key, `the field name ${JSON.stringify(key)} in ${at}`, rule);
+    scanWritable(item, `${at}, field ${JSON.stringify(key)}`, rule);
   }
 }
 
