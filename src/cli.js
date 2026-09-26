@@ -92,7 +92,7 @@ async function main() {
   let pipeline = null;
   let outputFormat = null;
   let outFile = null;
-  let tableName = 'my_table';
+  let tableName = null;
   let delimiter = null;
   const seenOptions = new Set();
   const optionCounts = countOptions(args);
@@ -143,6 +143,29 @@ async function main() {
     }
   }
 
+  // An option the CLI accepts but cannot honour is the same silence as one that
+  // was given twice: exit 0, an empty stderr, and output that is not what the
+  // command asked for. These two are known from the flags alone, so they are
+  // answered before the input is touched — a typo should not have to wait for a
+  // file it was never going to be used with.
+  //
+  // `--out` is the sharpest of them: it was accepted, the preview ran, and the
+  // file was never written, so the user asked for a file and got a table on the
+  // screen instead. `--table` names a table that only SQL output has.
+  if (outFile !== null && outputFormat === null) {
+    throw new UsageError(
+      '--out needs --output: without it Transmute prints a preview and writes no file. ' +
+      'Say what the file should hold with --output json, csv, yaml, xml, table or sql.'
+    );
+  }
+  if (tableName !== null && outputFormat !== 'sql') {
+    const output = outputFormat === null ? 'a preview' : outputFormat;
+    throw new UsageError(
+      `--table names the table in SQL output only, but the output here is ${output}. ` +
+      'Use --output sql, or drop --table.'
+    );
+  }
+
   // Read input
   if (inputFile !== null) {
     if (inputFile === '-') {
@@ -167,6 +190,18 @@ async function main() {
     if (!inputFormat) inputFormat = detectFormat(null, inputText);
   }
 
+  // `--delimiter` is a claim about how a CSV file is *read*, and the reader is
+  // the only thing that uses it: the CSV writer always writes a comma and quotes
+  // a field that contains another one, so `--output csv` cannot be steered by
+  // this flag. It is therefore dead unless the input is CSV, which is checked
+  // here rather than above because it needs the detected input format.
+  if (delimiter !== null && inputFormat !== 'csv') {
+    throw new UsageError(
+      `--delimiter applies to CSV input, and this input is ${inputFormat}. ` +
+      'Drop it, or read the file as CSV with --format csv.'
+    );
+  }
+
   // Validate the input up front so a parse failure is an input error, not a
   // transformation error, and so nothing is written to stdout on failure.
   if (!parsers[inputFormat]) {
@@ -186,8 +221,12 @@ async function main() {
   if (outputFormat === null) outputFormat = 'table';
   if (pipeline === null) pipeline = [];
 
-  // Run pipeline
-  const result = run(inputText, inputFormat, pipeline, outputFormat, { tableName, delimiter });
+  // Run pipeline. The table name is only resolved here, so a `--table` that was
+  // never given is the documented default rather than a value the parser made.
+  const result = run(inputText, inputFormat, pipeline, outputFormat, {
+    tableName: tableName === null ? 'my_table' : tableName,
+    delimiter,
+  });
   if (result.error) {
     console.error(`Error: ${result.error}`);
     // A bad argument in the pipeline — an expression that is not valid
@@ -266,6 +305,8 @@ function showPreview(text, format, delimiter) {
   console.log('  --delimiter ,|;|tab   (CSV delimiter; detected from the header line when omitted)');
   console.log('  transmute users.csv --output sql --table users   # CSV to SQL INSERT statements');
   console.log('  Every option is given once — a repeated --pipe or --output is a usage error, not a merge.');
+  console.log('  An option that cannot apply is a usage error: --out needs --output,');
+  console.log('  --table needs --output sql, and --delimiter needs CSV input.');
   console.log('');
   console.log('Examples:');
   console.log('  transmute data.json --pipe \'[{"op":"head","n":5}]\' --output csv');
@@ -298,7 +339,13 @@ function showHelp(stream = process.stdout) {
   log();
   log('Give each option once. Repeating one is a usage error: two --pipe flags');
   log('are not two sets of steps, so put every step in a single --pipe.');
-  log();
+  log('');
+  log('An option that cannot do its job is a usage error as well:');
+  log('  --out needs --output, or the output is a preview and no file is written');
+  log('  --table needs --output sql, the only output that has a table name');
+  log('  --delimiter needs CSV input, since only the reader uses it');
+  log('Each of the three used to be accepted, and dropped without a word.');
+  log('');
   log('Pipeline operations:');
   log('  filter   {"op":"filter","expr":"item.age > 18"}');
   log('  map      {"op":"map","expr":"({...item, active: true})"}');

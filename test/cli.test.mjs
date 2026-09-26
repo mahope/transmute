@@ -494,9 +494,12 @@ test('the count is the whole command line, not the number of repeats found so fa
 });
 
 test('every option once still works, in both spellings', () => {
-  const out = expectOk(sh(`transmute test/fixtures/people.csv -f csv -p '[{"op":"head","n":2}]' -o csv --table people`));
-  assert.equal(out.trim().split('\n').length - 1, 2);
-  const shorthand = expectOk(sh(`transmute test/fixtures/people.csv --format csv --pipe '[{"op":"head","n":2}]' --output csv --table people`));
+  // `--table` is paired with `-o sql` here because a table name only exists in
+  // SQL output; the test is about the spellings, not about the format.
+  const out = expectOk(sh(`transmute test/fixtures/people.csv -f csv -p '[{"op":"head","n":2}]' -o sql --table people`));
+  assert.equal(out.includes('Alice'), true, `expected Alice in: ${out}`);
+  assert.equal(out.includes('Carla'), false, `head 2 must not reach Carla in: ${out}`);
+  const shorthand = expectOk(sh(`transmute test/fixtures/people.csv --format csv --pipe '[{"op":"head","n":2}]' --output sql --table people`));
   assert.equal(shorthand, out);
 });
 
@@ -509,6 +512,98 @@ test('--help says the same rule the error enforces', () => {
 test('the preview says it too, since that is where a user reads the options', () => {
   const out = expectOk(sh(`transmute test/fixtures/people.csv`));
   assert.equal(out.includes('Every option is given once'), true, 'the preview does not say that each option is given once');
+});
+
+console.log('── an option that cannot do its job ──');
+
+// A repeated flag was the first silence of this kind, T28 stopped it. The other
+// one is an option the CLI accepts and then cannot honour: `--out` used to run
+// the preview and write no file at all, so the user asked for a file and got a
+// table on the screen with exit 0 and an empty stderr.
+
+test('--out without --output → exit 2, and the file is not written', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const target = join(dir, 'people.csv');
+    expectFail(`transmute test/fixtures/people.csv --out ${JSON.stringify(target)}`, 2, '--out needs --output');
+    assert.equal(existsSync(target), false, 'nothing may be written when --out has no --output');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--out with --pipe but no --output → exit 2, no table inside a .json file', () => {
+  // The stronger half: with a --pipe the preview is skipped, so the file was
+  // written — as an ASCII table, under a name that says JSON.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const target = join(dir, 'top.json');
+    expectFail(`transmute test/fixtures/people.csv -p '[{"op":"head","n":2}]' --out ${JSON.stringify(target)}`, 2, '--out needs --output');
+    assert.equal(existsSync(target), false, 'no file may be written without --output');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--table without --output sql → exit 2, and the message names the format', () => {
+  expectFail(`transmute test/fixtures/people.csv --table users -o csv`, 2, 'the output here is csv');
+});
+
+test('--table on the preview → exit 2, and the message says what the output is', () => {
+  expectFail(`transmute test/fixtures/people.csv --table users`, 2, 'the output here is a preview');
+});
+
+test('--delimiter on input that is not CSV → exit 2, and it names the format', () => {
+  expectFail(`transmute test/fixtures/orders.json --delimiter ';' -o json`, 2, 'this input is json');
+});
+
+test('--delimiter with CSV output but non-CSV input → exit 2, because the writer ignores it', () => {
+  // The CSV writer always writes a comma and quotes a field that contains one
+  // of the delimiters it knows, so the flag cannot steer the output at all.
+  // Measured: with and without the flag the CSV is byte-identical.
+  expectFail(`transmute test/fixtures/orders.json -o csv --delimiter ';'`, 2, 'this input is json');
+});
+
+test('the three options are only refused where they cannot apply', () => {
+  // The near misses are the point: a delimiter still decides how a CSV input is
+  // read when the output is JSON, and a table name is what SQL output is for.
+  const rows = JSON.parse(expectOk(sh(`transmute test/fixtures/european.csv --delimiter ';' -o json`)));
+  assert.equal(rows.length, 2, 'the Danish semicolon file must still be read as its two rows');
+  assert.equal(rows[0].navn, 'Mette', 'the explicit delimiter must still win over detection');
+  assert.equal(rows[0].note, 'Salg, mellem', 'a quoted field with the delimiter inside it must survive');
+
+  const sql = expectOk(sh(`transmute test/fixtures/people.csv -o sql --table people`));
+  assert.equal(sql.includes('INSERT INTO "people"'), true, `--table must still name the SQL table: ${sql}`);
+
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const written = join(dir, 'out.json');
+    expectOk(sh(`transmute test/fixtures/people.csv -o json --out ${JSON.stringify(written)}`));
+    const out = JSON.parse(readFileSync(written, 'utf-8'));
+    assert.equal(out[0].name, 'Alice', '--out with --output must still write the file');
+    assert.equal(existsSync(join(dir, 'out.json')), true, 'the file the user asked for must exist');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an option that cannot apply is refused before the input is read', () => {
+  // The two relations that need no data are answered from the flags alone, so a
+  // typo is a usage error even when the file is missing. The delimiter needs the
+  // format the file was detected as, so there the missing file is still what the
+  // user has to hear about first.
+  expectFail(`transmute test/fixtures/nope.csv --out out.json`, 2, '--out needs --output');
+  expectFail(`transmute test/fixtures/nope.csv --table users -o csv`, 2, '--table names the table');
+  expectFail(`transmute test/fixtures/nope.json --delimiter ';' -o json`, 3, 'File not found');
+});
+
+test('--help and the preview name the rule the errors enforce', () => {
+  const help = expectOk(sh(`"${process.execPath}" "${cli}" --help`));
+  for (const rule of ['--out needs --output', '--table needs --output sql', '--delimiter needs CSV input']) {
+    assert.equal(help.includes(rule), true, `--help does not say: ${rule}`);
+  }
+  const preview = expectOk(sh(`transmute test/fixtures/people.csv`));
+  assert.equal(preview.includes('--out needs --output'), true, 'the preview does not say --out needs --output');
 });
 
 console.log('── help and version ──');

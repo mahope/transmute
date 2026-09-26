@@ -42,9 +42,9 @@ with `node src/cli.js`.
 | `-f, --format <type>` | Input format: `json`, `csv`, `yaml`, `xml`. Auto-detected from the file extension, then from the content. |
 | `-p, --pipe <json>` | Transformation pipeline, a JSON array of steps. |
 | `-o, --output <type>` | Output format: `json`, `csv`, `yaml`, `xml`, `table`, `sql`. Defaults to `table`. |
-| `--out <file>` | Write the output to a file instead of stdout. |
-| `--table <name>` | Table name for SQL output. Default `my_table`. |
-| `--delimiter <d>` | Field delimiter for CSV/TSV input: `,` `;` `tab` or `|`. Detected from the header line when omitted. |
+| `--out <file>` | Write the output to a file instead of stdout. Needs `--output`. |
+| `--table <name>` | Table name for SQL output. Default `my_table`. Needs `--output sql`. |
+| `--delimiter <d>` | Field delimiter for CSV/TSV **input**: `,` `;` `tab` or `|`. Detected from the header line when omitted. Needs CSV input. |
 | `-v, --version` | Print the version. |
 | `-h, --help` | Print the built-in help. |
 
@@ -73,13 +73,60 @@ the same run with the same flags, `--delimiter` included — it used to read the
 file with the auto-detected delimiter and show you a table of a file you had
 already told it how to read.
 
+### An option that cannot do its job
+
+Three options are only meaningful next to another one, and they used to be
+accepted anyway and then dropped, without a word on stderr and with exit 0:
+
+| Command | What it used to do |
+|---|---|
+| `transmute people.csv --out people.json` | Printed the preview. **No file was written** — the sharpest of the three, because the user asked for a file and got a table on the screen. |
+| `transmute people.csv --pipe '[{"op":"head","n":2}]' --out top.json` | Wrote the file — as an ASCII table, under a name that says JSON. |
+| `transmute people.csv --table users` | Printed the preview. The table name was never used, because only SQL output has a table. |
+| `transmute orders.json --delimiter ';' -o json` | Read and wrote exactly what it would have without the flag. The writer always writes a comma, so `--delimiter` can only steer the *reader*. |
+
+All three are usage errors now, exit 2, nothing on stdout and no file:
+
+```bash
+transmute people.csv --out people.json
+```
+
+```
+Error: --out needs --output: without it Transmute prints a preview and writes no file. Say what the file should hold with --output json, csv, yaml, xml, table or sql.
+```
+
+```bash
+transmute people.csv --table users -o csv
+```
+
+```
+Error: --table names the table in SQL output only, but the output here is csv. Use --output sql, or drop --table.
+```
+
+```bash
+transmute orders.json --delimiter ';' -o json
+```
+
+```
+Error: --delimiter applies to CSV input, and this input is json. Drop it, or read the file as CSV with --format csv.
+```
+
+What still works, because the flag *is* the thing being asked for there:
+`--out file` with `--output`, `--out -` for stdout, `--table name` with
+`--output sql`, and `--delimiter ';'` on a CSV input with JSON, YAML or SQL
+output — the Danish Excel export read as four columns:
+
+```bash
+transmute european.csv --delimiter ';' -o json
+```
+
 ## Exit codes
 
 | Code | Meaning | Typical cause |
 |---|---|---|
 | `0` | Success | — |
 | `1` | The transformation failed | The engine threw while transforming |
-| `2` | Usage error | Unknown option, bad option value, an option given twice, `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
+| `2` | Usage error | Unknown option, bad option value, an option given twice, an option that cannot do its job (`--out` without `--output`, `--table` without `--output sql`, `--delimiter` without CSV input), `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, or unparseable as the input format |
 
 Errors always go to stderr, prefixed with `Error:`, and stdout stays empty on

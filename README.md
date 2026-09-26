@@ -38,11 +38,17 @@ Options:
 - `-f, --format <type>` — input format: json, csv, yaml, xml (auto-detected)
 - `-p, --pipe <json>` — transformation pipeline as a JSON array
 - `-o, --output <type>` — output format: json, csv, yaml, xml, table, sql (default: table)
-- `--out <file>` — write the output to a file instead of stdout
-- `--table <name>` — table name for SQL output (default `my_table`)
+- `--out <file>` — write the output to a file instead of stdout (needs `--output`)
+- `--table <name>` — table name for SQL output (default `my_table`, needs `-o sql`)
 - `--delimiter <d>` — CSV/TSV field delimiter: `,` `;` `tab` or `|` (detected
   from the header line when omitted, so Excel's Danish `;` export works)
 - `-v, --version`, `-h, --help`
+
+Each option is given once, and an option that cannot do its job is a usage
+error rather than a silent no-op: `--out` needs `--output` (`--out out.json`
+alone used to print a preview and write no file at all), `--table` needs
+`--output sql`, and `--delimiter` needs a CSV input, since the CSV writer always
+writes a comma.
 
 CSV is read per RFC 4180: a quoted field may contain the delimiter, escaped
 quotes and line breaks, and whitespace inside quotes is kept as data.

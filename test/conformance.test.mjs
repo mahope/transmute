@@ -214,9 +214,42 @@ test('every option the parser accepts is in the docs, in the help, and checked f
 test('the docs exit-code table still describes exit 2', () => {
   const row = docs.split('\n').find(line => line.startsWith('| `2` |'));
   assert.ok(row, 'docs/cli.md has no row for exit code 2');
-  for (const cause of ['an option given twice', 'bad option value', 'Unknown option']) {
+  for (const cause of ['an option given twice', 'bad option value', 'Unknown option', 'an option that cannot do its job']) {
     assert.equal(row.includes(cause), true, `the exit 2 row no longer lists: ${cause}`);
   }
+});
+
+test('docs/cli.md quotes the real error for every option that cannot do its job', () => {
+  // The second silence, found while the first was being fixed: three options are
+  // only meaningful next to another one, and each of them was accepted and then
+  // dropped. `--out file` without `--output` printed the preview and wrote no
+  // file at all. The docs have to carry the message the CLI now prints, and the
+  // help has to state the rule, or a reader is told about a rule the tool does
+  // not enforce — the same lock the repeated-flag message is held under.
+  const cases = [
+    { args: ['test/fixtures/people.csv', '--out', 'p.json'], rule: '--out needs --output' },
+    { args: ['test/fixtures/people.csv', '--table', 'users', '-o', 'csv'], rule: '--table needs --output sql' },
+    { args: ['test/fixtures/orders.json', '--delimiter', ';', '-o', 'json'], rule: '--delimiter needs CSV input' },
+  ];
+  for (const { args, rule } of cases) {
+    const result = runCli(args);
+    assert.equal(result.status, 2, `${args.join(' ')} should be a usage error, got exit ${result.status}`);
+    assert.equal(result.stdout, '', 'a refused option must leave stdout empty');
+    const message = result.stderr.trim().replace(/^Error: /, '');
+    assert.equal(docs.includes(message), true, `docs/cli.md does not quote the error verbatim: ${message}`);
+    assert.equal(help.includes(rule), true, `--help does not state the rule: ${rule}`);
+    const preview = runCli(['test/fixtures/people.csv']).stdout;
+    assert.equal(preview.includes(rule), true, `the preview does not state the rule: ${rule}`);
+  }
+});
+
+test('an option that cannot do its job is refused before the input is read', () => {
+  // The two relations that need no data are answered from the flags alone, so a
+  // typo is a usage error even when the file is missing. The delimiter needs the
+  // format the input was detected as, so there the missing file comes first.
+  assert.equal(runCli(['test/fixtures/nope.csv', '--out', 'p.json']).status, 2, 'a missing file must not mask --out without --output');
+  assert.equal(runCli(['test/fixtures/nope.csv', '--table', 'users', '-o', 'csv']).status, 2, 'a missing file must not mask --table without sql');
+  assert.equal(runCli(['test/fixtures/nope.json', '--delimiter', ';', '-o', 'json']).status, 3, 'the delimiter needs the input format, so the missing file is still an input error');
 });
 
 for (const testCase of CASES) {

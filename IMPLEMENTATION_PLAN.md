@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T28)
+Opdateret: 2026-09-26 (T29)
 
 
 ## Mission
@@ -9,13 +9,13 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund — den rører ingen `site/`-fil. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund. T29 er færdig på `ceo/dead-options`, bygget oven på `ceo/repeated-flags`, og har samme grund — den rører heller ingen `site/`-fil. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 07:5x CEST med `npm run check:deploy`, starten på T28-iterationen):** uændret for tredje gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 07:23 CEST med `npm run check:deploy`, starten på T29-iterationen):** uændret for fjerde gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
-**VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T28, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/repeated-flags` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
+**VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/dead-options` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
-**Næste iteration:** deploy-stillen er uændret, og derfor ligger **sexten** færdige commits på ti branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; hvis `DEPLOY-MISSING` er væk, merges hele bunken (T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3` og T28) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, er T29 næste opgave, og dens fund er allerede målt: **`--out fil` uden `--output` er ignoreret helt** — previewen kører, exit 0, tom stderr, og filen skriver aldrig sig. Det er den stærkeste form for fejlen i rækken, fordi brugeren beder om en fil og får en tabel.
+**Næste iteration:** deploy-stillen er uændret, og derfor ligger **sytten** færdige commits på elleve branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; hvis `DEPLOY-MISSING` er væk, merges hele bunken (T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643`, T12, T18 `a31aba8`, T20 `dbeae3c`, T21 `f49458a`, T22 `0115204`, T23 `29f1e9a`, T24 `ca259c1`, T25 `5fd4648`, T26 `b20b809`, T27 `0abe7a3`, T28 `763efbc` og T29) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, er der **ingen ny målt fejl i køen** — T29 var den sidste tavshed, der var dokumenteret, så næste opgave er en *research*-iteration: mål de dele af CLI'en, der endnu ikke er målt, og skriv den prioriteret, i stedet for at gælde på den målte.
 
 **De fire flader, T21 og T22 efterlod, er lukket:** serialiseringssiden (T20: `[object Object]`, array-kollision, `join --prefix`), `unique` uden `by` og `group` (T21: rækkefølgeafhængig nøgle, `__proto__`), XML-udgangen (T21: ulovlige tag-navne, tavs læsefejl) og `detectFormat` (T22: svagere kopi af læserens regel, afvisning af TSV/semikon/pipe/enkolonne på stdin). **`sort` er den eneste af de fire, der står åben, og den er dokumenteret væk i T21**: tal-strenge sorteres leksikografisk, fordi det er præcis hvad `jq`'s `sort_by` gør på strenge, og CSV-coercion gør tal til tal alligevel. Det er en afvejning, ikke en tavs korruption, så den kræver en beslutning fra Mads, ikke en fix.
 
@@ -33,7 +33,9 @@ Beslutningen, planen havde lagt åben — *hvor må den fejle* — viste sig at 
 
 **Den ottende flade, argument-parseren, er lukket af T28.** Den var den anden slags tavshed, T27 havde fundet på vejen: CLI'en tog det **sidste** `--pipe`, `--format`, `--output`, `--out`, `--delimiter` og `--table` og kasserede de forrige i stilhed. Syv kørsler, alle exit 0 med tom stderr, og to af dem slettede data: `-f json -f csv` læste JSON'en som én kolonne og skrev den tomme resultat den selv fandt på, og `--out a.csv --out b.csv` lod `a.csv` forsvinde. Nu afvises et gentaget flag med exit 2 og en besked der siger hvad der ville være sket og, for `--pipe`, hvordan det skrives i stedet. To valg er værd at huske: **afvise, ikke sammensætte** — `--pipe` er det eneste flag hvor en sammensætning betyder noget, og den gør flagenes rækkefølge afgørende for stepenes, så den ville være det ene flag med en skjult regel; og **tallet er hele kommandolinjen**, fordi parseren ellers stoppede ved det første gentagne flag og sagde "2 gange" om tre. Konformitetslåsen mellem fejl, `--help` og `docs/cli.md` er testet mod mutation, ikke bare skrevet.
 
-**Den niende flade er fundet undervejs for T28 og hedder `--out`:** et flag der aldrig bruges, fordi et andet mangler. `transmute people.csv --out p.csv` uden `--output` kører previewen, exit 0, tom stderr, og filen skriver aldrig sig — brugeren beder om en fil og får en tabel. Det er den anden halvdel af T28's familie, og svaret kræver et valg, så den ligger som T29.
+**Den niende flade er lukket af T29.** Den var den anden slags tavshed i samme familie som T28: et flag, der aldrig bruges, fordi et andet mangler. `transmute people.csv --out p.csv` uden `--output` kører previewen, exit 0, tom stderr, og filen skriver aldrig sig — brugeren beder om en fil og får en tabel. To målinger gjorde opgaven større end den så ud: med `--pipe` blev filen skrevet *som ASCII-tabel under et `.json`-navn*, og `--delimiter` viste sig at være død i halvdelen af de tilfælde, scope'en havde antaget, fordi kun CSV-*læseren* bruger flaget mens skriveren altid skriver komma. Alle tre er nu exit 2 med en besked, der siger hvad der mangler, og intet skrives.
+
+**Den tiende flade er ikke målt endnu.** Efter ni målte tavsheder er der ingen ny fejl i køen, kun det uudforskede: de stier af CLI'en, ingen af de ni opgaver rørte — stdin-kombineringer, tegnkodning, filstier med mellemrum, `--out` til en eksisterende fil, POSIX-locale og store filer. Den skal *måles* i en research-iteration, ikke gættes.
 
 
 `npm run check:site` er grøn efter T27 (20 sider, 0 fund, 0 layout-afvigelser). `❓ Til Mads` punkt 1 er stadig den eneste beslutning, der frigør mest, og intet i køen kan løse den.
@@ -52,7 +54,7 @@ Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bru
 
 ## Deploy
 
-**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26 ca. 02:4x CEST, genmålt med `npm run check:deploy`). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
+**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26 07:23 CEST, fjerde måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
 
 **Den tidligere diagnose var fejl, og det er den vigtigste rettelse i denne plan.** Planen hævdede i fem iterationer, at batchdeployeren ikke havde kørt siden 2026-09-08. Beviset var `sitemap.xml`'s `lastmod 2026-09-08` plus et 404 på `/support/`. Den første halvdel var en **målefejl**: `lastmod` skrives kun, når `site_chrome.py` regenererer sitemap'en (`tools/site_chrome.py:629`), altså ikke når der deployes. Commit `3d90812` — som *er* live — har selv `lastmod 2026-09-08` i sin sitemap. Først da indholdet sammenlignes mod git, bliver tallene rigtige:
 
@@ -222,36 +224,40 @@ To af dem sletter data: `-f json -f csv` læste JSON'en som én kolonne og skrev
 
 **Deploy:** `npm run check:deploy` kørt først i iterationen: uændret, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. `DEPLOY-MISSING` står derfor ved, diffen er **ikke** mergeret til `main`, og der er oprettet ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. T28 rører ingen `site/`-fil — den rører kun argument-parseren, som browseren ikke har.
 
-### 29. [ ] Et flag, der kræver et andet, må ikke forsvinde i stilhed
+### 29. [x] Et flag, der kræver et andet, må ikke forsvinde i stilhed
 
-**Status:** ÅBEN — fundet undervejs for T28, målt på den kode T28 efterlod
+**Status:** FÆRDIG — commit se afsnittet "Næste iteration" (branch `ceo/dead-options`)
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** T28's familie igen, den anden halvdel. T28 stoppede et flag, der blev gentaget; denne opgave er et flag, der **aldrig bruges**, fordi et andet mangler. Brugeren beder om en fil og får en preview på stdout.
 
-**Fund, målt på koden efter T28:**
+**Målt før koden blev rørt (seks kørsler på den rigtige binary, alle exit 0, tom stderr):**
 
-```
-$ transmute test/fixtures/people.csv --out /tmp/p.csv
-╔════════════════════════════════════╗      # previewen, exit 0, tom stderr
-║   Transmute — Data Transformer    ║
-$ ls /tmp/p.csv
-ls: /tmp/p.csv: No such file or directory        # filen blev aldrig skrevet
-```
+| Kørsel | Før |
+|---|---|
+| `people.csv --out p.csv` | preview på stdout, **filen skrives aldrig** |
+| `people.csv -p '[{"op":"head","n":2}]' --out top.json` | filen skrives som **ASCII-tabel under et `.json`-navn** |
+| `people.csv --table users` | preview, tabelnavnet bruges aldrig |
+| `people.csv --table users -o csv` | exit 0, output uden `.csv`-fejl, navnet dødt |
+| `orders.json --delimiter ';' -o json` | exit 0, output **byte-identisk** med kørslen uden flaget |
+| `people.csv --out -` | preview, `-` ignoreres |
 
-`--out` ignoreres helt, fordi previewen er den vej, CLI'en tager når hverken `--pipe` eller `--output` er med. Det er den *stærkeste* form af fejlen i hele rækken: brugeren har bedt om en fil, fået en tabel på skærmen og exit 0, og intet på stderr siger at filen ikke findes. Samme mønster findes for `--table` uden `--output` (dets eneste formål er SQL, så det er svagere), og måske for `--pipe` + `--out` uden `--output`, som er det samme som `--out` alene.
+**Beslutning — alle tre bliver exit 2, ikke advarsel.** T27's linje: en kommando, der ikke kan gøre det, den blev bedt om, skal *sige* det, og intet skrives. Advarsel (T26's form) er for et *antagende om data*, der kan være rigtigt for næste fil. Her er det ikke et antagende: `-o csv` er en eksplicit udtalelse om formatet, så `--table users` kan ikke være "ment som en mulighed". Den anden halvdel afgrænser desuden familien skarpt: `--out` uden `--output` er den eneste af de tre, hvor **data** er på spil (filen mangler, eller en tabel ligger i en fil der hedder `.json`).
 
-**Scope:**
+**Fund der ændrede reglen undervejs — `--delimiter` kan ikke styre output.** Opgaven skrev "CSV på input *eller* output". Det er forkert, og det blev målt: `opts.delimiter` bruges i `src/engine.js` præcis **én** sted, i CSV-*læseren* (`src/engine.js:570`). CSV-*skriveren* skriver altid komma og citerer et felt, der rummer et af de genkendte delimitere (`escapeCSV`, `src/engine.js:646`) — det er T16's fravalg, fordi output så er læsbart af enhver læser. Målt: `orders.json -o csv` er byte-identisk med og uden `--delimiter ';'`. Reglen blev derfor **"kræver CSV-input"**, ikke "CSV på en af siderne". Det er præcis den slags fejl, der lægger sig i en plan, fordi den er skrevet før koden er læst.
 
-- Svar på det designspørgsmål, T28's plan lagde og lod ligge: når `--out` er med uden `--output`, skal der så skrives filen med `table`-output, eller skal det være en usage-fejl? Begge er forsvarige — T27's linje er, at en kommando der ikke kan gøre det den blev bedt om skal *sige* det, så standarden bør være fejl, men `--out` er så hyppig en vane at en fejl kan være irriterende.
-- Samme afgørelse for `--table` uden `--output`, hvor svaret nok er "advarsel eller intet", fordi intet data går tabt.
-- Samme for `--delimiter` med et output-format der ikke læser CSV; den er allerede accepteret og kastet væk i `--output json --delimiter ';'`.
-- `docs/cli.md` under `Options`, `--help` med det samme, konformitetslås på den rigtige besked som T28's.
+**Rækkefølgen er målt, ikke valgt efter smag.** `--out` og `--table` kan afgøres af flagene alene og svares *før* input læses — samme argument som T25's `parsePipeline`: en tastefejl skal ikke stå i kø bag en fil, den aldrig ville have brugt. `--delimiter` kan først afgøres efter detektion, så en manglende fil er der stadig exit 3. Asymmetrien er testet, så den ikke forsvinder ved en senere omskrivning.
 
-**Acceptkriterier:**
+**Konformitetslås, testet mod mutation.** Alle tre beskeder staves i `docs/cli.md` ordret, reglen står i både `--help` og previewen, og låsen tager fejlteksten fra en rigtig kørsel af binaryen — ikke en kopi. Tre mutationer blev kørt: en ændret besked, en slettet hjælpelinje og en slettet previewlinje fejer hver især låsen.
 
-- `--out file` uden `--output` gør *noget synligt* — enten en fejl der nævner at `--out` kræver `--output`, eller en fil der skrives — aldrig exit 0 med en tabel på stdout og ingen fil.
-- Ingen af de tre øvrige flag kan forsvinde i stilhed på samme måde; de måles på den rigtige binary.
-- Ét flag én gang røres ikke, og hele den eksisterende suite (109 CLI-tests) er grøn.
+**Resultat:**
+
+- `--out` uden `--output` → exit 2, ingen fil skrives, heller ikke med `--pipe` (der var den værste variant: tabellen i `.json`-filen).
+- `--table` uden `--output sql` → exit 2; beskeden navngiver det faktiske output, `csv` eller `a preview`.
+- `--delimiter` uden CSV-input → exit 2, beskeden tilbyder `--format csv`.
+- Alt hvad der *er* levende, virker stadig og er testet på den rigtige binary: `--out file` med `--output`, `--out -`, `--table` med `-o sql`, `--delimiter ';'` på dansk CSV med JSON/YAML/SQL-output, inkl. et citeret felt med `;` i.
+- `tableName` er nu `null` indtil den bruges, så "ikke givet" kan skelnes fra "givet som `my_table`".
+- `docs/cli.md` har et afsnit med de tre kommandoer, de tre gamle adfærd og de tre beskeder; README, `--help` og previewen siger samme regel med samme formulering.
+- Gaten: `npm test` grøn (134 engine, 118 CLI, 74 konformitet, 6 README, 39+4 workflow, 173 kontraktchecks), `npm pack --dry-run` grøn, `npm run check:site` grøn.
 
 ### 1. [x] Afslut den gamle RustSec-baseline efter desktopflytningen
 
@@ -1308,6 +1314,33 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 
 
 ## Beslutninger og fund
+
+- **Et flag, der ikke kan gøre sit arbejde, skal sige det — det er samme tavshed
+  som et gentaget flag.** T28 fjernede det gentagne; T29 fjernede det, der er
+  *nødvendigt* for at flaget virker. Skellet mellem fejl (exit 2) og advarsel
+  (T26) er her skarpt: en advarsel er til et *antagende om data*, der kan være
+  rigtigt for næste fil, mens `-o csv` er en eksplicit udtalelse om formatet, så
+  `--table users` ved siden af den ikke kan "ment som en mulighed". Beviset er
+  at kun `--out` rørte data — filen manglede, eller en ASCII-tabel lå i en fil
+  der hed `.json` — og de to andre gør ingen skade, så et krav om exit 2 for
+  dem er en konsekvens af *familien*, ikke en målt nødvendighed. Det er den
+  pris, der er betalt for én regel uden undtagelser.
+
+- **Læs koden, før reglen skrives: `--delimiter` styrer kun læseren.** T29's
+  scope skrev "CSV på input *eller* output", fordi det lød rimeligt. Målt viste
+  det modsatte: `opts.delimiter` bruges ét sted i engine'en, i CSV-læseren
+  (`src/engine.js:570`), mens skriveren altid skriver komma og citerer felter med
+  et genkendt delimiter (`escapeCSV`, `src/engine.js:646`) — T16's bevidste
+  fravalg. `orders.json -o csv` var byte-identisk med og uden flaget. En regel
+  skrevet før koden læst er en *antagelse med Exit 2*, og det er værre end ingen
+  regel, fordi den låser brugeren ude med en besked om et problem der ikke findes.
+
+- **Sporet mellem "værd at læse" og "værd at tro på" er smallere end det føles.**
+  T29 måtte vælge *hvornår* en død option skal svares: `--out` og `--table` er
+  afklaret af flagene alene og bør derfor fejle før input læses (T25's
+  argument), mens `--delimiter` først kan afgøres efter detektion, så en
+  manglende fil er stadig exit 3. Asymmetrien er ikke en blemme, men den er
+  skrevet ned og testet, så en senere "forenkling" ikke fjerner den i tavshed.
 
 - **En række uden felter er en fejl; et feltnavn uden rækker er en advarsel.** T26
   lod det åbent, hvad et step skal sige, når det møder data i en anden form end
