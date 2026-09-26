@@ -123,7 +123,7 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ### 32. [x] Mål de skærmformater, der ikke er `table` — og ret den tavshed, de gemte
 
-**Status:** FÆRDIG med commit `IMPLEMENTATION` på `ceo/xml-unwritable-chars` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Status:** FÆRDIG med commit `88ea6f6` på `ceo/xml-unwritable-chars` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
 **Mislykkede forsøg:** 0/2
 **Begrundelse:** T31's fund pegede på den næste flade: de skærmformater `table` ikke dækker — `xml` på brede tegn i **værdier** (T21 havde kun lavet nøglenavne), `sql` på de samme tegn, og `csv` på en celle længere end nogen anden. Denne iteration målte alle tre på den rigtige binary. To af dem viste sig at være rene, og den tredje gemte **én fejl, der lå i en linje T31 ikke havde rørt**: `escapeXML` skrev tegn, som XML 1.0 slet ikke kan repræsentere, lige i filen.
 
