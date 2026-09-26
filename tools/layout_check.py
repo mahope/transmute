@@ -7,7 +7,7 @@ main and footer. Within one viewport all pages must agree on left/width/top
 (±1px), and the page must not scroll horizontally. Prints the numbers and
 exits with the number of deviations.
 
-    python tools/layout_check.py [--base https://transmute.run]
+    python tools/layout_check.py [--base URL]
 """
 from __future__ import annotations
 

@@ -2,7 +2,7 @@
 """Bevis om det publicerede site faktisk er deployet — uden at gætte.
 
     npm run check:deploy
-    python tools/check_deploy_freshness.py [--base https://transmute.run] [--ref origin/main] [--limit 40]
+    python tools/check_deploy_freshness.py [--base URL] [--ref origin/main] [--limit 40]
 
 Værktøjet henter hver tekstfil under `site/` fra det live site **én gang** og
 sammenligner den med det samme træ i git, commit for commit fra nyeste til
@@ -21,6 +21,7 @@ Kun GET. Ingen skrivninger, ingen rapporter, ingen secrets.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -29,6 +30,11 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Which site is deployed is a question about one address, and the address is a
+# claim of record. Written out here it becomes a second source: a moved domain
+# would leave this reporting a verdict about a site nobody serves, on every run,
+# without ever saying which site it looked at.
+SITE = json.loads((ROOT / "tools" / "product-contract.json").read_text(encoding="utf-8"))["site_url"].rstrip("/")
 
 # Binære filer kan ikke sammenlignes som tekst, og de siger intet om deployets
 # alder. Alt andet under site/ tages med.
@@ -146,7 +152,7 @@ def compare(live: dict[str, str | None], ref: str, paths: list[str]) -> list[str
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="https://transmute.run")
+    ap.add_argument("--base", default=SITE)
     ap.add_argument("--ref", default="origin/main", help="ref, live skal svare til")
     ap.add_argument("--limit", type=int, default=40, help="hvor mange site-commits der søges baglæns")
     args = ap.parse_args()

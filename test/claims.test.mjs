@@ -32,7 +32,8 @@ const COPIED = [
   'package.json', 'package-lock.json', 'README.md', 'LICENSE', '.nvmrc', '.gitignore',
   'src', 'docs', 'site', 'scripts',
   'tools/verify_contract.mjs', 'tools/product-contract.json', 'tools/site-requirements.txt',
-  'tools/site_chrome.py', 'tools/make_og.py',
+  'tools/site_chrome.py', 'tools/make_og.py', 'tools/seo_check.py', 'tools/verify_live.py',
+  'tools/check_deploy_freshness.py',
   '.github/workflows',
 ];
 
@@ -261,6 +262,62 @@ test('a committed bytecode file the repository ignores is named and refused', ()
   assert.equal(code, 1, 'a committed .pyc the .gitignore excludes must not pass');
   assert.match(output, /1 file\(s\) are committed although \.gitignore excludes them: tools\/__pycache__\/seo_check\.cpython-314\.pyc/);
   assert.match(output, /git rm --cached/);
+});
+
+/** The one line in each tool that reads the address, verbatim. */
+const DERIVES_SITE = 'json.loads((ROOT / "tools" / "product-contract.json").read_text(encoding="utf-8"))["site_url"].rstrip("/")';
+
+test('a page that states another address is named and refused', () => {
+  // Måling B som test: en af nitten sider fik et kanonisk domæne der ikke findes,
+  // og alle 180 checks var grønne. Det er præcis den fejl en søgemaskine agerer
+  // på, og den agerer i stilhed og længe efter den commit der lavede den.
+  const dir = repo();
+  const page = join(dir, 'site', 'guides', 'jq-alternative', 'index.html');
+  writeFileSync(page, readFileSync(page, 'utf8').replace('rel="canonical" href="https://transmute.run/', 'rel="canonical" href="https://gammel-transmute.example/'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a page that points its canonical somewhere else must not pass');
+  assert.match(output, /site\/guides\/jq-alternative\/index\.html states its address as https:\/\/gammel-transmute\.example\/guides\/jq-alternative\//);
+});
+
+test('a tool that writes the site address out in full is named and refused', () => {
+  // Måling A som test: de fem værktøjer, der henter eller skriver sitet, pegede på
+  // et domæne der ikke findes, og alle 180 checks var grønne. Det skarpe var
+  // check_deploy_freshness.py: den afgør om sitet er deployet, så et forkert
+  // domæne ville give et facit om et site ingen serverer — hver gang, uden at
+  // sige hvilket site den kiggede på.
+  const dir = repo();
+  const file = join(dir, 'tools', 'check_deploy_freshness.py');
+  // Helt samme værdi, skrevet ud i stedet for læst. Det er den tilstand
+  // målingen beskriver, og den er umulig at se: værktøjet svarer rigtigt.
+  writeFileSync(file, readFileSync(file, 'utf8').replace(DERIVES_SITE, "'https://transmute.run'"));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /tools\/check_deploy_freshness\.py writes the site address https:\/\/transmute\.run out in full; take it from tools\/product-contract\.json/);
+});
+
+test('deleting the site address is refused, so the rule is not satisfied by absence', () => {
+  // Samme anden halvdel som pakkenavnet: en regel der bare forbyder adressen kan
+  // passes ved at slette den hele, og så er der ingen kilde tilbage. Derfor
+  // mutationen her ikke efterlader adressen — den fjerner den.
+  const dir = repo();
+  const file = join(dir, 'tools', 'seo_check.py');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace(DERIVES_SITE, 'os.environ.get("TRANSMUTE_SITE_BASE", "")')
+    .replace('import json\n', ''));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /tools\/seo_check\.py must read tools\/product-contract\.json, or deleting the address above leaves no source at all/);
+});
+
+test('a sitemap that lists another address is refused', () => {
+  // Sitemapten er den første adresse en crawler læser, så en side der er kommet
+  // væk fra den indsendes stadig korrekt.
+  const dir = repo();
+  const file = join(dir, 'site', 'sitemap.xml');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('<loc>https://transmute.run/</loc>', '<loc>https://gammel-transmute.example/</loc>'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /site\/sitemap\.xml lists https:\/\/gammel-transmute\.example\//);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

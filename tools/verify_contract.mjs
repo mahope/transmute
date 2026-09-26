@@ -32,6 +32,7 @@ const LOCKED = {
   licence_cache_days: 7,
   order_email: 'orders@mahoje.dk',
   donation_link: 'https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c',
+  site_url: 'https://transmute.run',
 };
 
 const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, en: 1, to: 2, tre: 3, fire: 4, fem: 5, seks: 6, syv: 7, otte: 8, ni: 9, ti: 10 };
@@ -50,6 +51,32 @@ const PRIVATE_REPO = /github\.com\/mahope\/(?:transmute-desktop|paid-products)|m
 
 /** The files that write the public pages, where a stale claim reaches everyone. */
 const GENERATORS = ['tools/site_chrome.py', 'tools/make_og.py'];
+
+/**
+ * The tools that name the site's own address: the generator that writes the
+ * canonical into every page, the checker that decides whether the site is
+ * deployed, and the ones that fetch the live site. None of them is read by the
+ * checks below, so before this list was bound to the contract a domain change
+ * left the gate green.
+ *
+ * `layout_check.py` was on this list and is not: measuring it showed no code of
+ * its names the site — it serves site/ from an ephemeral 127.0.0.1 port and takes
+ * `--base` from the caller — so a rule it cannot fail is a rule that only costs a
+ * reader. Its usage line did name the address in prose and now says
+ * `[--base URL]`, like the others. The selftests stay out for the other reason:
+ * their fixtures pin the address on purpose, because a checker proved against a
+ * derived value proves nothing.
+ */
+const SITE_TOOLS = [
+  'tools/site_chrome.py',
+  'tools/make_og.py',
+  'tools/seo_check.py',
+  'tools/verify_live.py',
+  'tools/check_deploy_freshness.py',
+];
+
+/** The pages' own statements of where they live, in the attributes SEO reads. */
+const PAGE_ADDRESS = /(?:rel="canonical"\s+href|property="og:url"\s+content)="([^"]+)"/g;
 
 const failures = [];
 let checks = 0;
@@ -328,6 +355,50 @@ check('the site generators take the package and the repository from package.json
       assert(raw === repository,
         `${label(path)} points at ${raw}, but package.json's repository is ${repository}`);
     }
+  }
+});
+
+check('every page states the address the contract locks, and no other', () => {
+  // Measured 2026-09-27, on this repository, before this rule. Pointing the
+  // canonical of one page at a domain that does not exist left all 180 checks
+  // green. The site's own address is the one claim here that no rule could
+  // contradict: nineteen pages state it, a sitemap lists it, and a canonical
+  // pointing somewhere else is the failure a search engine acts on — silently,
+  // and long after the commit that caused it.
+  const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
+  assert(/^https:\/\/[^\s/]+$/.test(locked),
+    `contract.site_url is ${JSON.stringify(contract.site_url)}, which is not a bare https origin`);
+
+  for (const file of collect(join(root, 'site'), ['.html', '.txt', '.xml'])) {
+    for (const [, url] of readFileSync(file, 'utf8').matchAll(PAGE_ADDRESS)) {
+      assert(url.startsWith(`${locked}/`),
+        `${label(file)} states its address as ${url}, but the contract locks the site to ${locked}`);
+    }
+    // A sitemap is a list of addresses, written as <loc>, and it is what a
+    // crawler reads first — so a page that drifts is still submitted correctly.
+    for (const [, url] of readFileSync(file, 'utf8').matchAll(/<loc>([^<]+)<\/loc>/g)) {
+      assert(url.startsWith(`${locked}/`),
+        `${label(file)} lists ${url}, but the contract locks the site to ${locked}`);
+    }
+  }
+});
+
+check('the tools that name the site take the address from the contract', () => {
+  // The other half of the measurement above: pointing all five checkers and the
+  // generator at a domain that does not exist was equally invisible, because the
+  // rules read the rendered pages, not the code that fetches and writes them.
+  // `check_deploy_freshness.py` is the sharp one — it decides whether the site is
+  // deployed, so a wrong address there reports a verdict about a site nobody
+  // serves, and does it every run without saying so. In make_og.py the address
+  // is drawn into a PNG, which no text rule can read at all.
+  const locked = String(contract.site_url ?? '');
+  for (const file of SITE_TOOLS) {
+    const path = join(root, file);
+    const source = readFileSync(path, 'utf8');
+    assert(!source.includes(locked),
+      `${label(path)} writes the site address ${locked} out in full; take it from tools/product-contract.json, so the address has one source and not two`);
+    assert(/product-contract\.json/.test(source),
+      `${label(path)} must read tools/product-contract.json, or deleting the address above leaves no source at all`);
   }
 });
 

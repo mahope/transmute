@@ -22,7 +22,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-BASE = "https://transmute.run"
 TODAY = date.today().isoformat()
 PUBLISHED = "2026-09-06"
 ACCENT = "#0f7b6c"
@@ -39,13 +38,19 @@ def repo_url(path: str = "") -> str:
     return url.removeprefix("git+").removesuffix(".git") + path
 
 
-# The package and the repository are claims, and package.json is the one place
-# they can be read from. Written out here, they become a second source that goes
-# stale silently: `npm run check:deploy` and the contract check read the rendered
-# pages, not this file, so a renamed package would reach every page at once with
-# a green gate.
+def site_url() -> str:
+    return json.loads((ROOT / "tools" / "product-contract.json").read_text(encoding="utf-8"))["site_url"].rstrip("/")
+
+
+# The package, the repository and the site's own address are claims, and
+# package.json and tools/product-contract.json are the one place each of them can
+# be read from. Written out here, they become a second source that goes stale
+# silently: `npm run check:deploy` and the contract check read the rendered pages,
+# not this file, so a renamed package or a moved domain would reach every page at
+# once with a green gate.
 NPM_URL = f"https://www.npmjs.com/package/{package()['name']}"
 REPO = repo_url()
+BASE = site_url()
 
 # Order matters: it is the order on the front page and for previous/next links.
 GUIDES = [
@@ -66,7 +71,7 @@ FAMILY = [
     ("EUComply", "https://eucomplypro.com"),
     ("Clean Copy", "https://cleancopy.tools"),
     ("DeskUptime", "https://deskuptime.com"),
-    ("Transmute", "https://transmute.run"),
+    ("Transmute", BASE),
     ("BugBottle", "https://bugbottle.dev"),
 ]
 FAMILY_ALL = ("All tools", "https://mahope.tools")

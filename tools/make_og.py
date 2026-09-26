@@ -73,7 +73,7 @@ def render(title: str, kicker: str, footer: str, out: Path) -> None:
     d.rectangle((0, 0, W, 96), fill=(30, 34, 38))
     mark(d, margin, 30, 36)
     d.text((margin + 52, 30), "transmute", font=font("semibold", 30), fill=FG)
-    d.text((W - margin, 34), "transmute.run", font=font("mono", 24), fill=DIM, anchor="ra")
+    d.text((W - margin, 34), host(), font=font("mono", 24), fill=DIM, anchor="ra")
 
     # Kicker line ("$ guide" style) and title
     y = 150
@@ -109,6 +109,17 @@ def install() -> str:
     keep telling readers to install a package that no longer exists.
     """
     return f"npm i -g {json.loads((ROOT / 'package.json').read_text(encoding='utf-8'))['name']}"
+
+
+def host() -> str:
+    """The site's own address, read from the contract, drawn into pixels.
+
+    The same reasoning as install(), and the same limit: once a claim is a
+    picture, no grep and no diff can contradict it, so the only place to fix it
+    is the line that draws it.
+    """
+    url = json.loads((ROOT / 'tools' / 'product-contract.json').read_text(encoding='utf-8'))['site_url']
+    return url.removeprefix('https://').rstrip('/')
 
 
 def h1(path: Path) -> str:
