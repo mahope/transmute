@@ -1462,6 +1462,36 @@ function formatYAMLNumber(val) {
   return `${mantissa}e${parts[3]}`;
 }
 
+/**
+ * The plain scalars a YAML 1.1 reader resolves to something that is not a
+ * string, transcribed from the resolver PyYAML actually ships (`add_implicit_
+ * resolver` in `yaml/resolver.py`) rather than from what YAML 1.2 or
+ * JavaScript thinks a number is. YAML 1.1's vocabulary is the one a pipeline
+ * meets: it has four more words for `true` (`yes`, `no`, `on`, `off`), it lets
+ * an integer carry underscores, it reads a clock time as base 60, and it reads a
+ * date as a timestamp. Each production is written out whole — including the parts
+ * we do not need, like the signed branches — because a partial transcription
+ * quotes the wrong things in both directions.
+ *
+ * `<<` and `=` are here for a different reason: they are the `merge` and `value`
+ * tags, and neither has a constructor, so a reader that meets one refuses the
+ * **whole document** rather than returning something odd. `<<` as a key is
+ * already excluded by the plain-key rule below, but as a value it was written
+ * bare, and PyYAML then raised `ConstructorError` on a file Transmute had
+ * produced with exit 0.
+ *
+ * The empty string is the `null` production's last branch in PyYAML and is left
+ * out here: both callers have already refused it before they get this far.
+ */
+const YAML_1_1_RESOLVES_ELSEWHERE = [
+  /^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/,
+  /^(?:~|null|Null|NULL)$/,
+  /^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$/,
+  /^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/,
+  /^(?:[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]|[0-9][0-9][0-9][0-9]-[0-9][0-9]?-[0-9][0-9]?(?:[Tt]|[ \t]+)[0-9][0-9]?:[0-9][0-9]:[0-9][0-9](?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9][0-9]?(?::[0-9][0-9])?))?)$/,
+  /^(?:<<|=)$/,
+];
+
 function needsYAMLQuotes(value) {
   if (value === '') return true;
   if (/^\s|\s$/.test(value)) return true;
@@ -1469,12 +1499,22 @@ function needsYAMLQuotes(value) {
   if (/:\s/.test(value) || /:$/.test(value)) return true;
   if (/#/.test(value)) return true;
   if (/[\t\r]/.test(value)) return true;
-  if (/^(true|false|null|~)$/i.test(value)) return true;
+  // `true`, `false`, `null` and `~` are the four the number and word rules
+  // already happened to catch. The rest of YAML 1.1's vocabulary is not a word
+  // a JavaScript `Number()` refuses, so it has to be named.
+  if (YAML_1_1_RESOLVES_ELSEWHERE.some(resolves => resolves.test(value))) return true;
   return !isNaN(Number(value));
 }
 
 function formatYAMLKey(key) {
-  return /^[A-Za-z0-9_][A-Za-z0-9_.\-/ ]*$/.test(key) ? key : JSON.stringify(String(key));
+  const name = String(key);
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.\-/ ]*$/.test(name)) return JSON.stringify(name);
+  // A key is a scalar, so it obeys the same rule: `yes` reads back as `True` and
+  // a Danish postal code reads back as the *octal* 60, and the record then has a
+  // field under a name the input never had. The plain-key rule above already
+  // excludes `<<`, the merge key, and everything with a colon in it.
+  if (YAML_1_1_RESOLVES_ELSEWHERE.some(resolves => resolves.test(name))) return JSON.stringify(name);
+  return name;
 }
 
 /**

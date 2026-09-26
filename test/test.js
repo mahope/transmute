@@ -1600,7 +1600,130 @@ t('a float with an exponent is written the way a YAML reader reads it back', () 
     || /\(1e-7\)/.test(runSQL('[{"v":1e-7}]', 'json', [], 'sql').text));
 });
 
-t('NaN from an expression is refused too, and the path to it is named', () => {
+test('a string a YAML reader would resolve to something else is written quoted', () => {
+  // Measured on the real binary, before the fix: sixty-three plain strings
+  // through `transmute probe.json -o yaml`, exit 0, empty stderr, and PyYAML read
+  // **twenty-seven values as something other than the string that went in** —
+  // plus one that made the whole document unloadable, and fourteen keys under
+  // another name. `yes` came back as `True`, `12:30` as `750`, `1_000` as `1000`,
+  // `2026-09-26` as a `datetime.date`, and the two worst made PyYAML refuse the
+  // file outright:
+  //
+  //   v: <<      -> ConstructorError: could not determine a constructor for the
+  //                  tag 'tag:yaml.org,2002:merge'
+  //   v: =       -> ConstructorError: … 'tag:yaml.org,2002:value'
+  //
+  // So this is the same finding as the exponent test above, seen from the other
+  // side: a value the writer is handed as a *string* and the reader gives back as
+  // something else. The difference is that here the loss is silent in the worst
+  // way — `yes` and `12:30` are not rare spellings, they are what a spreadsheet
+  // and a Danish export actually contain.
+  //
+  // It asserts the spelling, for the reason the test above gives: our own reader
+  // is *more* permissive than PyYAML — it reads `yes` and `12:30` back as
+  // strings — so a round trip through `run(..., 'yaml', ...)` passes against the
+  // broken writer. The lock is the list below, measured against PyYAML's own
+  // resolver, not against ourselves.
+  const RESOLVES_ELSEWHERE = [
+    // YAML 1.1's booleans, three spellings each. `true`/`false`/`null`/`~` were
+    // already quoted; the other four words were not, and they are the common
+    // ones in exported data.
+    ['yes', 'bool'], ['Yes', 'bool'], ['YES', 'bool'], ['no', 'bool'], ['No', 'bool'],
+    ['NO', 'bool'], ['on', 'bool'], ['On', 'bool'], ['ON', 'bool'], ['off', 'bool'],
+    ['Off', 'bool'], ['OFF', 'bool'],
+    // The unsigned dotted floats. `-.inf` and `+.inf` are already caught by the
+    // leading sign, `.5` by the number rule — these six are the ones that got
+    // through, and they are the smallest numbers and the not-a-number markers.
+    ['.inf', 'float'], ['.Inf', 'float'], ['.INF', 'float'],
+    ['.nan', 'float'], ['.NaN', 'float'], ['.NAN', 'float'],
+    // Underscores are *inside* YAML 1.1's integer production, so a number
+    // written the way a person writes it reads as the number without them.
+    ['1_000', 'int'], ['1_0', 'int'], ['1_', 'int'], ['1__0', 'int'], ['2026_09_26', 'int'],
+    ['0b1010_1', 'int'], ['07_7', 'int'], ['0x1_F', 'int'], ['-1_0', 'int'], ['0b_1', 'int'],
+    ['0.1_2', 'float'],
+    // Sexagesimal. A clock time is base 60 in YAML 1.1: `12:30` is 750 and
+    // `12:00:00` is 43200, which is a *different number*, not just another type.
+    ['12:30', 'int'], ['1:2', 'int'], ['1:30:45', 'int'], ['1:2:3', 'int'], ['1:2:3:4', 'int'],
+    ['12:00:00', 'int'], ['190:20:30.15', 'float'],
+    // Timestamps. The resolver is lexical, so it does not validate the date:
+    // `2026-13-45` is a timestamp too, and quoting only real-looking dates
+    // would be the wrong rule.
+    ['2026-09-26', 'timestamp'], ['2026-13-45', 'timestamp'],
+    ['2026-9-26T12:00:00Z', 'timestamp'], ['2026-09-26T12:00:00Z', 'timestamp'],
+    ['2026-09-26 12:00:00', 'timestamp'], ['2026-09-26  12:00:00', 'timestamp'],
+    ['2026-09-26T12:00:00', 'timestamp'], ['2026-09-26 12:00:00.5', 'timestamp'],
+    ['2026-09-26T12:00:00+02:00', 'timestamp'],
+    // No constructor: a reader that meets these refuses the whole document.
+    ['<<', 'merge'], ['=', 'value'],
+  ];
+  for (const [value, tag] of RESOLVES_ELSEWHERE) {
+    const r = runSQL(JSON.stringify([{ v: value }]), 'json', [], 'yaml');
+    assert.ok(!r.error, `${value} must be writable: ${r.error}`);
+    const scalar = r.text.split('v: ')[1].trim();
+    assert.strictEqual(
+      scalar, JSON.stringify(value),
+      `${JSON.stringify(value)} is written bare, and a YAML 1.1 reader resolves it to ${tag}`
+    );
+  }
+  // The spellings themselves, so a fix cannot pass on the loop above alone. A
+  // quoted scalar is a JSON string here, which every YAML reader reads as a
+  // string — that is the point of it.
+  for (const value of ['yes', '12:30', '1_000', '2026-09-26', '.inf', '<<', '=']) {
+    const r = runSQL(JSON.stringify([{ v: value }]), 'json', [], 'yaml');
+    assert.ok(/v: "/.test(r.text), `${value} must be written quoted, got ${r.text.trim()}`);
+  }
+  // The other direction, and it is the one an over-broad fix breaks: a string a
+  // reader keeps as a string is written bare, because quoting everything turns
+  // every file into noise. These were all measured as `str` by PyYAML — the
+  // short date, the invalid sexagesimal, the single-letter booleans YAML 1.1
+  // does *not* have, the lowercase `t`/`z` timestamp it does not accept, and
+  // the signed `.5` it has no production for.
+  for (const value of ['2026-9-26', '2026-9-6 12:00', '12:60', '12:30:60', '12:30 CET',
+    '_1', 'y', 'n', 'ja', 'nej', 'y.', 'no.', 'a:b', '1.2.3', '2026/09/26', '09-17',
+    '2026-W40', 'a=b', 'NaN', 'inf', 'hello', 'Aarhus', '10%', '1.234,56',
+    '42abc', '0xZZ', '2026-09-26t12:00:00z', '2026-09-26 x']) {
+    const r = runSQL(JSON.stringify([{ v: value }]), 'json', [], 'yaml');
+    const scalar = r.text.split('v: ')[1].trim();
+    assert.strictEqual(scalar, value, `${JSON.stringify(value)} was written ${scalar}`);
+  }
+  // Four that a YAML 1.1 reader keeps as strings, but that are quoted anyway by a
+  // rule that is not this one: `0` and `-0` are numbers to `Number()`, `1e5` is
+  // one too (only YAML's stricter float production keeps it a string, which is
+  // the test above), and `+.5` is caught by the leading indicator that has always
+  // been there. Locked so the rules stay distinguishable instead of one silently
+  // absorbing the other.
+  for (const value of ['0', '-0', '1e5', '+.5']) {
+    const r = runSQL(JSON.stringify([{ v: value }]), 'json', [], 'yaml');
+    const scalar = r.text.split('v: ')[1].trim();
+    assert.strictEqual(scalar, JSON.stringify(value), `${JSON.stringify(value)} was written ${scalar}`);
+  }
+  // A key is a scalar too, and one that resolves elsewhere comes back under
+  // another name: `0074` is a Danish postal code and reads as the *octal* 60,
+  // `yes` reads as `True`, and the record no longer has the field it had.
+  for (const key of ['yes', 'On', 'OFF', 'no', '1_000', '0x1F', '0074', '42', '0',
+    '2026-09-26', 'true', 'null']) {
+    const r = runSQL(JSON.stringify([{ [key]: 'v' }]), 'json', [], 'yaml');
+    assert.ok(r.text.startsWith(`- ${JSON.stringify(key)}: v`),
+      `key ${JSON.stringify(key)} is written bare: ${r.text.trim()}`);
+  }
+  // A key a reader keeps as a key stays bare: `name` and the version-shaped
+  // `1.2.3` are the ordinary case, and the fix is not a licence to quote them.
+  for (const key of ['name', '1.2.3', 'a.b', 'x-y', 'col 1']) {
+    const r = runSQL(JSON.stringify([{ [key]: 'v' }]), 'json', [], 'yaml');
+    assert.ok(r.text.startsWith(`- ${key}: v`), `key ${key} must stay bare: ${r.text.trim()}`);
+  }
+  // The rule belongs to the writer, so it holds in a sequence, nested and at the
+  // top level, exactly as the exponent rule does.
+  assert.ok(/- "yes"/.test(runSQL(JSON.stringify(['yes']), 'json', [], 'yaml').text));
+  assert.ok(/deep: "12:30"/.test(runSQL('[{"a":{"b":{"deep":"12:30"}}}]', 'json', [], 'yaml').text));
+  // And to YAML only: CSV has no types to change and XML text is text, so a
+  // fix that reached past the YAML writer would be a new behaviour, not a fix.
+  assert.ok(/^yes$/m.test(runSQL('[{"v":"yes"}]', 'json', [], 'csv').text), runSQL('[{"v":"yes"}]', 'json', [], 'csv').text);
+  assert.ok(/<v>yes<\/v>/.test(runSQL('[{"v":"yes"}]', 'json', [], 'xml').text));
+  assert.ok(/'yes'/.test(runSQL('[{"v":"yes"}]', 'json', [], 'sql').text), runSQL('[{"v":"yes"}]', 'json', [], 'sql').text);
+});
+
+test('NaN from an expression is refused too, and the path to it is named', () => {
   // JSON cannot spell NaN, so the only way in is a computation: `1/0` and `0/0`
   // in an `add` expression. That makes this a user-reachable value, not an exotic
   // input — `amount / units` on a row where units is 0 is an ordinary pipeline.

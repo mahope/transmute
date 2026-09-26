@@ -1230,6 +1230,51 @@ test('a flow collection that is the whole yaml file is read as its content', () 
   }
 });
 
+console.log('── YAML output has to mean what it says ──');
+
+test('a string a YAML 1.1 reader resolves to something else is written quoted', () => {
+  // The real binary and a real file, because the whole point is what lands on
+  // disk: this tool's own reader is more permissive than PyYAML, so reading the
+  // output back here proves nothing. PyYAML read every one of these as
+  // something else before the fix — `yes` as `True`, `12:30` as `750`, `1_000`
+  // as `1000`, `2026-09-26` as a date — and refused the file outright for `<<`.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'scalars.json');
+    const out = join(dir, 'out.yaml');
+    writeFileSync(path, JSON.stringify([{
+      answer: 'yes', opened: '12:30', amount: '1_000', due: '2026-09-26',
+      zip: '0074', merge: '<<', equals: '=', inf: '.inf',
+      '0074': 'a postal code as a field name', yes: 'a yes/no column as a field name',
+    }]), 'utf-8');
+    const result = spawnSync(process.execPath, [cli, path, '-o', 'yaml', '--out', out], { encoding: 'utf-8' });
+    expectOk(result);
+    const written = readFileSync(out, 'utf-8');
+    assert.equal(written, [
+      '- answer: "yes"',
+      '  opened: "12:30"',
+      '  amount: "1_000"',
+      '  due: "2026-09-26"',
+      '  zip: "0074"',
+      '  merge: "<<"',
+      '  equals: "="',
+      '  inf: ".inf"',
+      '  "0074": a postal code as a field name',
+      '  "yes": a yes/no column as a field name',
+      '',
+    ].join('\n'), written);
+    // The same values in the other formats, where nothing is lost: CSV has no
+    // types to change and XML text is text, so quoting there would be a change
+    // in the product rather than a fix.
+    const csv = expectOk(spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' }));
+    assert.ok(csv.includes('yes,12:30,1_000,2026-09-26'), csv);
+    const xml = expectOk(spawnSync(process.execPath, [cli, path, '-o', 'xml'], { encoding: 'utf-8' }));
+    assert.ok(xml.includes('<answer>yes</answer>'), xml);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

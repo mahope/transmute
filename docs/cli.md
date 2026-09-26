@@ -708,6 +708,51 @@ cat config.yaml | transmute --format yaml
 ]
 ```
 
+#### Writing YAML: a string a reader would read as something else
+
+YAML is the one output format here with no types in it, and that cuts both ways.
+A number is written bare and read back as a number, and a string is written bare
+too — so a string that *looks* like a number comes back as one, quietly, with
+exit 0 and nothing on stderr. YAML 1.1's vocabulary is wider than YAML 1.2's
+and much wider than a number:
+
+| Value in the input | Written as | A YAML 1.1 reader reads it as |
+|---|---|---|
+| `yes`, `no`, `on`, `off` (and `Yes`, `OFF`, …) | `"yes"` | `True` / `False` |
+| `12:30`, `1:30:45` | `"12:30"` | `750`, `5445` — a clock time is base 60 |
+| `1_000` | `"1_000"` | `1000` — underscores are in YAML's integer rule |
+| `2026-09-26` | `"2026-09-26"` | a timestamp, not a string |
+| `.inf`, `.NaN` | `".inf"` | a float, not a string |
+| `0074` | `"0074"` | `60` — a leading zero is octal in YAML, not decimal |
+| `<<`, `=` | `"<<"` | *refuses the whole file* — neither tag has a constructor |
+
+```bash
+echo '[{"answer":"yes","opened":"12:30","due":"2026-09-26","zip":"0074","merge":"<<"}]' | transmute --output yaml
+```
+
+```yaml
+- answer: "yes"
+  opened: "12:30"
+  due: "2026-09-26"
+  zip: "0074"
+  merge: "<<"
+```
+
+Field **names** get the same treatment, because a key that resolves elsewhere
+comes back under another name: a `yes` column arrives as `True`, and `0074`
+arrives as the octal `60`.
+
+Two things are deliberately *not* quoted, so a file does not turn into noise: a
+string a reader keeps as a string stays bare (`y`, `n`, `12:60`, `1.2.3`,
+`2026-9-26`, `2026/09/26`, `NaN`, `inf`), and a number that is a number is
+written as YAML wants it, with a `.` and a signed exponent so `1e-7` goes out as
+`1.0e-7` and reads back as a float.
+
+This tool's own YAML reader is more permissive than PyYAML here — it reads `yes`
+and `12:30` back as strings — so a round trip through this tool is not evidence
+that another reader agrees. The rule is the productions PyYAML ships in
+`yaml/resolver.py`, transcribed whole.
+
 ## Operations
 
 A pipeline is a JSON array. Steps run left to right, each one seeing the output
