@@ -352,6 +352,66 @@ An empty `expr` is a mistake, not an identity — it is what a shell variable th
 was never set leaves behind. `head` and `tail` take a number of rows, so `n: 0`
 is no rows: the last zero rows used to come back as all of them.
 
+### When a field name is in no row
+
+A step that names a field no record has is a typo, and each of these operations
+used to answer the typo with a different result and say nothing at all — exit 0,
+empty stderr, and a file that is not the one that was asked for. `unique` by
+`ag` compared `undefined` to `undefined`, decided all four rows were identical
+and wrote one of them; `sort` sorted nothing; `group` put everything in a single
+`(null)` group; `pick` dropped the field; `rename` renamed nothing; a `join`
+whose `on` no record has drops every row.
+
+The run still succeeds, because a script written for one file is often run
+against another, and the output is still the output the step produced. What
+changed is that one warning on stderr names the step, the field and what
+happened, while stdout stays exactly the data:
+
+```bash
+transmute test/fixtures/people.csv --pipe '[{"op":"unique","by":"ag"}]' --output json
+```
+
+```
+Warning: unique: no record has a field named "ag"; every row looked identical, so 1 of 4 rows survived
+[
+  {
+    "name": "Alice",
+    "age": 30,
+    "zip": "0074",
+    "active": true,
+    "city": "Aarhus"
+  }
+]
+```
+
+`pick`, `omit`, `sort`, `unique`, `group`, `rename`, `flatten` and `join` are all
+checked. The check is per step, against the data as it is at that point, so a
+field `add` or `map` just created is not missing, and a field a previous
+`rename` removed is.
+
+A field *some* records have is not reported. Heterogeneous data is what a left
+join with no match and an API that adds a key look like, and `pick` is built for
+it:
+
+```bash
+printf '[{"id":1,"email":"a@x.dk"},{"id":2},{"id":3,"email":"c@x.dk"}]' \
+  | transmute --pipe '[{"op":"pick","fields":["id","email"]}]' --output table
+```
+
+```
++----+--------+
+| id | email  |
++----+--------+
+| 1  | a@x.dk |
+| 2  |        |
+| 3  | c@x.dk |
++----+--------+
+(3 rows, 2 columns)
+```
+
+Warnings are for stderr only. A `2>/dev/null` around a run, or a `--out` file,
+never changes the file that is written.
+
 ### filter
 
 Keep the records where a JavaScript expression is true. `item` is the record,

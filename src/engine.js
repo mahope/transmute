@@ -343,6 +343,12 @@ const operations = {
     const dir = params.dir === 'desc' ? -1 : 1;
     return [...data].sort((a, b) => {
       const va = a[by], vb = b[by];
+      // Two rows that both lack the field are equal, so the comparator has to
+      // say so. It answered `1` for every pair, which is not an order at all:
+      // the sort was then free to hand back any order it liked, and the only
+      // reason the rows came out unchanged was that this engine never shuffled
+      // them for a reason.
+      if (va === undefined && vb === undefined) return 0;
       if (va === undefined) return 1;
       if (vb === undefined) return -1;
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
@@ -1376,6 +1382,82 @@ function validatePipeline(pipeline) {
   return pipeline;
 }
 
+// ─── Fields a step names ─────────────────────────────────────────────────
+
+/**
+ * The field names each step names, and what that step did about finding none.
+ *
+ * A field name no record has is a typo, and every one of these operations
+ * answered the typo with a result the user did not ask for: `unique` by `ag`
+ * where the column is `age` compared `undefined` to `undefined`, found all
+ * three rows identical and wrote one of them to disk; `sort` by a field nobody
+ * has sorted nothing; `group` put every row in the group `(null)`; `pick`
+ * dropped the field from every row; `rename` renamed nothing. All of it with
+ * exit 0, an empty stderr, and a file the user believed was the transformation
+ * they had asked for.
+ *
+ * A field *some* records have is not that. Heterogeneous data is what a left
+ * join with no match, an API that adds a key, and `pick` itself are for, so
+ * only a field no record has at all is worth a word.
+ */
+const STEP_FIELDS = {
+  pick:    (params) => fieldList(params.fields),
+  omit:    (params) => fieldList(params.fields),
+  sort:    (params) => [params.by],
+  unique:  (params) => (params.by ? [params.by] : []),
+  group:   (params) => [params.by],
+  rename:  (params) => Object.keys(params.mapping),
+  flatten: (params) => [params.field],
+  join:    (params) => [params.on]
+};
+
+const FIELD_EFFECTS = {
+  pick:    () => 'it is in no output',
+  omit:    () => 'nothing was removed',
+  sort:    () => 'the rows are in their original order, not sorted',
+  unique:  (field, rows) => (rows > 1
+    ? `every row looked identical, so 1 of ${rows} rows survived`
+    : 'there was nothing to compare'),
+  group:   () => 'every row landed in the group "(null)"',
+  rename:  (field, rows, params) => `it was not renamed to "${params.mapping[field]}"`,
+  flatten: () => 'no row was expanded',
+  join:    () => 'neither side has it, so every row was dropped'
+};
+
+function fieldList(val) {
+  return Array.isArray(val) ? val : [val];
+}
+
+/**
+ * Say what a step did with a field name no record has, before it does it.
+ *
+ * The result is unchanged — only the silence is gone. A pipeline that names a
+ * field a file does not have may be a script meant for many files, so the run
+ * still succeeds and still writes its output; what changes is that the user is
+ * no longer left with a file that says the opposite of what they asked for.
+ */
+function reportMissingFields(data, step, warnings) {
+  const names = STEP_FIELDS[step.op];
+  if (!names || !Array.isArray(data)) return;
+  const records = data.filter(isPlainObject);
+  // Nothing to miss: rows that are not records have no fields, and a step that
+  // cannot work on one says so in its own error.
+  if (records.length === 0) return;
+  const present = new Set(records.flatMap(r => Object.keys(r)));
+  // `join` names its field on both sides, and the right-hand records are in
+  // `with` rather than in `data`. A field only the right side has is a match
+  // that cannot happen, but it is not the same mistake as a field neither side
+  // has, so it is not reported as one.
+  const right = step.op === 'join' && Array.isArray(step.with)
+    ? step.with.filter(isPlainObject)
+    : [];
+  for (const field of names(step)) {
+    if (typeof field !== 'string' || present.has(field)) continue;
+    if (right.length > 0 && right.some(r => Object.prototype.hasOwnProperty.call(r, field))) continue;
+    warnings.push(`${step.op}: no record has a field named "${field}"; ${FIELD_EFFECTS[step.op](field, data.length, step)}`);
+  }
+}
+
 // ─── Main pipeline function ──────────────────────────────────────────────
 
 /**
@@ -1406,6 +1488,10 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
 
     // Transform
     for (const step of pipeline) {
+      // Against the data as it is here, not against the file as it arrived: a
+      // field `add` or `map` just created is present from this step on, and one
+      // `rename` removed is gone from it.
+      reportMissingFields(data, step, warnings);
       data = operations[step.op](data, step);
       if (!Array.isArray(data)) data = [data];
     }

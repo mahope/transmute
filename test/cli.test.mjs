@@ -515,5 +515,37 @@ test('join without a prefix still keeps the left value and drops the right one',
   assert.equal(Object.keys(row).join(','), 'id,customer,status,items,total');
 });
 
+console.log('── a field name no record has ──');
+
+test('a mistyped field is written to stderr, and the file still lands', () => {
+  // `age` typed as `ag`: `unique` compared `undefined` to `undefined`, found
+  // all three rows identical and wrote one of them, with nothing on stderr to
+  // say the file was not the one that was asked for.
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -f csv --pipe '[{"op":"unique","by":"ag"}]' -o json`);
+  assert.equal(r.status, 0, 'a field a file does not have is a warning, not a broken pipeline');
+  assert.equal(JSON.parse(r.stdout).length, 1);
+  assert.match(r.stderr, /Warning: unique: no record has a field named "ag"/, r.stderr);
+  assert.match(r.stderr, /1 of 4 rows survived/, r.stderr);
+});
+
+test('stdout stays exactly the data when a field is missing', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -f csv --pipe '[{"op":"sort","by":"ag"}]' -o csv`);
+  assert.equal(r.status, 0);
+  assert.match(r.stderr, /the rows are in their original order, not sorted/, r.stderr);
+  const rows = r.stdout.trim().split('\n');
+  assert.equal(rows[0], 'name,age,zip,active,city');
+  assert.equal(rows.length, 5, r.stdout);
+});
+
+test('a field the data has is not reported missing', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -f csv --pipe '[{"op":"sort","by":"age","dir":"desc"},{"op":"rename","mapping":{"city":"town"}},{"op":"pick","fields":["name","town"]}]' -o json`);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stderr, '', `unexpected warning: ${r.stderr}`);
+  const rows = JSON.parse(r.stdout);
+  assert.deepEqual(Object.keys(rows[0]), ['name', 'town']);
+  assert.equal(rows[0].name, 'Carla', 'the sort really did run, and the oldest is first');
+  assert.equal(rows.length, 4, r.stdout);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

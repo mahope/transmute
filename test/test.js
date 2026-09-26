@@ -1022,5 +1022,129 @@ t('tail of zero rows is zero rows', () => {
   }
 });
 
+// ─── Fields a step names ───────────────────────────────────────────────
+
+/** Run, insist it succeeded, and hand back the warnings it said. */
+function warningsFor(pipeline, input = '[{"id":1,"name":"Ada","age":36},{"id":2,"name":"Bob","age":41},{"id":3,"name":"Cyd","age":29}]') {
+  const r = runSQL(input, 'json', pipeline, 'json');
+  if (r.error) throw new Error(r.error);
+  return r.warnings;
+}
+
+t('a field no record has is named, and what the step did about it', () => {
+  // Every one of these ran and answered the typo with something else. `unique`
+  // compared `undefined` to `undefined`, called all three rows identical and
+  // wrote one of them; `sort` sorted nothing; `group` put everything in
+  // "(null)"; `pick` dropped the field; `rename` renamed nothing. Exit 0, empty
+  // stderr, and a file that says the opposite of what was asked.
+  const cases = [
+    [[{ op: 'unique', by: 'ag' }], 'unique', 'ag', '1 of 3 rows survived'],
+    [[{ op: 'sort', by: 'ag' }], 'sort', 'ag', 'not sorted'],
+    [[{ op: 'pick', fields: ['name', 'emial'] }], 'pick', 'emial', 'no output'],
+    [[{ op: 'omit', fields: 'emial' }], 'omit', 'emial', 'nothing was removed'],
+    [[{ op: 'group', by: 'contry' }], 'group', 'contry', '(null)'],
+    [[{ op: 'rename', mapping: { emial: 'email' } }], 'rename', 'emial', 'not renamed to "email"'],
+    [[{ op: 'flatten', field: 'itemz' }], 'flatten', 'itemz', 'no row was expanded'],
+    [[{ op: 'join', with: [{ id: 2 }], on: 'idd' }], 'join', 'idd', 'every row was dropped']
+  ];
+  for (const [pipeline, op, field, effect] of cases) {
+    const warnings = warningsFor(pipeline);
+    if (warnings.length !== 1) throw new Error(`${op}: ${warnings.length} warnings, want 1: ${JSON.stringify(warnings)}`);
+    const w = warnings[0];
+    if (!w.startsWith(`${op}: `)) throw new Error(`${op}: warning does not start with the step: ${w}`);
+    if (!w.includes(`"${field}"`)) throw new Error(`${op}: warning does not name the field: ${w}`);
+    if (!w.includes(effect)) throw new Error(`${op}: warning does not say what happened: ${w}`);
+  }
+});
+
+t('the result of a mistyped field is still a result, not an error', () => {
+  // A pipeline that names a field a file does not have is not a broken
+  // pipeline: the same script may be meant for many files. The run succeeds and
+  // writes what the step did, and the warning is the news.
+  const r = runSQL('[{"name":"Ada"},{"name":"Bob"}]', 'json', [{ op: 'unique', by: 'ag' }], 'csv');
+  assert.strictEqual(r.error, undefined);
+  assert.strictEqual(r.data.length, 1);
+  assert.strictEqual(r.warnings.length, 1);
+});
+
+t('a field some records have is not a field no record has', () => {
+  // Heterogeneous data is the normal shape of a left join with no match, an API
+  // that adds a key, and `pick` itself. A warning for every one of them would
+  // train the user to ignore the warning that matters.
+  const het = '[{"name":"Ada","email":"a@x.dk"},{"name":"Bob"},{"name":"Cyd","email":"c@x.dk"}]';
+  for (const pipeline of [
+    [{ op: 'pick', fields: ['name', 'email'] }],
+    [{ op: 'omit', fields: 'email' }],
+    [{ op: 'sort', by: 'email' }],
+    [{ op: 'group', by: 'email' }],
+    [{ op: 'unique', by: 'email' }],
+    [{ op: 'rename', mapping: { email: 'mail' } }],
+    [{ op: 'flatten', field: 'email' }]
+  ]) {
+    assert.deepStrictEqual(warningsFor(pipeline, het), [], `${pipeline[0].op} warned about a field two rows have`);
+  }
+});
+
+t('a field an earlier step created is not missing', () => {
+  // The check runs against the data as it is at each step, so `add` before
+  // `sort`, and `map` before `pick`, are the pipelines people actually write.
+  assert.deepStrictEqual(warningsFor([
+    { op: 'add', fields: { older: 'item.age > 35' } },
+    { op: 'sort', by: 'older' }
+  ]), []);
+  assert.deepStrictEqual(warningsFor([
+    { op: 'map', expr: '({who: item.name, years: item.age})' },
+    { op: 'pick', fields: ['who', 'years'] }
+  ]), []);
+  // And a field an earlier step removed is gone, so naming it later is a real
+  // mistake and not a leftover from the file.
+  assert.strictEqual(warningsFor([
+    { op: 'rename', mapping: { age: 'years' } },
+    { op: 'sort', by: 'age' }
+  ]).length, 1);
+});
+
+t('a pipeline over fields that all exist says nothing at all', () => {
+  assert.deepStrictEqual(warningsFor([
+    { op: 'filter', expr: 'item.age > 30' },
+    { op: 'sort', by: 'age', dir: 'desc' },
+    { op: 'unique', by: 'name' },
+    { op: 'rename', mapping: { age: 'years' } },
+    { op: 'pick', fields: ['name', 'years'] },
+    { op: 'omit', fields: 'name' }
+  ]), []);
+});
+
+t('sorting on a field no row has leaves the rows in their original order', () => {
+  // The comparator answered `1` for every pair of rows that both lacked the
+  // field, which is not an order a sort is allowed to be given: a comparator
+  // that claims a < b and b < a at once leaves the engine free to return any
+  // order it likes. It happened to leave them alone here, and nothing promised
+  // that. The warning is what the user gets either way.
+  const r = runSQL('[{"n":3},{"n":1},{"n":2}]', 'json', [{ op: 'sort', by: 'missing' }], 'json');
+  assert.strictEqual(r.error, undefined);
+  assert.deepStrictEqual(r.data.map(x => x.n), [3, 1, 2]);
+  assert.strictEqual(r.warnings.length, 1);
+});
+
+t('a field only the right side of a join has is not reported as missing', () => {
+  // `on` is named on both sides. The right-hand records live in `with`, so a
+  // field only they have cannot be reported as a field no record has — it is a
+  // join that can never match, which is a different mistake to make.
+  const rows = '[{"id":1},{"id":2}]';
+  assert.strictEqual(warningsFor([{ op: 'join', with: [{ id: 2, c: 'DK' }], on: 'id' }], rows).length, 0);
+  // Neither side having it is the mistake worth naming.
+  assert.strictEqual(warningsFor([{ op: 'join', with: [{ id: 2, c: 'DK' }], on: 'idd' }], rows).length, 1);
+});
+
+t('rows that are not records are not fields nobody has', () => {
+  // A step over values has no fields to miss, and `pick` reports the row it
+  // cannot read in its own error. The check must not pile a second, vaguer
+  // complaint on top of it.
+  const r = runSQL('[1,2,3]', 'json', [{ op: 'sort', by: 'n' }], 'json');
+  assert.deepStrictEqual(r.warnings, []);
+  assert.strictEqual(r.error, undefined);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
