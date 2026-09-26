@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T48)
+Opdateret: 2026-09-26 (T49)
 
 
 ## Mission
@@ -14,6 +14,8 @@ Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1'
 **Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T48-iterationen):** uændret for **trettende** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
 **VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/xml-list-roundtrip` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
+
+**Næste iteration:** **T49 er færdig med commit `b1a012d` på `ceo/csv-duplicate-headers`** (samme branch som T48), og den lå i samme time, fordi T48's gate var grøn med et kvarter tilbage og T47 selv havde peget på målet. Den **måtte den flade T47 skrev som sin egen og lod ligge** — skriverne læser et navn fra foreningen af alle rækkers nøgler — og fandt to fejl i de samme fire linjer: `row[name]` gennem prototype-kæden skrev **`function Object() { [native code] }`** i CSV-, table- og SQL-output i stilhed, og `unionKeys`' `Object.keys(data[0])` dræbte de tre formater med en rå JavaScript-fejl på `[null, …]`, mens JSON, XML og YAML skrev filen. Rettelsen er `readField` — samme funktion, samme fire steder, ingen ny regel — og SQL's egen nøgleforening er lagt sammen med `unionKeys`, så de to ikke kan komme i utakt. Deploy-stillen er uændret, så bunken er **toogtyveen** commits på **toogtyveen** branch uden merge; kør `npm run check:deploy` først, og er `DEPLOY-MISSING` væk, merges hele bunken til `main` og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal næste opgave være **T50**, målt før den skrives, og den har to kandidater, begge målt i denne iteration og begge **beslutninger** snarere end fejl: (a) **en række der ikke er en post** skrives nu i stilhed i de flade formater, mens T14 advarsler om den modsatte fejl i den anden ende af den samme linje — skal den advares på samme måde, eller er paddingen/den tomme celle den rigtige stilhed? (b) **`reportCSVTypeLoss` tæller en værdi pr. kolonne og spørger `readField` nu**, så et arvet medlem kan ikke længere tælle med, men spørgsmålet om en *manglende* værdi i en CSV-kolonne (`{a:1}` og `{b:2}` → `a`-kolonnen er halvt tom) er stadig ubesvaret og er samme klasse. Uden svar gør næste iteration (a), fordi den lige berører det brugeren ser.
 
 **Næste iteration:** T48 er færdig med commit `e768088` på `ceo/csv-duplicate-headers`, bygget oven på `ceo/inherited-field-reads`, og har samme grund: rører `site/engine.js`. Den **afveg fra det mål T47 skrev ned** (foreningen af alle rækkers nøgler) og fandt i stedet CSV-læserens anden ende af T43's kollision: et hoved med to ens navne læses til ét felt, den første kolonne forsvinder i stilhed, og en kort række gør den endda til en tom streng. Rettelsen er `duplicateHeaderWarning` og en sammenligning pr. kolonne-position, fordi min første version læste posten — som kun holder den sidste værdi — altså stillede den tabte værdi over for sig selv. Deploy-stillen er uændret, så bunken er **enogtyve** commits på **toogtyveen** branch uden merge; kør `npm run check:deploy` først, og er `DEPLOY-MISSING` væk, merges hele bunken til `main` og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal næste opgave være **T49**, målt før den skrives, i **den anden ende af den målte kollision**: den korte CSV-række. Den er lovlig RFC 4180, så den er ikke en fejl i sig selv — men `a,b` + `1` → `{a:1,b:""}` gør en værdi til en tom streng i stilhed, præcis den klasse T14 advarsler om på den anden side, og den er målt uændret syv gange. Spørgsmålet er om en kort række skal advares som en lang række gør, eller om paddingen er den rigtige stilhed. T47's eget mål (foreningen af alle rækkers nøgler i skriverne) er **stadig ikke målt** og skal ikke tabes.
 
@@ -160,6 +162,36 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - 2026-09-26 ca. 18:0x CEST: **T47 gennemført på `ceo/inherited-field-reads` (branch fra `ceo/xml-prototype-keys`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **tolvte** gang i træk, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — bunken er nu **niogtyve** commits på **enogtyve** branch uden merge. Emnet var den flade T46 skrev som sit mål: **de steder der læser et navn uden at skrive det** — `sort --by`, `unique --by`, `group --by`, `flatten --field`, `join --on` — altså samme spørgsmål, ét niveau længere inde. 14 varianter målt på den rigtige binary **før** koden blev rørt, plus én måling der blev til to fund undervejs. Se punkt 47.
 
 - 2026-09-26 ca. 18:3x–19:0x CEST: **T48 gennemført på `ceo/csv-duplicate-headers` (branch fra `ceo/inherited-field-reads`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **trettende** gang i træk, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — bunken er nu **enogtyve** commits på **toogtyveen** branch uden merge. **Jeg afveg fra det mål T47 skrev som næste opgave** (foreningen af alle rækkers nøgler, dens fund 3): målingen fandt først et hul, der fjerner data i stilhed, og det var det stærkere fund. Emnet var derfor **den anden ende af den samme kollision T43 målte fra skriverens side**: et CSV-hoved, der navner to kolonner ens. 16 varianter målt på den rigtige binary før koden blev rørt. Se punkt 48.
+
+- 2026-09-26 ca. 18:4x–19:0x CEST: **T49 gennemført på `ceo/csv-duplicate-headers` (samme branch som T48), ikke mergeret til `main`.** Samme time, fordi T48's gate var grøn med et kvarter tilbage, og T47 havde selv peget på det mål jeg så næste. Emnet var **den anden ende af T47's fund**: `unionKeys` tager et navn fra den første række der har det, og hver skriver spørger så de andre rækker med `row[name]` — altså gennem prototype-kæden. To fund i de samme fire linjer, begge målt på den rigtige binary før koden blev rørt. Se punkt 49.
+
+### 49. [x] Læs et navn fra nøgleforeningen som et felt, også i skriverne
+
+**Målt først, som altid.** 12 varianter gennem `run()` og gennem den rigtige binary. T47 rettede de seks læsesteder og skrev selv ned, at skriverne endnu ikke var målt — de har præcis samme fejl.
+
+**Fund 1: en JavaScript-funktions kildetekst skrevet i brugerens data.** Input `[{name:"a"},{other:1}]` med `rename name→constructor` gennem alle formater:
+
+```
+constructor,other
+a,
+function Object() { [native code] },1
+```
+
+SQL skrev den samme streng i en `VALUES`-række, og tabellen skrev den i en celle. **Alle seks prototype-navne** gør det (`toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`, `propertyIsEnumerable`, `toLocaleString`) — målt, ikke antaget. YAML og XML gør **ikke**, fordi de gennemgår hver ræks egne nøgler i stedet for at spørge unionen; det er derfor fundet er i præcis de tre flade formater. Exit 0, tom stderr, og de otte tegn `[native code]` i outputfilen. Det er **det samme fund som T47 fandt i `group --by toString`**, bare på den anden side af rækken: en runtime-funktion i stedet for brugerens værdi.
+
+**Fund 2: `null` som første række dræber tre formater med en rå JavaScript-fejl.** `unionKeys` seedede med `Object.keys(data[0])` uden spørgsmålstjek, **mens løkken under den allerede sprang rækker over der ikke var records** — kun sådet gjorde det. `[null,{"a":1}]` gav `Cannot convert undefined or null to object` i CSV, table og SQL, exit 1, besked fra JavaScript og ikke fra værktøjets sprog, mens JSON, XML og YAML skrev filen i ro og ro. Målt tilføje: det skal være **`null`**, ikke en skalar — `[5,{"a":1}]` gav exit 0 allerede, fordi `Object.keys(5)` er `[]` og ikke en fejl. Den forskel er grunden til, at jeg målte begge.
+
+**Rettelsen er T47's egen, genbrugt — ingen ny regel.** `readField` kaldes de fire steder der læste `row[name]`, og `readField` svarer nu det samme på en post der ikke er en post. SQL havde desuden **sin egen** nøgleforening (`[...new Set(data.flatMap(...))]`) ved siden af `unionKeys`; den bruger nu `unionKeys`, så de to ikke kan komme i utakt igen. Det er hele rettelsen: 26 linjer i to filer.
+
+**Én ting jeg troede var en fejl, og som er reglen.** `[null,{"a":1}]` skriver `a` / `""` / `1` i CSV, altså **en tom streng i citationer** for den række der ikke er en post, mens JSON/XML/YAML skriver bogstaveligt `null`. Det ser inkonsistent ud, men `""` er T43's regel for en enkolonnefil, og den er målt igen her: læseren læser `a
+
+1` tilbage som **én** række, fordi en tom linje er den blanke linje RFC 4180 tillader mellem records, og den spises. Den blotte linje taber rækken på vejen tilbage. Testen låser derfor både stavingen **og** round-trip'en.
+
+**Tænder, målt mod den gamle kode:** 4 af de 5 nye engine-tests fejler, de to af dem med præcis de målte symptomer (en funktion i cellen, `Cannot convert undefined or null to object`). **Begge** nye CLI-tests fejler på den rigtige binary med de samme to symptomer. Den femte engine-test låser `__proto__` som et rigtigt felt, som virker før og efter.
+
+**Gate:** `npm test` 192+151+87+6+39+4+173 med 0 fejl, `npm pack --dry-run` 5 filer uændret, `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0` og alle selftester grønne inkl. deploy-friskheds-selvfesten, `npm run audit:site` og `npm audit` uden fund. `site/engine.js` byte-identisk med `src/engine.js`, `try.html`-hash `395b8fc7` → `8c419dd0`, søgeindeks uændret på 104, ingen anden side ændret. **Ingen merge til `main`** — `DEPLOY-MISSING` står. Implementationscommit `b1a012d`.
+
+**Ingen `docs/cli.md`-ændring, og det er et valg:** de to fund er fejl i output, ikke dokumenteret adfærd, så der var ingen tekst der løb fra. Den nye adfærd — at CSV, table og SQL skriver en række der ikke er en post, i stedet for at dø — fortjener en linje i næste iterations research, fordi den er en **beslutning** (tavshed vs. advarsel, samme skelneline som T14 og T27) og ikke en fejlrettelse.
 
 ### 48. [x] Sig når et CSV-hoved navner den samme kolonne to gange
 
