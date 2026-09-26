@@ -150,12 +150,17 @@ function escapeSQLString(val) {
 }
 
 function sqlValue(val) {
-  if (val === null || val === undefined || val === '') return 'NULL';
+  // `null` and `undefined` are the absence of a value, so they become NULL.
+  // An empty string is a value: it becomes ''. Writing it as NULL silently
+  // changes every `WHERE col = ''` query after an import.
+  if (val === null || val === undefined) return 'NULL';
   if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
   if (typeof val === 'number' && Number.isFinite(val)) return String(val);
   const s = String(val);
-  // Numeric-looking strings stay unquoted so CSV numbers insert as numbers
-  if (/^-?\d+(\.\d+)?$/.test(s) && s.length < 16) return s;
+  // Numeric-looking strings stay unquoted so CSV numbers insert as numbers,
+  // but a leading zero marks an identifier rather than a number — a Danish
+  // postal code 0074 is not 74 — so those are quoted.
+  if (/^-?(0|[1-9]\d*)(\.\d+)?$/.test(s) && s.length < 16) return s;
   return `'${escapeSQLString(s)}'`;
 }
 

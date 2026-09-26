@@ -477,9 +477,40 @@ t('SQL escapes single quotes', () => {
   if (!r.text.includes("'O''Brien''s Shop'")) throw new Error(r.text);
 });
 
-t('SQL NULL for empty values', () => {
-  const r = runSQL('[{"a":null,"b":""}]', 'json', [], 'sql');
-  if (!r.text.includes('(NULL, NULL)')) throw new Error(r.text);
+t('SQL NULL only for null and missing, never for an empty string', () => {
+  // An empty string is a value, not an absence. Emitting NULL for it made
+  // `WHERE middle = ''` return nothing after importing a CSV with a blank
+  // field, and it was silent: exit 0, valid SQL.
+  const r = runSQL('[{"a":null,"b":""},{"a":1,"b":2},{"a":3}]', 'json', [], 'sql');
+  const rows = r.text.trim().split('\n').slice(2)
+    .map(l => l.trim().replace(/,$/, '').replace(/;$/, ''));
+  if (rows[0] !== "(NULL, '')") throw new Error('null and empty string mixed up: ' + r.text);
+  if (rows[1] !== '(1, 2)') throw new Error(r.text);
+  if (rows[2] !== '(3, NULL)') throw new Error('a key no record has must be NULL: ' + r.text);
+  if (r.text.includes('NULL, NULL')) throw new Error('an empty string was written as NULL');
+});
+
+t('SQL keeps the empty string through a CSV round trip', () => {
+  const r = runSQL('name,middle\nAlice,\nBob,Quinn\n', 'csv', [], 'sql');
+  if (!r.text.includes("('Alice', '')")) throw new Error(r.text);
+  if (r.text.includes('NULL')) throw new Error('a blank CSV field is a value, not NULL: ' + r.text);
+  // The value survives the reader too, so the loss is not moved to the next hop.
+  const back = runSQL('name,middle\nAlice,\nBob,Quinn\n', 'csv', [], 'csv');
+  if (back.text !== 'name,middle\nAlice,\nBob,Quinn') throw new Error('lost on the way back: ' + JSON.stringify(back.text));
+});
+
+t('SQL quotes numeric strings with leading zeros', () => {
+  // A Danish postal code is an identifier, not the number 74.
+  const r = runSQL('name,zip\nAlice,0074\nBob,2100\n', 'csv', [], 'sql');
+  if (!r.text.includes("('Alice', '0074')")) throw new Error('leading zero lost: ' + r.text);
+  if (!r.text.includes("('Bob', 2100)")) throw new Error('plain number should stay numeric: ' + r.text);
+  // Padded decimals are identifiers for the same reason; real numbers are not.
+  const dec = runSQL('[{"v":"00.5"},{"v":"0.5"},{"v":"-0074"},{"v":0.5}]', 'json', [], 'sql');
+  const rows = dec.text.trim().split('\n').slice(2).map(l => l.trim().replace(/,$/, '').replace(/;$/, ''));
+  if (rows[0] !== "('00.5')") throw new Error(r.text);
+  if (rows[1] !== '(0.5)') throw new Error('a plain decimal must stay numeric: ' + dec.text);
+  if (rows[2] !== "('-0074')") throw new Error('a signed postal code lost its zeros: ' + dec.text);
+  if (rows[3] !== '(0.5)') throw new Error('a real number must stay numeric: ' + dec.text);
 });
 
 t('pipeline + sql works', () => {

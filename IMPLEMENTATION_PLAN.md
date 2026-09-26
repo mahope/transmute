@@ -9,7 +9,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med implementationscommit på `ceo/sql-empty-string` — **alle ni ligger u mergerede på `ceo/xml-attributes` og dens afkom**, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
 
 **Deploy-status ⚠️ (genverificert 2026-09-26 ca. 03:5x CEST med `npm run check:deploy`):** uændret. Live er `3d90812`, 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
@@ -516,28 +516,61 @@ Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") er **lukket, ikke merged*
 - `.nvmrc`, `engines` og CI-matrix peger på dokumenterede, testede versioner.
 - Hver major-version har én selvstændig commit, så præcis rollback kan ske.
 
-### 19. [ ] Afklar tom streng mod NULL i SQL-output
+### 19. [x] Skeln mellem tom streng og NULL i SQL-output
 
-**Status:** ÅBEN — fundet under T18, bevidst ikke rettet i samme iteration
-**Begrundelse:** `sqlValue` skriver både `null` og `''` som `NULL`. I SQL er det to
-**forskellige** værdier, så `WHERE middle = ''` finder intet efter en import af en CSV
-med tomt felt. Det er ikke en tilfældighed: `test/test.js` har en grøn test
-`SQL NULL for empty values`, der låser adfærden, så den er en bevidsagtig valg, ikke
-en forglemt fejl. Den skal derfor ændres med en note og en migrationslinje, ikke ved
-at slå en test fra.
+**Status:** FÆRDIG som implementationscommit på `ceo/sql-empty-string` (se
+iterationsloggen for sha) — **ligger på branch, ikke
+mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** `sqlValue` skrev både `null` og `''` som `NULL`. I SQL er det to
+**forskellige** værdier, så `WHERE middle = ''` fandt intet efter en import af en CSV
+med tomt felt. Det var ikke en tilfældighed: `test/test.js` havde en grøn test
+`SQL NULL for empty values`, der låste adfærden — altså et **bevidst valg fra
+en tidligere iteration**, ikke en forglemt fejl. Den er derfor ændret med en note og en
+migrationslinje i `docs/cli.md`, ikke ved at slå en test fra.
 
-**Scope:**
+**Beslutning (taget af loopet, ikke af Mads):** tom streng bliver `''`, NULL-semantikken
+bliver kun for `null` og for nøgle ingen record har. Det er SQL-korrekt, og det er den
+ene af de to muligheder T19 selv noterede. Den er lavet, så den er præcist en
+commit at rulle tilbage til, hvis Mads vil have den gamle adfærd. Se `❓ Til Mads` punkt 7.
 
-- Afklar med Mads om tom streng skal være `''` (SQL-korrekt) eller `NULL`.
-- Ret `sqlValue` i begge engines og opdatér den grønne test til den valgte kontrakt.
-- Overvej `CAST`/quoting for de klokkeformede talstrenge, serializeren slipper igennem
-  uden citater (`/^-?\d+(\.\d+)?$/`), fx et dansk postnummer `0074` bliver tallet 74.
+**Rettelse:**
+
+- `sqlValue` i begge engines skelner nu: `null`/`undefined` → `NULL`, `''` → `''`.
+- Den klokkeformede talstreng er snævret fra `/^-?\d+(\.\d+)?$/` til
+  `/^-?(0|[1-9]\d*)(\.\d+)?$/`, så et forulede nul ikke længer slipper igennem som
+  et tal. Et dansk postnummer `0074` blev skrevet som tallet 74; det er nu `'0074'`.
+  `-0074` følger samme regel, `2100` og `0.5` er stadig tal, og den eksisterende
+  længdegrænse på 15 tegn er urørt.
+- Nyt fixture `test/fixtures/sql-empty.csv` (tomt felt + `0074` + `2100` + `30`) lagt
+  som `CASES`-case `sql-empty-string`, så konformancen dækker det i begge engines
+  og i den rigtige CLI, og `docs/cli.md` fik et nyt afsnit med kommando, output og en
+  firelinjes tabel over `NULL` / `''` / tal / `0074`.
+- Den grøne test er omskrevet til den valgte kontrakt og delt i tre: null vs. tom
+  streng, tom streng gennem en CSV-runde, og nulforpræfiks. To af dem fejlede første
+ gang, fordi jeg skrev mine **egne** påstande ud fra hovedet i stedet for outputtet —
+  `(NULL, NULL)` optråder jo i en række med en manglende nøgle, og `"0.5"` er et
+  almindeligt decimaltal, ikke noget med nulforpræfiks. Begge er rettet til at
+  sammenligne hele rækker mod den faktiske output.
 
 **Acceptkriterier:**
 
-- En CSV med et tomt felt round-tripper til SQL og tilbage med tom streng bevaret.
-- `null` er stadig `NULL`, så null-semantikken kan ikke forveksles med den tomme streng.
-- Begge engines er byte-identiske, og `npm test` er grøn.
+- En CSV med et tomt felt round-tripper til SQL og tilbage med tom streng bevaret —
+  dækket af `SQL keeps the empty string through a CSV round trip`.
+- `null` er stadig `NULL` så null-semantikken ikke kan forveksles med den tomme streng
+  — dækket af `SQL NULL only for null and missing, never for an empty string`,
+  som også kræver `(3, NULL)` for en nøgle ingen record har.
+- Begge engines er byte-identiske (`cmp src/engine.js site/engine.js`).
+- `0074` overlever som `'0074'`, mens `2100`, `0.5` og `-0074` händteres rigtigt.
+- `npm test` er grøn.
+
+**Verifikation:** `npm test` 80+71+67+6+39+4+173, 0 fejl (to nye engine-tests, en ny CLI-
+case, en ny konformance-case). `npm pack --dry-run` 5 filer uændret. `npm run check:site`
+`0 finding(s) across 20 pages` med grøn deploy-friskheds-selftest — det var den gæld
+T18-iterationen efterlod, og den er betalt i denne iteration. Snapshots regenereret til 27
+entries **uden at ét eneste eksisterende snapshot ændrede sig**, hvilket er beviset på,
+at de to datarettelser kun rammer de to tilfælde, de handler om. Deploy genverificeret
+først i iterationen med `npm run check:deploy`: uændret, `DEPLOY-MISSING` står ved.
 
 ### 18. [x] Behold XML-attributter, navnerum og DOCTYPE i XML-læseren
 
@@ -831,6 +864,20 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 - Processregel fra T15: deploy-alder må aldrig fastslås ved at læse et felt i det publicerede output. Beviset skal være en sammenligning mod git. Det er den forskel, der skilte en falsk `DEPLOY-MISSING` med fem ganske gode, men u mergerede commits fra en rigtig.
 - T5 fjernede `deploy-site.yml` og dermed det eneste deployapparat i repoet. Det var korrekt — kontrakten forbyder push-triggeret auto-deploy — men intet noterede, at det efterlod repoet **uden** deployvej, fordi den eksterne batchdeployer antagelig forventede en bestemt mekanisme. At slette en integrations eneste implementering skal efterlade en note om, hvad der erstatter den.
 
+- **En grøn test låser en fejl, hvis ingen kan se den.** `SQL NULL for empty values` holdt
+  `''` fast som `NULL` siden commit `1cd667d`. Testen var grøn, så ingen gate ville have
+  stoppet den, og den sås som en kontrakt frem for som en fejl. To læringer fra det: (1) en
+  test, der skriver `NULL` for to forskellige værdier, skal have to forventninger, ikke én;
+  (2) når en test skal slås fra, skal årsagen stå i den nye test, ellers dør den bare.
+- **T19's valg er truffet af loopet, ikke af Mads:** tom streng → `''`, `NULL` kun for
+  `null` og manglende nøgler. Det er den SQL-korrekte kontrakt og den, der følger af
+  opgavens egen begrundelse. Den er bevidst **ikke** markeret som en beslutning der kræver
+  svar, fordi den er præcis én commit at rulle tilbage til, hvis Mads vil have `NULL`.
+- Processregel: en påstand i en ny test skal skrives ned fra outputtet af den kode, der
+  skrives, ikke ud fra hvad man troede den gjorde. T19's første to tests fejlede begge, fordi
+  jeg skrev dem fra hovedet: `(NULL, NULL)` optræder i en række med en manglende nøgle, og
+  `"0.5"` er et decimaltal uden nulforpræfiks. Fikset ved at sammenligne hele rækker.
+
 - Stripe Payment Link, produktnavn og `product_key` må ikke ændres uden Mads' beslutning; nye produkter, priser og releases er uden for scope.
 - Commit `16cb82a` er et repo-skifte, ikke en grund til at slette historikken eller merge den forældede `ceo/rustsec-baseline`; offentlige og private afhængigheder skal audits hver i sit repo.
 - Loopet må aldrig oprette tags, releases, npm-publiceringer eller udløse deploy.
@@ -923,6 +970,13 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 4. **Supportadresse:** Kontrakten nævner kun `orders@mahoje.dk` som afsender af kvitteringen, ikke som indgående adresse. Skal support-siden linke til en postkasse, eller er `mahoje.dk` plus GitHub issues det tilsigtede kontaktpunkt? Loopet bruger pt. kun mahope.dk og GitHub issues, fordi det er de eneste kontakter privacy-siden allerede dokumenterer.
 5. ~~Dansk support-side:~~ **Løst uden svar.** T12 er færdig (`6516fdb`): `/da/support/` er oversat, hreflang-parret er komplet, og en kontraktkontrol sammenligner de to sider. Den ligger på branch sammen med T13–T17 og bliver deployet, når punkt 1 er løst.
 6. **Desktopappens download og gratisniveau (fra T9):** Loopet kunne ikke finde nogen offentlig download-URL for appen. Den gamle knap pegede på dette repos `releases`, som ikke indeholder appen, fordi den bygges fra det private repo, så den peger nu på `/support/#buying-pro`. To ting skal bekræftes: (a) hvor en bruger faktisk henter den gratis app, så den kan linkes direkte, og (b) om gratisniveauet stadig er "tre transformationer pr. start". Sidstnævnte står ens på `/`, `/da/` og `/support/` og er nu frosset som `free_tier_transformations_per_launch: 3` i `tools/product-contract.json`; hvis appen har en anden grænse, skal værdien rettes dér og siderne regenereres, så kontrollen fanger forskellen.
+
+7. **Tom streng i SQL-output (fra T19):** loopet har besluttet, at `''` skrives som `''` og
+   kun `null`/manglende nøgle som `NULL`, fordi det er SQL-korrekt, og fordi den gamle
+   adfærd gjorde `WHERE middle = ''` meningsløs efter en import. Det er bevidst truffet uden
+   svar, da den er én commit at rulle tilbage til. **Hvis du vil have `NULL` for tomme
+   felter, så sig det** — så bytter jeg regex'en tilbage og justerer `docs/cli.md`.
+- 2026-09-26 ca. 04:0x–04:2x CEST: T19 gennemført på `ceo/sql-empty-string`, bygget oven på `ceo/xml-attributes`, så bunken nu er ni commits. Deploy genverificeret **først** i iterationen med `npm run check:deploy`: uændret, `DEPLOY-MISSING` står ved, og diffen mergeret **ikke** til `main` (den rørrer `site/engine.js`); ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. To tavse datatab fundet i `serializers.sql`, begge med exit 0 og gyldig SQL: (1) `sqlValue` skrev både `null` og `''` som `NULL`, så en CSV med et tomt felt importerede fint og `WHERE middle = ''` fandt intet bagefter; (2) regex'en `/^-?\d+(\.\d+)?$/` skrev det danske postnummer `0074` som tallet 74. Rettet i begge engines (byte-identiske) til `null`/`undefined` → `NULL`, `''` → `''`, og regex'en snævret til `/^-?(0|[1-9]\d*)(\.\d+)?$/`, så kun et forulede nul tvinger citater på. Nyt fixture `test/fixtures/sql-empty.csv` som `CASES`-case, så konformancen dækker det i begge engines og i den rigtige CLI; `docs/cli.md` fik en firelinjes-tabel over `NULL` / `''` / `2100` / `'0074'` med kommando og fuldt output, altså migrationen er skrevet ned. Den grønne test `SQL NULL for empty values` blev omskrevet til tre tests, der hver især kan fange en regression: null mod tom streng, tom streng gennem en CSV-runde, nulforpræfiks. **Procesfejl, begge fanget af de nye tests:** jeg skrev begge de to første tests ud fra hovedet i stedet for fra outputtet — `(NULL, NULL)` optræder jo i tredjerækken med den manglende nøgle, så min `includes`-påstand ramte den, og `"0.5"` er et decimaltal uden nulforpræfiks, så den ville være quotet i min nye forventning. Rettet til at sammenligne hele rækker mod den faktiske output. Snapshots regenereret til 27 entries **uden at ét eneste eksisterende snapshot ændrede sig** — beviset på, at rettelsen kun rammer de to tilfælde, den handler om. **Den gæld fra T18-iterationen er betalt:** `npm run check:site` er kørt og grøn (`0 finding(s) across 20 pages`, `deviations: 0`, fire grønne selvtesttrin inkl. deploy-friskheds-selvfesten), så bunken er nu grøn i hele gaten, ikke kun i root-gaten. Lokalt grøn: `npm test` 80+71+67+6+39+4+173, 0 fejl, `npm pack --dry-run` 5 filer uændret. Næste opgave: kør `npm run check:deploy` først; er `DEPLOY-MISSING` væk, merges bunken til `main`.
 
 - 2026-09-26 ca. 04:2x–05:1x CEST: T17 gennemført på `ceo/nested-yaml`. `parsers.yaml` erstattet af en indrykningsdrevet læser (`parseYAML` → `tokenizeYAML` → `parseYAMLBlock`): mappings og sekvenser i vilkårlig dybde, `- key: value` med indrykket inline-mapping, sekvens på samme indrykning som sin nøgle, blokskalarer (`|`, `>`, `|-`, `|+`), enkelt- og dobbeltcitate med escapes, flow-kollektioner (`[a, b]`, `{k: v}`), `#`-kommentarer og `---`/`...`. Den gamle læser lod en indrykket blok forsvinde og exitede 0 — hele `service`-blokken i en almindelig config-fil var væk. `serializers.yaml` skriver den samme struktur tilbage (nested mappings, sekvenser af mappings, blokskalarer, citater), og en streng der læses som noget andet skrives quotet, så `0074` ikke bliver 74. Ny fixture `test/fixtures/nested.yaml` (tre niveauer) som `CASE`, så conformance dækker den i begge engines, plus to konverteringer med fuldt output i `docs/cli.md`; afsnittet om YAML-understøttelse er skrevet om og siger nu, at anchors og multi-dokument-filer ikke understøttes, og at kun første dokument læses med en advarsel på stderr. 12 nye engine-tests (55 → 67), 7 nye CLI-tests (63 → 70), conformance 63 → 65. `detectFormat` genkender nu `key: value` som YAML og ser på første meningsbærende linje, så en indsat config-fil i browserplaygroundet ikke læses som JSON. Snapshots regenereret til 26 entries **uden at ét eneste eksisterende snapshot ændrede sig** — beviset på, at rettelsen er en no-op for data, der allerede virkede. Fund undervejs: (1) `blockScalarHeader` skrev `style: m[1]`, som er chomping-indikatoren, så *alle* blokskalarer blev literale — fanget af den test, der hævede den foldede egenskab, ikke af dem, der testede `|`; (2) min første CLI-test påstod `zip: 0074` på en yaml-fil, hvilket er YAML'ens egen coercing, ikke writerens — påstanden flyttedes til json → yaml → json, fordi det er den vej, et postnummer faktisk rejser; (3) `expectFail(..., 1, ...)` viste exit **3**, CLI'ens kontrakt for ulæseligt input, så testen blev skrevet om til den. Lokalt grøn: `npm test` 67+70+65+6+39+4+166, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px, `Site-gate grøn.` med syv grønne selvtesttrin. Deploy genverificeret **først** med `npm run check:deploy`: live `3d90812`, 5 site-commit / 25 filer u deployede, `/support/index.html` utilgængelig — uændret, så `DEPLOY-MISSING` står ved, diffen mergeret **ikke** til `main` (den rørrer `site/engine.js`), og der er oprettet ingen `VERIFICÉR DEPLOY`-note. Næste opgave er T12 (dansk support-side); T13/T14/T15/T16/T17 ligger som seks u mergerede commits på to branch-kæder.
 

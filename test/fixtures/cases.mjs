@@ -296,5 +296,18 @@ export const CASES = [
     // string. A line-for-line reader kept only the two top-level lists, so
     // the whole `service` block was missing from a run that exited 0.
     command: `transmute test/fixtures/nested.yaml --output json`
+  },
+  {
+    name: 'sql-empty-string',
+    docOutput: "('Alice', '', '0074', 30)",
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'sql-empty.csv'),
+    pipeline: [],
+    outputFormat: 'sql',
+    // A blank CSV field and a postal code that starts with a zero. The writer
+    // used to turn the blank field into NULL and the 0074 into 74, so both
+    // values were wrong in the database after a clean, silent import.
+    command: `transmute test/fixtures/sql-empty.csv --output sql`
   }
 ];
