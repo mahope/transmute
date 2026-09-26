@@ -314,6 +314,24 @@ function setField(record, key, value) {
   record[key] = value;
 }
 
+/**
+ * Read a field the record has, and nothing else.
+ *
+ * `item[by]` with a dot and a bracket answers a different question than the one
+ * the pipeline asked: it walks the prototype chain, so a name no record has but
+ * every object inherits reads as a value the file never held. `group` then wrote
+ * that value as its group key — the table showed `function Object() { [native
+ * code] }` and the JSON dropped the field — and `join` matched both sides on the
+ * string of the same inherited member.
+ *
+ * `undefined` is what a missing field means everywhere else in this engine, so
+ * it is what this returns, and no caller can tell a missing field from a
+ * prototype member any more.
+ */
+function readField(record, key) {
+  return hasField(record, key) ? record[key] : undefined;
+}
+
 function noteDuplicateKey(warnings, format, key, first, second) {
   if (!Array.isArray(warnings)) return;
   if (first.value === second.value) return;
@@ -805,7 +823,7 @@ const operations = {
     const by = params.by;
     const dir = params.dir === 'desc' ? -1 : 1;
     return [...data].sort((a, b) => {
-      const va = a[by], vb = b[by];
+      const va = readField(a, by), vb = readField(b, by);
       // Two rows that both lack the field are equal, so the comparator has to
       // say so. It answered `1` for every pair, which is not an order at all:
       // the sort was then free to hand back any order it liked, and the only
@@ -822,7 +840,7 @@ const operations = {
     const by = params.by;
     const seen = new Set();
     return data.filter(item => {
-      const key = by ? item[by] : stableKey(item);
+      const key = by ? readField(item, by) : stableKey(item);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -836,7 +854,7 @@ const operations = {
     // group. A Map has no inherited keys, so every value stays a value.
     const groups = new Map();
     for (const item of data) {
-      const key = item[by] ?? '(null)';
+      const key = readField(item, by) ?? '(null)';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(item);
     }
@@ -869,7 +887,7 @@ const operations = {
     const field = params.field;
     const result = [];
     for (const item of data) {
-      const arr = item[field];
+      const arr = readField(item, field);
       if (Array.isArray(arr)) {
         for (const sub of arr) {
           if (typeof sub === 'object' && sub !== null) {
@@ -910,12 +928,27 @@ const operations = {
   join: (data, params) => {
     const rows = Array.isArray(params.with) ? params.with : [];
     const on = params.on;
-    const index = new Map(rows.map(r => [String(r[on]), r]));
+    // A row without the join field has no key to match on, so it is not indexed
+    // and cannot be matched. Both halves used to stringify a missing key to
+    // `"undefined"`, which matched every left row to the *last* right-hand
+    // record, so a join on a field nobody has invented a value for all of them
+    // — while the warning said the rows were dropped, which is the opposite of
+    // what the file said afterwards.
+    const key = (row) => {
+      const value = readField(row, on);
+      return value === undefined ? undefined : String(value);
+    };
+    const index = new Map();
+    for (const row of rows) {
+      const k = key(row);
+      if (k !== undefined && !index.has(k)) index.set(k, row);
+    }
     const keepMissing = params.keep === 'left' || params.keep === 'all';
     const prefix = params.prefix ?? '';
     const result = [];
     for (const item of data) {
-      const match = index.get(String(item[on]));
+      const own = key(item);
+      const match = own === undefined ? undefined : index.get(own);
       if (match) {
         const merged = { ...item };
         for (const [k, v] of Object.entries(match)) {
@@ -923,9 +956,14 @@ const operations = {
           // one on the right. It asked about the unprefixed one, so a join that
           // passed a `prefix` — which exists precisely to survive a collision —
           // dropped the field anyway and still exited 0. `docs/cli.md` and the
-          // join guide both promise that a prefix prevents the collision.
+          // join guide both promise that a prefix prevents the collision. It
+          // asked with `in`, which walks the prototype chain, so a right-hand
+          // field named `toString` or `__proto__` was dropped as if the left
+          // row had it, and the write that followed was an assignment — a
+          // prototype write for that one name. `hasField` and `setField` are
+          // the same two calls `pick` and `rename` use.
           const target = prefix + k;
-          if (k !== on && !(target in merged)) merged[target] = v;
+          if (k !== on && !hasField(merged, target)) setField(merged, target, v);
         }
         result.push(merged);
       } else if (keepMissing) {
@@ -2442,11 +2480,18 @@ const FIELD_EFFECTS = {
   group:   () => 'every row landed in the group "(null)"',
   rename:  (field, rows, params) => `it was not renamed to "${params.mapping[field]}"`,
   flatten: () => 'no row was expanded',
-  join:    () => 'neither side has it, so every row was dropped'
+  join:    (field, rows, params) => (keepsUnmatched(params)
+    ? 'neither side has it, so every row was kept unchanged'
+    : 'neither side has it, so every row was dropped')
 };
 
 function fieldList(val) {
   return Array.isArray(val) ? val : [val];
+}
+
+/** `keep: left` and `keep: all` keep the rows a join cannot match. */
+function keepsUnmatched(params) {
+  return params.keep === 'left' || params.keep === 'all';
 }
 
 /**
@@ -2465,16 +2510,32 @@ function reportMissingFields(data, step, warnings) {
   // cannot work on one says so in its own error.
   if (records.length === 0) return;
   const present = new Set(records.flatMap(r => Object.keys(r)));
-  // `join` names its field on both sides, and the right-hand records are in
-  // `with` rather than in `data`. A field only the right side has is a match
-  // that cannot happen, but it is not the same mistake as a field neither side
-  // has, so it is not reported as one.
   const right = step.op === 'join' && Array.isArray(step.with)
     ? step.with.filter(isPlainObject)
     : [];
   for (const field of names(step)) {
-    if (typeof field !== 'string' || present.has(field)) continue;
-    if (right.length > 0 && right.some(r => Object.prototype.hasOwnProperty.call(r, field))) continue;
+    if (typeof field !== 'string') continue;
+    // `join` is the one step with a field on two sides, and the two mistakes are
+    // not the same: a key only one side has cannot match anything, and a join
+    // that cannot match anything either drops every row or hands back the file
+    // unchanged, both exit 0 and both silent. So the side that has the field is
+    // named, because "the key is not on the left" and "the key is not on the
+    // right" are different typos in a pipeline and the fix for each is different
+    // too. Before this, only the case where *neither* side had it said anything.
+    if (right.length > 0) {
+      const rightHas = right.some(r => hasField(r, field));
+      if (present.has(field)) {
+        if (!rightHas) {
+          warnings.push(`join: no record on the right has a field named "${field}"; it is on the left, so no row could match`);
+        }
+      } else if (rightHas) {
+        warnings.push(`join: no record on the left has a field named "${field}"; it is on the right, so no row could match`);
+      } else {
+        warnings.push(`join: no record has a field named "${field}"; ${FIELD_EFFECTS.join(field, data.length, step)}`);
+      }
+      continue;
+    }
+    if (present.has(field)) continue;
     warnings.push(`${step.op}: no record has a field named "${field}"; ${FIELD_EFFECTS[step.op](field, data.length, step)}`);
   }
 }

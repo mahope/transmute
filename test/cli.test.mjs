@@ -1427,5 +1427,43 @@ test('a one-column CSV keeps its empty rows, and says which columns lose their t
   }
 });
 
+test('a join on a field neither side has invents nothing, and says why', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-join-'));
+  try {
+    const path = join(dir, 'people.json');
+    writeFileSync(path, '[{"id":"1","name":"Ada"},{"id":"2","name":"Bo"}]', 'utf-8');
+    // Every left row used to be merged with the *last* right-hand record, so
+    // `city` — a field the file never had — was written into both rows, and
+    // the warning said the rows were dropped. Exit 0 either way, because a
+    // field name in no record is a warning, not a failure. The key is on the
+    // right here, which is the half T26 read as "no mistake at all".
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'json', '--pipe',
+      '[{"op":"join","on":"city","with":[{"id":"1","city":"Aarhus"},{"id":"2","city":"Odense"}]}]'],
+    { encoding: 'utf-8' });
+    assert.equal(r.status, 0, `exit ${r.status}: ${r.stderr}`);
+    assert.ok(r.stderr.includes('no record on the left has a field named "city"'), r.stderr);
+    assert.equal(r.stdout, '[]\n', r.stdout);
+    assert.ok(!r.stdout.includes('Aarhus'), r.stdout);
+    assert.ok(!r.stdout.includes('Odense'), r.stdout);
+    // A key no side has drops every row, which is what the warning has always
+    // said — before this it said it while merging them all with one record.
+    const neither = spawnSync(process.execPath, [cli, path, '-o', 'json', '--pipe',
+      '[{"op":"join","on":"nope","with":[{"id":"1","city":"Aarhus"}]}]'], { encoding: 'utf-8' });
+    assert.equal(neither.status, 0, `exit ${neither.status}: ${neither.stderr}`);
+    assert.ok(neither.stderr.includes('neither side has it, so every row was dropped'), neither.stderr);
+    assert.equal(neither.stdout, '[]\n', neither.stdout);
+    // A right-hand field named after an `Object.prototype` member is a field
+    // like any other: the collision guard used to ask the prototype chain, so
+    // the value was dropped as if the left row already had it.
+    const inherited = spawnSync(process.execPath, [cli, path, '-o', 'json', '--pipe',
+      '[{"op":"join","on":"id","with":[{"id":"1","toString":"x"}]}]'], { encoding: 'utf-8' });
+    assert.equal(inherited.status, 0, `exit ${inherited.status}: ${inherited.stderr}`);
+    assert.equal(inherited.stderr, '', inherited.stderr);
+    assert.equal(JSON.parse(inherited.stdout)[0].toString, 'x', inherited.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

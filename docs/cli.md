@@ -1124,6 +1124,40 @@ printf '[{"id":1,"email":"a@x.dk"},{"id":2},{"id":3,"email":"c@x.dk"}]' \
 Warnings are for stderr only. A `2>/dev/null` around a run, or a `--out` file,
 never changes the file that is written.
 
+#### Field names JavaScript already has
+
+`toString`, `constructor`, `valueOf`, `hasOwnProperty`, `__proto__` and the rest
+of `Object.prototype` are names every object answers to. A record from a JSON,
+CSV, YAML or XML file only has the fields the file gave it, so a step asked for
+one of those names is asked for a field **no record has** — the same case as the
+section above, and it is judged the same way:
+
+```bash
+printf '[{"id":1,"name":"Ada"},{"id":2,"name":"Bo"},{"id":3,"name":"Cy"}]' \
+  | transmute --pipe '[{"op":"group","by":"toString"}]' --output table
+```
+
+```
+Warning: group: no record has a field named "toString"; every row landed in the group "(null)"
++--------+-------+-------------------------------------------------------------------+
+| key    | count | items                                                             |
++--------+-------+-------------------------------------------------------------------+
+| (null) | 3     | [{"id":1,"name":"Ada"},{"id":2,"name":"Bo"},{"id":3,"name":"Cy"}] |
++--------+-------+-------------------------------------------------------------------+
+(1 rows, 3 columns)
+```
+
+That table used to print `function Object() { [native code] }` as the group key
+— a JavaScript function read out of the runtime and written into your data — and
+the JSON output dropped the `key` field entirely, while the warning said the rows
+were in `(null)`. `sort` and `unique` compared rows on the same inherited
+function, and a `join` on that name matched every row to one arbitrary record on
+the other side.
+
+A field by one of those names that the file **does** have is an ordinary field.
+`{"toString":"x"}` in a JSON file, a `toString` column in a CSV, a `__proto__`
+key in YAML: they are read, written, joined and prefixed like any other name.
+
 ### When a row is not a record
 
 A field name no record has is a warning, because the next file may have it. A
@@ -1506,6 +1540,24 @@ transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","prefi
 A `prefix` only helps when the prefixed name is itself free. If the left record
 already has `was_status`, that field is dropped the same way, and the join says
 nothing about it — pick a prefix that is not already in use.
+
+A join key that only **one** side has cannot match anything at all, and which
+side it is missing from is the whole difference between two different typos in a
+pipeline, so stderr names the side:
+
+```bash
+printf '[{"id":"1","name":"Ada"},{"id":"2","name":"Bo"}]' \
+  | transmute --pipe '[{"op":"join","on":"city","with":[{"id":"1","city":"Aarhus"}]}]' --output json
+```
+
+```
+Warning: join: no record on the left has a field named "city"; it is on the right, so no row could match
+[]
+```
+
+The rows that cannot be matched are dropped, or kept unchanged with `keep: left`
+or `keep: all`, and the warning says which of the two happened. A key *neither*
+side has says so too, in the same words it always used: every row was dropped.
 
 ## Conversions
 

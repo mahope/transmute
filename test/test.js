@@ -2337,6 +2337,108 @@ test('the steps that name fields keep those fields', () => {
   assert.strictEqual(run('{"__proto__":"x","keep":"y"}', 'json', [], 'json').data[0]['__proto__'], 'x');
 });
 
+test('a step that reads a field name does not read the prototype', () => {
+  // The same rule one layer over, on the *read* side. `pick` asked `f in item`
+  // and every step that writes asked `key in record`, so a name the record does
+  // not have but inherits — `toString`, `constructor`, `__proto__` — was read as
+  // a value the file never had. `group` then wrote that value as its key: the
+  // table showed `function Object() { [native code] }` and the JSON dropped the
+  // field, while the warning said the rows landed in `(null)`.
+  const input = '[{"id":1,"name":"Ada"},{"id":2,"name":"Bo"},{"id":3,"name":"Cy"}]';
+  const pipe = (steps) => run(input, 'json', steps, 'json');
+  // A field name is either in the record or it is not. Here it is not, so
+  // `group` groups the way it groups for any missing field.
+  const grouped = pipe([{ op: 'group', by: 'toString' }]).data;
+  assert.strictEqual(grouped.length, 1);
+  assert.strictEqual(grouped[0].key, '(null)');
+  assert.strictEqual(typeof grouped[0].key, 'string');
+  // And the claim the warning makes about it is now true, instead of naming a
+  // group the output does not contain.
+  const warned = pipe([{ op: 'group', by: 'toString' }]);
+  assert.ok(warned.warnings.some(w => /every row landed in the group "\(null\)"/.test(w)),
+    JSON.stringify(warned.warnings));
+  // `sort` compares nothing but the missing field, so the rows keep their
+  // order; the row order is what a reader checks first.
+  assert.deepStrictEqual(pipe([{ op: 'sort', by: '__proto__' }]).data.map(r => r.id), [1, 2, 3]);
+  // `flatten` sees no array, so no row is expanded.
+  assert.strictEqual(pipe([{ op: 'flatten', field: 'constructor' }]).data.length, 3);
+  // The one that removes data: every row looked identical because they all
+  // carried the *same inherited function* as their key. T26 documented that
+  // answer for a field no record has, and it stands: one row, with the warning
+  // that says so. What changed is why they looked identical.
+  const unique = pipe([{ op: 'unique', by: 'toString' }]);
+  assert.strictEqual(unique.data.length, 1);
+  assert.ok(unique.warnings.some(w => /every row looked identical/.test(w)),
+    JSON.stringify(unique.warnings));
+});
+
+test('join does not match rows on a field neither side has', () => {
+  // The sharpest version of the same bug, and the warning made it worse: it
+  // said "neither side has it, so every row was dropped" while every row was in
+  // fact *merged with the last right-hand record*, so a `city` the file never
+  // mentioned was written into all three rows. Both sides stringified a missing
+  // key to `"undefined"`, which matched, and an inherited name matched just as
+  // well because `String(fn)` is the same string on both sides.
+  const input = '[{"id":"1","name":"Ada"},{"id":"2","name":"Bo"}]';
+  const with_ = [{ id: '1', city: 'Aarhus' }, { id: '2', city: 'Odense' }];
+  const r = run(input, 'json', [{ op: 'join', on: 'nope', with: with_ }], 'json');
+  assert.deepStrictEqual(r.data, []);
+  assert.ok(r.warnings.some(w => /neither side has it, so every row was dropped/.test(w)),
+    JSON.stringify(r.warnings));
+  // An inherited name is the same missing field, and must be judged the same
+  // way rather than matching every row to one arbitrary record.
+  const inherited = run(input, 'json', [{ op: 'join', on: 'toString', with: with_ }], 'json');
+  assert.deepStrictEqual(inherited.data, []);
+  // `keep: left` keeps the rows it cannot match, and invents nothing.
+  const kept = run(input, 'json', [{ op: 'join', on: 'toString', with: with_, keep: 'left' }], 'json');
+  assert.deepStrictEqual(kept.data, [{ id: '1', name: 'Ada' }, { id: '2', name: 'Bo' }]);
+  // The join that is supposed to match still matches, once per row.
+  const good = run(input, 'json', [{ op: 'join', on: 'id', with: with_ }], 'json');
+  assert.deepStrictEqual(good.data, [
+    { id: '1', name: 'Ada', city: 'Aarhus' },
+    { id: '2', name: 'Bo', city: 'Odense' }
+  ]);
+  // Fixing the invention uncovered the silence it had been hiding: a key only
+  // one side has cannot match anything, so the run writes an empty file — and
+  // said nothing, because T26 read "the right side has it" as "there is no
+  // mistake here". Which side is missing the key is the whole difference between
+  // two different typos in a pipeline, so the warning names it.
+  const rightOnly = run(input, 'json', [{ op: 'join', on: 'city', with: with_ }], 'json');
+  assert.deepStrictEqual(rightOnly.data, []);
+  assert.ok(rightOnly.warnings.some(w => /no record on the left has a field named "city"/.test(w)),
+    JSON.stringify(rightOnly.warnings));
+  const leftOnly = run(input, 'json', [{ op: 'join', on: 'id', with: [{ k: '1' }] }], 'json');
+  assert.deepStrictEqual(leftOnly.data, []);
+  assert.ok(leftOnly.warnings.some(w => /no record on the right has a field named "id"/.test(w)),
+    JSON.stringify(leftOnly.warnings));
+  // `keep: left` keeps what it cannot match, and the warning says that instead
+  // of claiming rows were dropped.
+  const keptNothing = run(input, 'json', [{ op: 'join', on: 'nope', keep: 'left', with: with_ }], 'json');
+  assert.strictEqual(keptNothing.data.length, 2);
+  assert.ok(keptNothing.warnings.some(w => /every row was kept unchanged/.test(w)),
+    JSON.stringify(keptNothing.warnings));
+});
+
+test('join writes a right-hand field that the left row inherits, and one named __proto__', () => {
+  // The write guard asked `target in merged`, so it asked the prototype chain
+  // the same way the readers did, and the field the right-hand file really has
+  // was dropped — the one place T46's `setField` was not called from. Both cases
+  // are exit 0 with no warning, because no field name is named in the pipeline.
+  const input = '[{"id":"1","name":"Ada"}]';
+  const rows = (with_) => run(input, 'json', [{ op: 'join', on: 'id', with: with_ }], 'json').data;
+  // A computed key in the test as well: `{ __proto__: … }` would set a
+  // prototype here instead of naming a field, which is the thing under test.
+  const inherited = rows([{ id: '1', toString: 'x' }]);
+  assert.strictEqual(inherited[0].toString, 'x');
+  const own = rows([{ id: '1', ['__proto__']: 'x' }]);
+  assert.strictEqual(own[0]['__proto__'], 'x');
+  // `prefix` is the documented way to keep two sides' `city` apart, and it
+  // works for these names too.
+  const prefixed = run(input, 'json',
+    [{ op: 'join', on: 'id', prefix: 'r_', with: [{ id: '1', toString: 'x' }] }], 'json').data;
+  assert.strictEqual(prefixed[0].r_toString, 'x');
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
