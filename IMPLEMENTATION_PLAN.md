@@ -11,7 +11,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund. T29 er færdig med commit `e156dec` på `ceo/dead-options`, bygget oven på `ceo/repeated-flags`, og har samme grund — den rører heller ingen `site/`-fil. T30 er færdig med commit `837eb4a` på `ceo/utf8-input`, bygget oven på `ceo/dead-options`, og har samme grund: den rører kun `src/cli.js`, `docs/cli.md` og to testfiler, ingen `site/`-fil. T31 er færdig med commit `c5e7d4b` på `ceo/paths-locale-limits`, bygget oven på `ceo/utf8-input`, og har samme grund — den rører `site/engine.js`, så den kræver en `VERIFICÉR DEPLOY`-note når bunken merges. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje. T34 er færdig med commit `e8641c1` på `ceo/reader-gaps`, bygget oven på `ceo/reader-ambiguity`, og har samme grund — den rører `site/engine.js`. T36 er færdig med commit `6c13df1` på `ceo/download-guard`, bygget oven på `ceo/playground-warnings`, og har samme grund. T35 er færdig med commit `7fdd7d8` på `ceo/playground-warnings`, bygget oven på `ceo/reader-gaps`, og har **samme grund, men en anden**: den rører hverken `engine.js` (motoren er urørt) eller andet end rammen, `site.js` og CSS — men `DEPLOY-MISSING` gælder alle merges til `main`, uanset hvor lille diffen er.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T36-iterationen):** uændret for **ellevte** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T37-iterationen):** uændret for **tolvte** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
 **VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/dead-options` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
@@ -189,6 +189,24 @@ tegnet i stedet for at afvise det, også bestå testen.
 
 `site/engine.js` er byte-identisk med `src/engine.js` og blev kopieret, så
 playgroundet fik samme rettelse — browser-målingen ovenfor er den samme kode.
+
+**Verificeret i browseren efter rettelsen, samme måling som før den:** `json`
+skriver 35 B med `a\ud800b` tabsfrit, og `csv`, `yaml`, `table`, `sql` og `xml`
+svarer alle med exit-1-fejlen og **ingen download**. Før rettelsen skrev de tre
+11 B, 67 B og 78 B med `ef bf bd` i sig. Det er den eneste efterprøvning, der
+beviser fixen — `npm test` kører engine'en, ikke browseren.
+
+Gaten er grøn på den committede tilstand: `npm test` (152 + 135 + 81 + 6 +
+workflow-regressionerne + 173 kontratkontroller), `npm pack --dry-run` og
+`npm run check:site`.
+
+**Deploy-stillen er uændret, og derfor merger denne commit ikke til `main`.**
+
+VERIFICÉR DEPLOY: playgroundet afviser en enslig surrogat i `csv`, `table` og
+`sql` i stedet for at gemme U+FFFD, `site/engine.js`, commit `6891d75`, push
+2026-09-26T08:24Z. Verificér ved https://transmute.run/ — sæt input til
+`[{"note":"a\ud800b"}]`, ryd pipelinen, og skift mellem csv og json: json skal
+vise `"a\ud800b"`, de andre skal vise fejlen og download-knappen skal intet gøre.
 
 ### 36. [x] Hold det eneste format, der kan bære tegnet, som det eneste escape
 
