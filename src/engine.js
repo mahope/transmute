@@ -27,8 +27,11 @@ const XML_NAME = '[A-Za-z_][A-Za-z0-9._-]*(?::[A-Za-z_][A-Za-z0-9._-]*)?';
 const XML_ATTR = '([A-Za-z_][A-Za-z0-9._:-]*)\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'=<>`]*[^\s"\'=<>`/]))';
 
 const parsers = {
-  json: (text) => {
+  json: (text, opts) => {
     const data = JSON.parse(text);
+    if (opts && Array.isArray(opts.warnings)) {
+      for (const dup of duplicateJSONKeys(text)) opts.warnings.push(dup);
+    }
     return Array.isArray(data) ? data : [data];
   },
   csv: (text, opts) => parseCSV(text, opts),
@@ -65,6 +68,20 @@ const parsers = {
     const closeIdx = text.lastIndexOf('</' + rootTag + '>');
     if (closeIdx === -1) throw new Error(`XML root element <${rootTag}> is never closed`);
     const inner = text.slice(openLen, closeIdx);
+    // Whatever follows the root element was never read. Batch tools concatenate
+    // XML documents, so `<one/>…</one><two/>…</two>` is a file a user really
+    // has, and reading only the first document dropped the second with exit 0
+    // and no warning — the same shape as a half-parsed file, which is what the
+    // other checks in this reader refuse. An XML document has exactly one root
+    // element, so the file is not well-formed and the reader says so instead of
+    // choosing a document for the user.
+    const afterRoot = strip(text.slice(closeIdx + ('</' + rootTag + '>').length));
+    if (afterRoot) {
+      throw new Error(
+        `an XML document has one root element, but this file has more after </${rootTag}>: "${afterRoot.slice(0, 40)}". ` +
+        'Concatenated XML is not one document — split it first, or read the documents one at a time.'
+      );
+    }
 
     // Attributes are fields of their own, prefixed with `@` the way xmltodict,
     // xml2json and BadgerFish do it. The prefix is what makes the parse
@@ -152,6 +169,139 @@ const parsers = {
     return rows;
   }
 };
+
+/**
+ * The one warning every reader in this file shares: a name the input gives
+ * twice, with two different values behind it.
+ *
+ * The reader cannot keep both, and picking one without saying so is the silent
+ * data loss this tool keeps failing into — the file claims `status: 200` and
+ * then claims `status: 500`, and the user gets a conversion of whichever the
+ * reader happened to land on. So the value is kept, the run succeeds, stdout
+ * stays clean data, and the collision is named on stderr with both values and
+ * the line it was found on. An identical repeat is not a collision and stays
+ * silent: there is nothing to decide.
+ *
+ * The line number is what makes it actionable — a file with 40 000 records
+ * cannot be inspected by hand, but "line 3" is a place to look.
+ */
+function noteDuplicateKey(warnings, format, key, first, second) {
+  if (!Array.isArray(warnings)) return;
+  if (first.value === second.value) return;
+  const where = first.line ? ` (lines ${first.line} and ${second.line})` : '';
+  warnings.push(
+    `${format}: key "${key}" has two different values${where} — ` +
+    `${JSON.stringify(first.value)} and ${JSON.stringify(second.value)}; ` +
+    'the last one is kept. One of them is a mistake in the input.'
+  );
+}
+
+/**
+ * Find every key that appears twice in one JSON object.
+ *
+ * `JSON.parse` has already thrown the first value away by the time this runs,
+ * and a reviver cannot see the collision either, so the document is walked as
+ * text. The walk only has to know two things: which strings are keys, and which
+ * object each key belongs to. Both are exact, not heuristics — a JSON key is
+ * always a string followed by `:`, and `{`/`}` nest in the only order they can
+ * — so this reports a collision that is really there and never one that is not.
+ *
+ * The value of a key is sliced out of the same text and parsed on its own, which
+ * is what lets an identical repeat stay silent: `{"a":1,"a":1}` says the same
+ * thing twice, and a warning for it would be noise on correct input.
+ */
+function duplicateJSONKeys(text) {
+  const warnings = [];
+  // One entry per open object, innermost last.
+  const stack = [new Map()];
+  let i = 0;
+  let line = 1;
+
+  /** Read the JSON string at `i`; returns [decoded, end] or null. */
+  const readString = () => {
+    let end = i + 1;
+    while (end < text.length) {
+      if (text[end] === '\\') { end += 2; continue; }
+      if (text[end] === '"') break;
+      end++;
+    }
+    if (end >= text.length) return null;
+    try { return [JSON.parse(text.slice(i, end + 1)), end + 1]; } catch { return null; }
+  };
+
+  /** Read one value from `i`; returns the end index, or -1 when unreadable. */
+  const readValue = (from) => {
+    let j = from;
+    let depth = 0;
+    while (j < text.length) {
+      const ch = text[j];
+      if (ch === '"') {
+        const s = readStringAt(j);
+        if (s === -1) return -1;
+        j = s;
+        continue;
+      }
+      if (ch === '{' || ch === '[') { depth++; j++; continue; }
+      if (ch === '}' || ch === ']') {
+        if (depth === 0) return j;
+        depth--;
+        j++;
+        continue;
+      }
+      if (ch === ',' && depth === 0) return j;
+      j++;
+    }
+    return j;
+  };
+
+  const readStringAt = (from) => {
+    const saved = i;
+    i = from;
+    const s = readString();
+    const end = s ? s[1] : -1;
+    i = saved;
+    return end;
+  };
+
+  /** Jump to `to`, counting the lines passed on the way. */
+  const advanceTo = (from, to) => {
+    for (let k = from; k < to && k < text.length; k++) if (text[k] === '\n') line++;
+    i = to;
+  };
+
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '\n') { line++; i++; continue; }
+    if (ch === '{') { stack.push(new Map()); i++; continue; }
+    if (ch === '}') { if (stack.length > 1) stack.pop(); i++; continue; }
+    if (ch !== '"') { i++; continue; }
+
+    const str = readString();
+    if (!str) { i++; continue; }
+    const [key, after] = str;
+    const keyLine = line;
+    let j = after;
+    while (j < text.length && /[ \t\r\n]/.test(text[j])) j++;
+    if (text[j] !== ':') { advanceTo(i, after); continue; }
+
+    // A key: remember the value it carries so a later repeat can be compared.
+    const valueStart = j + 1;
+    let v = valueStart;
+    while (v < text.length && /[ \t\r\n]/.test(text[v])) v++;
+    const valueEnd = readValue(valueStart);
+    let value;
+    try { value = JSON.parse(text.slice(valueStart, valueEnd)); } catch { value = undefined; }
+    const current = stack[stack.length - 1];
+    const seen = current.get(key);
+    if (seen) noteDuplicateKey(warnings, 'JSON', key, seen, { value, line: keyLine });
+    else current.set(key, { value, line: keyLine });
+    // An object or array value is walked rather than skipped, so a collision
+    // one level down is reported by the same rule as one at the top.
+    const nested = text[v] === '{' || text[v] === '[';
+    advanceTo(i, nested ? v : (valueEnd > 0 ? valueEnd : after));
+  }
+  return warnings;
+}
 
 function escapeSQLString(val) {
   return String(val).replace(/'/g, "''");
@@ -768,7 +918,7 @@ function parseYAML(text, opts) {
     return records;
   }
 
-  const parsed = parseYAMLBlock(lines, start, lines[start].indent);
+  const parsed = parseYAMLBlock(lines, start, lines[start].indent, { warnings: (opts && opts.warnings) || null });
   if (Array.isArray(parsed.value)) return parsed.value;
   if (parsed.value === null) return [];
   return [parsed.value];
@@ -839,17 +989,29 @@ function splitYAMLKey(content) {
  * Parse the block starting at `start`, indented by `indent`. Returns
  * `{ value, end }` so the caller can carry on after the block.
  */
-function parseYAMLBlock(lines, start, indent) {
+function parseYAMLBlock(lines, start, indent, ctx) {
   const i = skipYAMLBlanks(lines, start);
   if (i >= lines.length || lines[i].indent < indent) return { value: null, end: i };
   const content = lines[i].content;
-  if (isYAMLSequenceEntry(content)) return parseYAMLSequence(lines, i, lines[i].indent);
-  if (splitYAMLKey(content)) return parseYAMLMapping(lines, i, lines[i].indent);
+  if (isYAMLSequenceEntry(content)) return parseYAMLSequence(lines, i, lines[i].indent, ctx);
+  if (splitYAMLKey(content)) return parseYAMLMapping(lines, i, lines[i].indent, ctx);
   return parseYAMLFoldedScalar(lines, i, lines[i].indent);
 }
 
-function parseYAMLMapping(lines, start, indent) {
+function parseYAMLMapping(lines, start, indent, ctx) {
   const map = {};
+  const seen = new Map();
+  // `k: 1` followed by `k: 2` is the classic YAML trap: the second line wins
+  // with nothing to show for it, and the first value is simply gone. The key
+  // is kept, the run succeeds, and the collision is named.
+  const set = (key, value, no) => {
+    if (seen.has(key)) {
+      noteDuplicateKey(ctx.warnings, 'YAML', key, seen.get(key), { value, line: no });
+    } else {
+      seen.set(key, { value, line: no });
+    }
+    map[key] = value;
+  };
   let i = start;
   while (i < lines.length) {
     if (lines[i].blank || isYAMLComment(lines[i].content)) { i++; continue; }
@@ -868,20 +1030,20 @@ function parseYAMLMapping(lines, start, indent) {
       // No value on the line, so the block underneath owns it — or it is null.
       const j = skipYAMLBlanks(lines, i + 1);
       if (j < lines.length && lines[j].indent > indent) {
-        const child = parseYAMLBlock(lines, j, lines[j].indent);
-        map[key] = child.value;
+        const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
+        set(key, child.value, lines[i].no);
         i = child.end;
         continue;
       }
       // A sequence may sit at the same indentation as the key that owns it,
       // which is how most hand-written config files are written.
       if (j < lines.length && lines[j].indent === indent && isYAMLSequenceEntry(lines[j].content)) {
-        const child = parseYAMLSequence(lines, j, indent);
-        map[key] = child.value;
+        const child = parseYAMLSequence(lines, j, indent, ctx);
+        set(key, child.value, lines[i].no);
         i = child.end;
         continue;
       }
-      map[key] = null;
+      set(key, null, lines[i].no);
       i++;
       continue;
     }
@@ -889,18 +1051,18 @@ function parseYAMLMapping(lines, start, indent) {
     const block = blockScalarHeader(rest);
     if (block) {
       const child = readYAMLBlockScalar(lines, i + 1, indent, block);
-      map[key] = child.value;
+      set(key, child.value, lines[i].no);
       i = child.end;
       continue;
     }
 
-    map[key] = parseYAMLScalar(rest);
+    set(key, parseYAMLScalar(rest, ctx), lines[i].no);
     i++;
   }
   return { value: map, end: i };
 }
 
-function parseYAMLSequence(lines, start, indent) {
+function parseYAMLSequence(lines, start, indent, ctx) {
   const arr = [];
   let i = start;
   while (i < lines.length) {
@@ -919,7 +1081,7 @@ function parseYAMLSequence(lines, start, indent) {
     if (inner === '' || isYAMLComment(inner)) {
       const j = skipYAMLBlanks(lines, i + 1);
       if (j < lines.length && lines[j].indent > indent) {
-        const child = parseYAMLBlock(lines, j, lines[j].indent);
+        const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
         arr.push(child.value);
         i = child.end;
         continue;
@@ -940,7 +1102,7 @@ function parseYAMLSequence(lines, start, indent) {
       continue;
     }
     lines[i] = { indent: childIndent, content: inner, blank: false, no: lines[i].no };
-    const child = parseYAMLBlock(lines, i, childIndent);
+    const child = parseYAMLBlock(lines, i, childIndent, ctx);
     arr.push(child.value);
     i = child.end;
   }
@@ -1024,7 +1186,7 @@ function stripYAMLComment(text) {
   return text;
 }
 
-function parseYAMLScalar(raw) {
+function parseYAMLScalar(raw, ctx) {
   const value = stripYAMLComment(raw).trim();
   if (value === '') return null;
   if (value[0] === '"' || value[0] === "'") {
@@ -1034,7 +1196,7 @@ function parseYAMLScalar(raw) {
     if (quoted) return quoted.value;
   }
   if (value[0] === '[' || value[0] === '{') {
-    const flow = parseYAMLFlow(value);
+    const flow = parseYAMLFlow(value, ctx);
     if (flow.ok) return flow.value;
   }
   return parseYAMLValue(value);
@@ -1076,7 +1238,7 @@ function unescapeYAML(ch) {
  * `hosts: {a: 1}` silently became the text `{a: 1}`. Anything this cannot
  * read is returned as the plain string it is, never dropped.
  */
-function parseYAMLFlow(text) {
+function parseYAMLFlow(text, ctx) {
   let i = 0;
   const skipSpace = () => { while (i < text.length && /[ \t]/.test(text[i])) i++; };
   const separators = ',]}:';
@@ -1096,12 +1258,12 @@ function parseYAMLFlow(text) {
 
   const value = () => {
     skipSpace();
-    if (text[i] === '[') return sequence();
-    if (text[i] === '{') return mapping();
+    if (text[i] === '[') return sequence(ctx);
+    if (text[i] === '{') return mapping(ctx);
     return scalar();
   };
 
-  const sequence = () => {
+  const sequence = (ctx) => {
     i++;
     const out = [];
     skipSpace();
@@ -1115,9 +1277,10 @@ function parseYAMLFlow(text) {
     }
   };
 
-  const mapping = () => {
+  const mapping = (ctx) => {
     i++;
     const out = {};
+    const seen = new Map();
     skipSpace();
     if (text[i] === '}') { i++; return out; }
     for (;;) {
@@ -1136,7 +1299,15 @@ function parseYAMLFlow(text) {
       skipSpace();
       if (text[i] !== ':') throw new SyntaxError('expected : in flow mapping');
       i++;
-      out[key] = value();
+      const valueRead = value(ctx);
+      // A flow mapping is one fragment of one line, so it has no line number to
+      // give; the key and both values are what the reader needs.
+      if (seen.has(key)) {
+        noteDuplicateKey(ctx && ctx.warnings, 'YAML', key, seen.get(key), { value: valueRead, line: 0 });
+      } else {
+        seen.set(key, { value: valueRead, line: 0 });
+      }
+      out[key] = valueRead;
       skipSpace();
       if (text[i] === ',') { i++; continue; }
       if (text[i] === '}') { i++; return out; }

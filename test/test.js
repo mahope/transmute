@@ -1401,5 +1401,91 @@ t('the other formats keep the characters XML has to refuse', () => {
   assert.strictEqual(runSQL(input, 'json', [], 'json').text, JSON.stringify(expected, null, 2));
 });
 
+t('a key the JSON input gives twice is named, not resolved in silence', () => {
+  // `JSON.parse` has already dropped the first value by the time the reader
+  // sees the object, so the collision is found in the text. The value is kept
+  // and the run succeeds — but which one won must never be a private decision.
+  const r = run('{\n  "status": 200,\n  "name": "ada",\n  "status": 500\n}', 'json', []);
+  assert.strictEqual(r.error, undefined);
+  assert.deepStrictEqual(r.data, [{ status: 500, name: 'ada' }]);
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(r.warnings[0].includes('"status"'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('200') && r.warnings[0].includes('500'), r.warnings[0]);
+  // The line is what makes it actionable in a file nobody can read by hand.
+  assert.ok(r.warnings[0].includes('lines 2 and 4'), r.warnings[0]);
+  // stdout stays clean data: a warning never belongs in the output stream.
+  assert.ok(!r.text.includes('Warning'), r.text);
+});
+
+t('an identical repeat is not a collision', () => {
+  // `{"a":1,"a":1}` says the same thing twice. There is nothing to decide, so
+  // a warning here would be noise on correct input.
+  const r = run('{"a":1,"a":1,"b":"x"}', 'json', []);
+  assert.deepStrictEqual(r.warnings, []);
+  assert.deepStrictEqual(r.data, [{ a: 1, b: 'x' }]);
+  // And two objects that each carry the key are not a collision at all.
+  const two = run('[{"k":1},{"k":2},{"k":1}]', 'json', []);
+  assert.deepStrictEqual(two.warnings, []);
+  // A key that only looks like one, and an escaped spelling of a key.
+  const tricky = run('{"a":"has \\"quote\\", and: colon","a2":1}', 'json', []);
+  assert.deepStrictEqual(tricky.warnings, []);
+  assert.strictEqual(run('{"\\u0061":1,"a":2}', 'json', []).warnings.length, 1);
+});
+
+t('a collision one level down is found by the same rule', () => {
+  // The walk descends into object and array values instead of skipping them, so
+  // a collision inside a nested object is not invisible because the outer key
+  // happened to come first.
+  const r = run('{\n "a": 1,\n "b": {\n  "c": 1,\n  "c": 2\n },\n "a": 3\n}', 'json', []);
+  const keys = r.warnings.map(w => w.match(/key "([^"]+)"/)[1]);
+  assert.deepStrictEqual(keys, ['c', 'a']);
+  assert.ok(r.warnings[0].includes('lines 4 and 5'), r.warnings[0]);
+  assert.deepStrictEqual(r.data, [{ a: 3, b: { c: 2 } }]);
+  const inArray = run('[{"k":1,"k":2}]', 'json', []);
+  assert.strictEqual(inArray.warnings.length, 1, JSON.stringify(inArray.warnings));
+});
+
+t('a key the YAML input gives twice is named too', () => {
+  // The classic YAML trap: the second line wins and the first value is gone
+  // with nothing to show for it. Same rule, same words, so the two readers
+  // cannot drift apart.
+  const r = run('name: Ada\nname: Bob\nage: 36\n', 'yaml', []);
+  assert.deepStrictEqual(r.data, [{ name: 'Bob', age: 36 }]);
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(r.warnings[0].startsWith('YAML: key "name"'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('lines 1 and 2'), r.warnings[0]);
+
+  // Nested, and inside a flow mapping, where there is no line to name.
+  const nested = run('x:\n  k: 1\n  k: 2\n', 'yaml', []);
+  assert.strictEqual(nested.warnings.length, 1, JSON.stringify(nested.warnings));
+  assert.deepStrictEqual(nested.data, [{ x: { k: 2 } }]);
+  const flow = run('a: {x: 1, x: 2}\nb: 1\n', 'yaml', []);
+  assert.strictEqual(flow.warnings.length, 1, JSON.stringify(flow.warnings));
+  assert.ok(!flow.warnings[0].includes('lines'), flow.warnings[0]);
+  // A repeated key with the same value is still not a collision.
+  assert.deepStrictEqual(run('a: 1\na: 1\n', 'yaml', []).warnings, []);
+  // Nor is a key that appears in two different records.
+  assert.deepStrictEqual(run('- k: 1\n- k: 2\n', 'yaml', []).warnings, []);
+});
+
+t('a second XML root element is refused, not ignored', () => {
+  // Batch tools concatenate XML documents, so this is a file users really have.
+  // Reading only the first document dropped the second with exit 0 and no
+  // warning — half a file that looks like all of it.
+  const two = run('<root><a>1</a></root>\n<other><b>2</b></other>\n', 'xml', []);
+  assert.ok(two.error, 'a second root element must not be read silently');
+  assert.ok(two.error.includes('one root element'), two.error);
+  assert.ok(two.error.includes('<other>'), two.error);
+  // The failure names the content it found, which is what a user has to look at.
+  const r = runSQL('<root><a>1</a></root>\n', 'xml', [], 'json');
+  assert.strictEqual(r.error, undefined, r.error);
+  assert.deepStrictEqual(r.data, [{ a: '1' }]);
+  // Prologue, comments and a trailing newline are not a second document.
+  for (const head of ['<?xml version="1.0"?>\n', '<!-- a note -->\n', '<!DOCTYPE r>\n']) {
+    const ok = run(head + '<root><a>1</a></root>\n', 'xml', []);
+    assert.strictEqual(ok.error, undefined, head + ': ' + ok.error);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

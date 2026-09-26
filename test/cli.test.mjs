@@ -972,5 +972,63 @@ test('the formats that can hold the character still do', () => {
   }
 });
 
+test('a key given twice is warned about on stderr and stdout stays data', () => {
+  // The warning is the whole point, and the split is the contract: stdout is
+  // what a script pipes onward, so it must parse without the reader stripping
+  // anything off the front.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'dup.json');
+    writeFileSync(path, '{\n  "id": 1,\n  "name": "Ada",\n  "name": "Bob"\n}\n', 'utf-8');
+    const result = spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(result.status, 0, `exit ${result.status}: ${result.stderr}`);
+    assert.equal(result.stdout, 'id,name\n1,Bob\n', 'stdout must be clean data');
+    assert.ok(result.stderr.startsWith('Warning: JSON: key "name"'), result.stderr);
+    assert.ok(result.stderr.includes('"Ada"') && result.stderr.includes('"Bob"'), result.stderr);
+    // A file with no collision must not produce a single byte on stderr.
+    writeFileSync(path, '{"id":1,"name":"Ada"}\n', 'utf-8');
+    assert.equal(spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' }).stderr, '');
+    // And on a pipe, where there is no file to point at.
+    const piped = spawnSync(process.execPath, [cli, '-f', 'json', '-o', 'csv'], {
+      encoding: 'utf-8',
+      input: '[{"a":1,"a":2}]'
+    });
+    assert.equal(piped.status, 0, piped.stderr);
+    assert.equal(piped.stdout, 'a\n2\n');
+    assert.ok(piped.stderr.includes('key "a"'), piped.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a second XML root element stops the run with exit 3', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'two.xml');
+    // Two documents, two different root names: the reader says what it found.
+    writeFileSync(path, '<rows><row><a>1</a></row></rows>\n<more><row><b>2</b></row></more>\n', 'utf-8');
+    const named = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(named.status, 3, `exit ${named.status}: ${named.stderr}`);
+    assert.equal(named.stdout, '', 'a refused input must not write a partial file to stdout');
+    assert.ok(named.stderr.includes('one root element'), named.stderr);
+    assert.ok(named.stderr.includes('<more>'), named.stderr);
+    // The same file with the *same* root name twice — what a batch tool that
+    // appends records actually writes. The reader finds the second `</rows>`
+    // first, so this one is caught by the element check instead. Loud and empty
+    // is the contract; the message names the content it stopped on.
+    writeFileSync(path, '<rows><row><a>1</a></row></rows>\n<rows><row><b>2</b></row></rows>\n', 'utf-8');
+    const same = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(same.status, 3, `exit ${same.status}: ${same.stderr}`);
+    assert.equal(same.stdout, '', 'a refused input must not write a partial file to stdout');
+    assert.ok(same.stderr.includes('</rows>'), same.stderr);
+    // A single document with a prologue and a comment is still one document.
+    writeFileSync(path, '<?xml version="1.0"?>\n<!-- two rows -->\n<rows><row><a>1</a></row></rows>\n', 'utf-8');
+    assert.equal(spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' }).status, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
