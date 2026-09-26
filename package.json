@@ -16,6 +16,7 @@
     "check:contract": "node tools/verify_contract.mjs",
     "snapshots:cli": "node tools/update_cli_snapshots.mjs",
     "check:site": "bash tools/site_gate.sh",
+    "check:deploy": ".venv-site/bin/python tools/check_deploy_freshness.py",
     "audit:site": ".venv-site/bin/python -m pip_audit -r tools/site-requirements.txt --require-hashes",
     "lock:site": "uv pip compile tools/site-requirements.in --python-version 3.13 --generate-hashes --no-annotate --no-header -o tools/site-requirements.txt",
     "start": "node src/cli.js",

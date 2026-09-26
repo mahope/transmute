@@ -6,6 +6,7 @@ target/
 .wrangler/
 site/.wrangler/
 tools/shots/
+__pycache__/
 
 # Transmute Desktop (betalt) ligger i det private repo mahope/transmute-desktop
 desktop/
