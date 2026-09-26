@@ -44,6 +44,7 @@ with `node src/cli.js`.
 | `-o, --output <type>` | Output format: `json`, `csv`, `yaml`, `xml`, `table`, `sql`. Defaults to `table`. |
 | `--out <file>` | Write the output to a file instead of stdout. |
 | `--table <name>` | Table name for SQL output. Default `my_table`. |
+| `--delimiter <d>` | Field delimiter for CSV/TSV input: `,` `;` `tab` or `|`. Detected from the header line when omitted. |
 | `-v, --version` | Print the version. |
 | `-h, --help` | Print the built-in help. |
 
@@ -86,6 +87,47 @@ CSV has no types, so values are coerced the way spreadsheets do:
 - `0074` stays the string `"0074"` — leading zeros survive, so postcodes and
   product codes are not silently mangled
 - numbers with 16 or more digits stay strings, so nothing loses precision
+
+### Delimiters, quotes and line endings
+
+CSV is read the way RFC 4180 describes it, because that is what spreadsheets
+export:
+
+- The delimiter is detected from the header line. `,` `;` tab and `|` are
+  recognised, and a tie keeps `,`. Excel in Denmark, Germany and most of
+  Europe writes `;` by default, so `navn;by;pris` is three columns, not one.
+- `--delimiter ,`, `--delimiter ;`, `--delimiter tab` or `--delimiter |` forces
+  it when the file is ambiguous. An unknown value is a usage error (exit 2).
+- A quoted field may contain the delimiter, escaped quotes (`""`) and line
+  breaks. `"Linje 1\nLinje 2"` is one value, not two records.
+- Whitespace inside quotes is data: `" padded "` keeps its spaces. Unquoted
+  fields are still trimmed, so `  padded  ` becomes `padded`.
+- A UTF-8 byte-order mark and CRLF line endings are handled and do not end up in
+  your field names.
+
+`test/fixtures/european.csv` is a semicolon file with a quoted comma and a
+quoted newline, and it is part of the test suite:
+
+```bash
+transmute test/fixtures/european.csv --pipe '[{"op":"sort","by":"antal","dir":"desc"}]' --output json
+```
+
+```json
+[
+  {
+    "navn": "Hans",
+    "by": "Aarhus",
+    "note": "Linje 1\nLinje 2",
+    "antal": 7
+  },
+  {
+    "navn": "Mette",
+    "by": "Copenhagen",
+    "note": "Salg, mellem",
+    "antal": 3
+  }
+]
+```
 
 XML is read as records: `<users><user>…</user><user>…</user></users>` becomes
 one record per `<user>`, with element names as field names. Text content stays

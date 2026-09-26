@@ -111,6 +111,32 @@ test('--out writes the output to a file and prints nothing', () => {
   }
 });
 
+console.log('── real-world CSV: delimiters and quotes ──');
+
+test('a semicolon CSV is not collapsed into one column', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" test/fixtures/european.csv -o json`));
+  const rows = JSON.parse(out);
+  assert.deepEqual(Object.keys(rows[0]), ['navn', 'by', 'note', 'antal']);
+  assert.equal(rows[0].note, 'Salg, mellem', 'a quoted comma must survive as data');
+  assert.equal(rows[1].note, 'Linje 1\nLinje 2', 'a quoted newline must not invent a row');
+  assert.equal(rows.length, 2, 'two data rows in, two data rows out');
+});
+
+test('a tab-separated file is read as three columns', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f csv --delimiter tab -o json`, { input: 'id\tname\tqty\n1\tWidget\t5\n' }));
+  assert.deepEqual(JSON.parse(out), [{ id: 1, name: 'Widget', qty: 5 }]);
+});
+
+test('--delimiter overrides the detected one', () => {
+  const forced = expectOk(sh(`"${process.execPath}" "${cli}" test/fixtures/european.csv --delimiter , -o json`));
+  assert.deepEqual(Object.keys(JSON.parse(forced)[0]), ['navn;by;note;antal']);
+});
+
+test('--delimiter tab is accepted as a name, not a literal tab', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f csv -o json --delimiter tab`, { input: 'a\tb\n1\t2\n' }));
+  assert.deepEqual(JSON.parse(out), [{ a: 1, b: 2 }]);
+});
+
 console.log('── errors are machine-readable ──');
 
 function expectFail(command, code, needle, opts = {}) {
@@ -164,7 +190,7 @@ console.log('── help and version ──');
 
 test('--help exits 0 and lists every option and operation', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" --help`));
-  for (const flag of ['--format', '--pipe', '--output', '--out', '--table', '--version']) {
+  for (const flag of ['--format', '--pipe', '--output', '--out', '--table', '--delimiter', '--version']) {
     assert.equal(out.includes(flag), true, `--help does not document ${flag}`);
   }
   for (const op of ['filter', 'map', 'pick', 'omit', 'sort', 'unique', 'group', 'count', 'head', 'tail', 'rename', 'flatten', 'add', 'join']) {
@@ -198,6 +224,14 @@ test('a file argument that is a directory fails cleanly', () => {
 
 test('the CLI can be executed directly (shebang + exec bit)', () => {
   execFileSync(cli, ['--version'], { cwd: root, encoding: 'utf-8' });
+});
+
+test('unknown --delimiter → exit 2', () => {
+  expectFail(`"${process.execPath}" "${cli}" test/fixtures/people.csv --delimiter xx -o json`, 2, 'Unknown delimiter');
+});
+
+test('--delimiter without a value → exit 2', () => {
+  expectFail(`"${process.execPath}" "${cli}" test/fixtures/people.csv --delimiter`, 2, '--delimiter needs a value');
 });
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);

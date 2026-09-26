@@ -40,7 +40,12 @@ Options:
 - `-o, --output <type>` — output format: json, csv, yaml, xml, table, sql (default: table)
 - `--out <file>` — write the output to a file instead of stdout
 - `--table <name>` — table name for SQL output (default `my_table`)
+- `--delimiter <d>` — CSV/TSV field delimiter: `,` `;` `tab` or `|` (detected
+  from the header line when omitted, so Excel's Danish `;` export works)
 - `-v, --version`, `-h, --help`
+
+CSV is read per RFC 4180: a quoted field may contain the delimiter, escaped
+quotes and line breaks, and whitespace inside quotes is kept as data.
 
 Exit codes: `0` success, `1` the transformation failed, `2` usage error, `3`
 input error (missing or unparseable file). Errors go to stderr; stdout stays

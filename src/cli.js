@@ -16,6 +16,9 @@ const { version } = require('../package.json');
 const INPUT_FORMATS = ['json', 'csv', 'yaml', 'xml'];
 const OUTPUT_FORMATS = ['json', 'csv', 'yaml', 'xml', 'table', 'sql'];
 
+/** Delimiters accepted by --delimiter. `tab` is a name because a literal tab in a shell argument is a trap. */
+const DELIMITERS = { ',': ',', ';': ';', 'tab': '\t', '|': '|' };
+
 /**
  * Exit codes — stable and documented in docs/cli.md so scripts can branch on them.
  *   0  success
@@ -37,6 +40,7 @@ async function main() {
   let outputFormat = null;
   let outFile = null;
   let tableName = 'my_table';
+  let delimiter = null;
 
   // Parse args
   for (let i = 0; i < args.length; i++) {
@@ -57,6 +61,12 @@ async function main() {
       outFile = flagValue(args, ++i, '--out');
     } else if (arg === '--table') {
       tableName = flagValue(args, ++i, '--table');
+    } else if (arg === '--delimiter') {
+      const raw = flagValue(args, ++i, '--delimiter');
+      if (!Object.prototype.hasOwnProperty.call(DELIMITERS, raw)) {
+        throw new UsageError(`Unknown delimiter: ${raw} (expected , ; tab or |)`);
+      }
+      delimiter = DELIMITERS[raw];
     } else if (arg === '--version' || arg === '-v') {
       console.log(version);
       return;
@@ -102,7 +112,7 @@ async function main() {
     throw new UsageError(`Unknown input format: ${inputFormat} (expected ${INPUT_FORMATS.join(', ')})`);
   }
   try {
-    parsers[inputFormat](inputText);
+    parsers[inputFormat](inputText, { delimiter });
   } catch (err) {
     throw new InputError(`Could not parse input as ${inputFormat}: ${err.message}`);
   }
@@ -116,7 +126,7 @@ async function main() {
   if (pipeline === null) pipeline = [];
 
   // Run pipeline
-  const result = run(inputText, inputFormat, pipeline, outputFormat, { tableName });
+  const result = run(inputText, inputFormat, pipeline, outputFormat, { tableName, delimiter });
   if (result.error) {
     console.error(`Error: ${result.error}`);
     process.exit(EXIT.transform);
@@ -181,6 +191,7 @@ function showPreview(text, format) {
   console.log('  --format json|csv|yaml|xml (input format)');
   console.log('  --output json|csv|yaml|xml|table|sql (output format)');
   console.log('  --out <file> (write the output to a file instead of stdout)');
+  console.log('  --delimiter ,|;|tab   (CSV delimiter; detected from the header line when omitted)');
   console.log('  transmute users.csv --output sql --table users   # CSV to SQL INSERT statements');
   console.log('');
   console.log('Examples:');
@@ -208,6 +219,7 @@ function showHelp(stream = process.stdout) {
   log('  -o, --output <type>    Output format (json, csv, yaml, xml, table, sql). Default: table');
   log('      --out <file>       Write the output to <file> instead of stdout');
   log('      --table <name>     Table name for SQL output (default: my_table)');
+  log('      --delimiter <d>    CSV/TSV delimiter: , ; tab or | (default: detected from the header line)');
   log('  -v, --version          Print the version');
   log('  -h, --help             Show this help');
   log();

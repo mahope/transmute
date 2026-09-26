@@ -27,7 +27,7 @@ export const FIXTURES = {
   xml: join(here, 'users.xml')
 };
 
-export const fixtureText = (format) => readFileSync(FIXTURES[format], 'utf-8');
+export const fixtureText = (format, file) => readFileSync(file || FIXTURES[format], 'utf-8');
 
 /** A 50-record JSON payload, used to prove the free CLI has no run limits. */
 export function bigDataset(records = 50) {
@@ -236,5 +236,15 @@ export const CASES = [
     pipeline: [{ op: 'filter', expr: 'item.status === "paid"' }, { op: 'pick', fields: ['id', 'total'] }],
     outputFormat: 'csv',
     command: `cat test/fixtures/orders.json | transmute --pipe '[{"op":"filter","expr":"item.status === \\"paid\\""},{"op":"pick","fields":["id","total"]}]' --output csv`
+  },
+  {
+    name: 'csv-semicolon',
+    docOutput: '"navn": "Mette",',
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'european.csv'),
+    pipeline: [{ op: 'sort', by: 'antal', dir: 'desc' }],
+    outputFormat: 'json',
+    command: `transmute test/fixtures/european.csv --pipe '[{"op":"sort","by":"antal","dir":"desc"}]' --output json`
   }
 ];

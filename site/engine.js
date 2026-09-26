@@ -16,21 +16,7 @@ const parsers = {
     const data = JSON.parse(text);
     return Array.isArray(data) ? data : [data];
   },
-  csv: (text) => {
-    const lines = text.trim().split('\n');
-    if (lines.length === 0) return [];
-    const headers = parseCSVLine(lines[0]);
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const values = parseCSVLine(line);
-      const row = {};
-      headers.forEach((h, idx) => { row[h] = idx < values.length ? coerceCSVValue(values[idx]) : ''; });
-      rows.push(row);
-    }
-    return rows;
-  },
+  csv: (text, opts) => parseCSV(text, opts),
   yaml: (text) => {
     // Simple YAML parser for basic structures (arrays of scalars/objects)
     const lines = text.split('\n');
@@ -434,28 +420,99 @@ function coerceCSVValue(val) {
   return val;
 }
 
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
+/** Delimiters recognised when the caller does not force one. `,` wins a tie. */
+const CSV_DELIMITERS = [',', ';', '\t', '|'];
+
+/**
+ * Count occurrences of `delimiter` in `line` that sit outside quoted sections.
+ */
+function countUnquoted(line, delimiter) {
+  let count = 0;
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
-      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
+      if (inQuotes && line[i + 1] === '"') i++;
+      else inQuotes = !inQuotes;
+    } else if (char === delimiter && !inQuotes) {
+      count++;
     }
   }
-  result.push(current.trim());
-  return result;
+  return count;
+}
+
+/**
+ * Pick the delimiter from the first line. Excel in Denmark, Germany and most of
+ * the rest of Europe writes `;` by default, so a comma-only reader silently
+ * collapses such a file into a single column. A tie — and a line with no
+ * delimiter at all — keeps `,`, so single-column and comma files are unchanged.
+ */
+function detectDelimiter(text) {
+  const firstLine = text.replace(/^﻿/, '').split(/\r?\n/)[0] || '';
+  let best = ',';
+  let bestCount = 0;
+  for (const delimiter of CSV_DELIMITERS) {
+    const count = countUnquoted(firstLine, delimiter);
+    if (count > bestCount) { best = delimiter; bestCount = count; }
+  }
+  return best;
+}
+
+/**
+ * RFC 4180 reader: a quoted field may contain the delimiter, escaped quotes
+ * (`""`) and line breaks, and whitespace inside quotes is data. Unquoted fields
+ * are still trimmed, which is what every spreadsheet export expects.
+ */
+function parseCSV(text, opts = {}) {
+  const delimiter = opts.delimiter || detectDelimiter(text);
+  const records = [];
+  let record = [];
+  let field = '';
+  let inQuotes = false;
+  let quoted = false;
+
+  const endField = () => {
+    record.push(quoted ? field : field.trim());
+    field = '';
+    quoted = false;
+  };
+  const endRecord = () => {
+    endField();
+    records.push(record);
+    record = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else {
+        field += char;
+      }
+      continue;
+    }
+    if (char === '"' && field === '') { inQuotes = true; quoted = true; continue; }
+    if (char === delimiter) { endField(); continue; }
+    if (char === '\r') { if (text[i + 1] === '\n') i++; endRecord(); continue; }
+    if (char === '\n') { endRecord(); continue; }
+    field += char;
+  }
+  if (field !== '' || record.length > 0 || quoted) endRecord();
+
+  // RFC 4180 allows blank lines between records; the first real record is the header.
+  const recordsWithIndex = records.filter((values) => !(values.length === 1 && values[0] === ''));
+  if (recordsWithIndex.length === 0) return [];
+  const headers = recordsWithIndex[0].map((h, i) => (i === 0 ? h.replace(/^﻿/, '') : h));
+
+  const rows = [];
+  for (let r = 1; r < recordsWithIndex.length; r++) {
+    const values = recordsWithIndex[r];
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = idx < values.length ? coerceCSVValue(values[idx]) : ''; });
+    rows.push(row);
+  }
+  return rows;
 }
 
 function escapeCSV(val) {
@@ -520,7 +577,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
   try {
     // Parse
     if (!parsers[inputFormat]) return { error: `Unknown input format: ${inputFormat}` };
-    let data = parsers[inputFormat](inputText);
+    let data = parsers[inputFormat](inputText, opts);
 
     // Transform
     for (const step of pipeline) {

@@ -50,11 +50,50 @@ function test(name, fn) {
 
 console.log('\n📋 Transmute Conformance Tests\n');
 
+console.log('── real-world CSV, in both engines ──');
+
+/** Both engines must agree on the CSV promises, not just on the fixtures. */
+function csvParity(text, opts) {
+  const cli = engine.parsers.csv(text, opts);
+  const web = browser.parsers.csv(text, opts);
+  assert.equal(JSON.stringify(web), JSON.stringify(cli), 'the two CSV readers disagree');
+  return cli;
+}
+
+test('a semicolon CSV keeps its columns in both engines', () => {
+  const rows = csvParity('navn;by;pris\nMette;Copenhagen;199,50\n');
+  assert.deepEqual(rows, [{ navn: 'Mette', by: 'Copenhagen', pris: '199,50' }]);
+});
+
+test('a tab-separated file is three columns in both engines', () => {
+  assert.deepEqual(csvParity('id\tname\n1\tWidget\n'), [{ id: 1, name: 'Widget' }]);
+});
+
+test('a quoted newline does not invent a row in both engines', () => {
+  const rows = csvParity('id,note\n1,"line1\nline2"\n2,ok\n');
+  assert.equal(rows.length, 2, 'the embedded newline created a phantom record');
+  assert.equal(rows[0].note, 'line1\nline2');
+});
+
+test('whitespace inside quotes is data in both engines', () => {
+  assert.equal(csvParity('id,name\n1," padded "\n')[0].name, ' padded ');
+  assert.equal(csvParity('id,name\n1,  padded  \n')[0].name, 'padded');
+});
+
+test('an explicit delimiter wins over the detected one in both engines', () => {
+  assert.deepEqual(csvParity('a|b\n1|2\n', { delimiter: '|' }), [{ a: 1, b: 2 }]);
+  assert.deepEqual(Object.keys(csvParity('a;b\n1;2\n', { delimiter: ',' })[0]), ['a;b']);
+});
+
+test('a byte-order mark and CRLF line endings survive in both engines', () => {
+  assert.deepEqual(csvParity('﻿navn;alder\r\nAlice;30\r\n'), [{ navn: 'Alice', alder: 30 }]);
+});
+
 console.log('── engine parity: CLI vs browser ──');
 
 for (const testCase of CASES) {
   test(`${testCase.name}: identical output in both engines`, () => {
-    const input = fixtureText(testCase.fixture);
+    const input = fixtureText(testCase.fixture, testCase.file);
     const cli = run(input, testCase.fixture, testCase.pipeline, testCase.outputFormat, testCase.opts || {});
     const web = browser.run(input, testCase.fixture, testCase.pipeline, testCase.outputFormat, testCase.opts || {});
     assert.equal(cli.error, undefined, `CLI error: ${cli.error}`);
