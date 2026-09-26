@@ -1320,9 +1320,16 @@ function detectFormat(filename, content) {
     // cannot steal a CSV file, and without it a config file pasted into the
     // browser playground is read as JSON and the YAML reader never runs.
     if (/^[^\s#-][^:\n]*:(\s|$)/.test(firstLine)) return 'yaml';
-    if (trimmed.includes('\n') && trimmed.includes(',')) {
-      if (firstLine.includes(',') && !firstLine.includes(': ')) return 'csv';
-    }
+    // The delimiter rule is the reader's rule, not a second copy of it. The
+    // detector used to know only `,`, so a Danish Excel export, a TSV and a
+    // pipe table were all routed to the JSON reader and refused, even though
+    // the CSV reader behind this line handles all four.
+    if (CSV_DELIMITERS.some(d => countUnquoted(firstLine, d) > 0)) return 'csv';
+    // One column has no delimiter to find, and a one-column export is still a
+    // real file — `email\na@b.dk\nc@d.dk` is what a mailing list looks like.
+    // A second line is the evidence: one word alone is a scalar or a mistake,
+    // not a header, and `42`, `true` and `hello` must stay JSON.
+    if (trimmed.includes('\n') && firstLine) return 'csv';
   }
   return 'json'; // default
 }

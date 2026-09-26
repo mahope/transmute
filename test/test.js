@@ -306,6 +306,48 @@ test('nested YAML is detected from content, not just from the extension', () => 
   assert.strictEqual(detectFormat(null, '{"a":1}'), 'json');
 });
 
+test('a delimiter the CSV reader understands is a CSV file, however it is written', () => {
+  // The detector had its own weaker copy of the delimiter rule — only `,` —
+  // so a Danish Excel export, a TSV and a pipe table were all read as JSON and
+  // refused, even though the reader behind the detector handles all four.
+  assert.strictEqual(detectFormat(null, 'navn;by;pris\nMette;KBH;199,50\n'), 'csv');
+  assert.strictEqual(detectFormat(null, 'name\temail\na@b.dk\t123\n'), 'csv');
+  assert.strictEqual(detectFormat(null, 'name|email\na@b.dk|123\n'), 'csv');
+  // A comma inside a quoted header field is not the delimiter, so this is a
+  // semicolon file. Detection and reading must agree on that.
+  assert.strictEqual(detectFormat(null, '"a,b";c\n1;2\n'), 'csv');
+  assert.deepStrictEqual(run('"a,b";c\n1;2\n', 'csv').data, [{ 'a,b': 1, c: 2 }]);
+});
+
+test('a one-column file with no delimiter at all is a CSV file', () => {
+  // One column is a legitimate export, and the delimiter cannot name it. The
+  // file is still CSV because a line per record is what CSV means here.
+  assert.strictEqual(detectFormat(null, 'email\na@b.dk\nc@d.dk\n'), 'csv');
+  assert.deepStrictEqual(run('email\na@b.dk\nc@d.dk\n', 'csv').data, [
+    { email: 'a@b.dk' },
+    { email: 'c@d.dk' }
+  ]);
+});
+
+test('a single line without a delimiter is not turned into a CSV header', () => {
+  // The one-column rule needs a second line to be evidence. A bare scalar is
+  // still JSON, and one word is still an error rather than a one-row table
+  // whose header is the word.
+  assert.strictEqual(detectFormat(null, '42'), 'json');
+  assert.strictEqual(detectFormat(null, 'hello'), 'json');
+  assert.strictEqual(detectFormat(null, 'true'), 'json');
+});
+
+test('the one-column rule cannot steal a JSON, YAML or XML file', () => {
+  assert.strictEqual(detectFormat(null, '[1,\n2]'), 'json');
+  assert.strictEqual(detectFormat(null, '{\n"a": 1\n}'), 'json');
+  assert.strictEqual(detectFormat(null, '- one\n- two\n'), 'yaml');
+  assert.strictEqual(detectFormat(null, 'a: 1\nb: 2\n'), 'yaml');
+  assert.strictEqual(detectFormat(null, '<data>\n<item>1</item>\n</data>'), 'xml');
+  // A column header that merely contains a colon is not `key: value`.
+  assert.strictEqual(detectFormat(null, 'created:at\n2026-01-01\n2026-02-01\n'), 'csv');
+});
+
 // ─── TRANSFORMATIONS ─────────────────────────────────────────────────────
 
 test('filter', () => {

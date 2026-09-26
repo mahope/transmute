@@ -150,6 +150,37 @@ test('--delimiter tab is accepted as a name, not a literal tab', () => {
   assert.deepEqual(JSON.parse(out), [{ a: 1, b: 2 }]);
 });
 
+console.log('── the format is detected, so no flag is needed ──');
+
+test('a Danish Excel export on stdin is read without --format', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -o json`, { input: 'navn;by;pris\nMette;KBH;199,50\nBo;AA;50\n' }));
+  assert.deepEqual(JSON.parse(out), [
+    { navn: 'Mette', by: 'KBH', pris: '199,50' },
+    { navn: 'Bo', by: 'AA', pris: 50 }
+  ]);
+});
+
+test('a tab-separated or pipe-separated file on stdin is read without --format', () => {
+  const tsv = expectOk(sh(`"${process.execPath}" "${cli}" -o json`, { input: 'name\temail\na@b.dk\t123\n' }));
+  assert.deepEqual(JSON.parse(tsv), [{ name: 'a@b.dk', email: 123 }]);
+  const piped = expectOk(sh(`"${process.execPath}" "${cli}" -o json`, { input: 'name|email\na@b.dk|123\n' }));
+  assert.deepEqual(JSON.parse(piped), [{ name: 'a@b.dk', email: 123 }]);
+});
+
+test('a one-column export on stdin is read, not refused as JSON', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -o json`, { input: 'email\na@b.dk\nc@d.dk\n' }));
+  assert.deepEqual(JSON.parse(out), [{ email: 'a@b.dk' }, { email: 'c@d.dk' }]);
+});
+
+test('detection on stdin still leaves JSON, YAML and XML alone', () => {
+  const json = expectOk(sh(`"${process.execPath}" "${cli}" -o csv`, { input: '[{"a":1},\n{"a":2}]' }));
+  assert.equal(json.trim(), 'a\n1\n2');
+  const yaml = expectOk(sh(`"${process.execPath}" "${cli}" -o json`, { input: 'server:\n  host: db.local\n' }));
+  assert.deepEqual(JSON.parse(yaml), [{ server: { host: 'db.local' } }]);
+  const xml = expectOk(sh(`"${process.execPath}" "${cli}" -o json`, { input: '<data>\n<item>1</item>\n<item>2</item>\n</data>' }));
+  assert.equal(JSON.parse(xml).length, 2);
+});
+
 console.log('── real-world CSV: rows longer than the header ──');
 
 test('a row with more fields than the header keeps the extra values', () => {

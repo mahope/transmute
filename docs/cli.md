@@ -110,6 +110,44 @@ export:
   (exit 0) and one warning on stderr says which rows and which columns are
   involved. A row with *fewer* fields is padded with `''`, as before.
 
+Detection uses the same rule as the reader, so a file the reader can read is
+never refused for want of a `--format` flag. That matters most on **stdin**,
+where there is no file extension to go by — a Danish Excel export, a TSV and a
+pipe-delimited table all used to be sent to the JSON reader and rejected with
+`Could not parse input as json`, even though the reader behind the check
+handled all of them:
+
+```bash
+printf 'navn;by;pris\nMette;KBH;199,50\n' | transmute --output json
+```
+
+```json
+[
+  {
+    "navn": "Mette",
+    "by": "KBH",
+    "pris": "199,50"
+  }
+]
+```
+
+A file with no delimiter at all is a one-column CSV when it has more than one
+line, so a mailing list is read rather than refused:
+
+```bash
+printf 'email\na@b.dk\nc@d.dk\n' | transmute --output csv
+```
+
+```csv
+email
+a@b.dk
+c@d.dk
+```
+
+JSON, YAML and XML are still recognised first, so nothing is stolen from them. A
+single line with no delimiter stays JSON, which is what keeps the bare scalars
+`42`, `true` and `hello` scalars instead of one-column tables.
+
 `test/fixtures/ragged.csv` is a file where someone appended a column to the
 data without touching the header. Row 3 is the proof, and it is part of the test
 suite:
