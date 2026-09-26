@@ -66,6 +66,37 @@ function findRootClose(text, from, rootTag) {
   }
 }
 
+/**
+ * Where the element named `tag`, opened at `from - 1`, actually ends.
+ *
+ * Not the first `</tag>` in the text. An element that contains a child of its
+ * own name closes twice, and the child's close comes first, so `indexOf` cut
+ * the parent off inside the child: `{"a":{"a":1}}` is written as
+ * `<a><a>1</a></a>`, the reader read the element's content as `<a>1`, found no
+ * close tag in it, and failed the whole file — `json → xml` exit 0 followed by
+ * `xml → json` exit 3 on the file it had just written. Recursive element names
+ * are ordinary in hand-written XML, so the same file from a customer failed the
+ * same way. Counting the same-name opens and matching every close against them
+ * is the whole fix, and it is the same question `findRootClose` above already
+ * answers with a stack.
+ */
+function findElementClose(inner, tag, closeTag, from) {
+  const open = new RegExp(`<${tag}(?=[\\s/>])`, 'g');
+  let depth = 0;
+  let pos = from;
+  for (;;) {
+    const nextClose = inner.indexOf(closeTag, pos);
+    if (nextClose === -1) return -1;
+    open.lastIndex = pos;
+    for (let m = open.exec(inner); m && m.index < nextClose; m = open.exec(inner)) {
+      if (inner[m.index + m[0].length] !== '/') depth++;
+    }
+    if (depth === 0) return nextClose;
+    depth--;
+    pos = nextClose + closeTag.length;
+  }
+}
+
 const parsers = {
   json: (text, opts) => {
     const data = JSON.parse(text);
@@ -167,7 +198,7 @@ const parsers = {
       const contentStart = i + m[0].length;
       if (m[2].trim().endsWith('/')) return [{ tag, value: attrs }, contentStart];
       const closeTag = '</' + tag + '>';
-      const closeIdx = inner.indexOf(closeTag, contentStart);
+      const closeIdx = findElementClose(inner, tag, closeTag, contentStart);
       if (closeIdx === -1) return null;
       const content = inner.slice(contentStart, closeIdx).trim();
       let value;

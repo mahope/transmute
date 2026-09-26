@@ -287,6 +287,18 @@ test('xml → xml does not compound its own escaping', () => {
   assert.equal(once.includes('&amp;amp;'), false, `escape grew: ${once}`);
 });
 
+console.log('── an element may contain a child of its own name ──');
+
+test('json → xml → json is not a file the tool cannot read back', () => {
+  // The writer emits `<a><a>1</a></a>` for `{"a":{"a":1}}`. The reader used to
+  // end an element at the first `</a>`, so the second read of its own output
+  // failed: exit 3 with `Could not read the XML element`.
+  const xml = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"a":{"a":1}}]' }));
+  assert.ok(xml.includes('<a>'), xml);
+  const back = expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o json`, { input: xml }));
+  assert.deepEqual(JSON.parse(back), [{ a: { a: '1' } }]);
+});
+
 console.log('── nested YAML is read, not flattened away ──');
 
 test('an indented block survives, instead of vanishing with exit 0', () => {

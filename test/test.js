@@ -445,6 +445,27 @@ test('xml → xml is a round trip, not an escaping ratchet', () => {
   assert.ok(!once.includes('&amp;amp;'), once);
 });
 
+test('an element that contains a child of its own name is read to its real end', () => {
+  // `{"a":{"a":1}}` is written as `<a><a>1</a></a>`, and finding the end by the
+  // first `</a>` cut the parent off inside the child: the reader failed the
+  // whole file on a document it had written itself.
+  assert.deepStrictEqual(run('<data><item><a><a>1</a></a></item></data>', 'xml').data, [{ a: { a: '1' } }]);
+  assert.deepStrictEqual(run('<data><item><a><a><a>1</a></a></a></item></data>', 'xml').data, [{ a: { a: { a: '1' } } }]);
+  // A self-closing child of the same name closes nothing, so it must not be
+  // counted as an open element.
+  assert.deepStrictEqual(run('<data><item><a><a/></a></item></data>', 'xml').data, [{ a: { a: {} } }]);
+  // Only same-name children nest: a different name in between is its own depth.
+  assert.deepStrictEqual(run('<data><item><a><b><a>1</a></b></a></item></data>', 'xml').data, [{ a: { b: { a: '1' } } }]);
+  // A name that only shares a prefix is a different element, not a nested one.
+  assert.deepStrictEqual(run('<data><item><a><ab>1</ab></a></item></data>', 'xml').data, [{ a: { ab: '1' } }]);
+});
+
+test('json → xml → json survives a key that repeats on two levels', () => {
+  const src = JSON.stringify([{ a: { a: 1 } }, { a: { b: { a: 2 } } }]);
+  const back = run(run(src, 'json', [], 'xml').text, 'xml', [], 'json');
+  assert.deepStrictEqual(back.data, [{ a: { a: '1' } }, { a: { b: { a: '2' } } }]);
+});
+
 test('parse YAML list', () => {
   const r = run('- name: Alice\n  age: 30\n- name: Bob\n  age: 25', 'yaml');
   assert.strictEqual(r.data.length, 2);
