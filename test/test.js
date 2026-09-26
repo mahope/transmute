@@ -2251,5 +2251,92 @@ test('the CSV writer names the columns a reader will type for it', () => {
   assert.ok(mixed[0].includes('"a" (1)'), mixed[0]);
 });
 
+// ─── Names a record already answers to ────────────────────────────────
+test('a repeated child key is a list, and that list is the file', () => {
+  // The two obligations a name-to-value reader has here, measured with two
+  // judges: the other reader in the file has all three members, and this one
+  // keeps all three. Nothing is dropped, so nothing needs a warning, and the
+  // round trip is stable — a list is written back as repeated elements and
+  // read as the same list.
+  assert.deepStrictEqual(run('<data><item><v>1</v><v>2</v><v>3</v></item></data>', 'xml').data, [{ v: ['1', '2', '3'] }]);
+  // One member is not a list, and that is the whole difference between the two
+  // documents: XML cannot say "one of many", so the type follows the count.
+  assert.deepStrictEqual(run('<data><item><v>1</v></item></data>', 'xml').data, [{ v: '1' }]);
+  // Two records where the same field is a list in one and a scalar in the other
+  // is heterogeneous data, not a collision: both keep every member they have.
+  assert.deepStrictEqual(run('<data><item><v>1</v><v>2</v></item><item><v>9</v></item></data>', 'xml').data,
+    [{ v: ['1', '2'] }, { v: '9' }]);
+  // Nested one level deeper, with attributes and with a child element per
+  // member: the members are objects, and they stay objects.
+  assert.deepStrictEqual(run('<data><item><v x="1"/><v x="2"/></item></data>', 'xml').data, [{ v: [{ '@x': '1' }, { '@x': '2' }] }]);
+  const carried = run('<data><item><field name="a b">1</field><field name="a b">2</field></item></data>', 'xml');
+  assert.deepStrictEqual(carried.data, [{ 'a b': ['1', '2'] }]);
+  // The list is a document, so it must survive being written and read again.
+  const round = run(run(JSON.stringify([{ a: { v: [1, 2] } }]), 'json', [], 'xml').text, 'xml', [], 'json');
+  assert.deepStrictEqual(round.data, [{ a: { v: ['1', '2'] } }]);
+});
+
+test('a name a record already answers to is still a field, not an inherited one', () => {
+  // `childKey in value` walked the prototype chain, so a record whose child
+  // element is named after an `Object.prototype` member was read as if the file
+  // had already given that name twice: the repeated-key rule wrapped the
+  // *inherited function* as the first member, and a function is not JSON, so
+  // the field came out as `[null, "1"]` — a null nobody wrote, in a list nobody
+  // asked for, and one more null on every round trip.
+  for (const name of ['toString', 'constructor', 'valueOf', 'hasOwnProperty', 'isPrototypeOf',
+    'propertyIsEnumerable', 'toLocaleString']) {
+    assert.deepStrictEqual(run(`<data><item><${name}>1</${name}></item></data>`, 'xml').data, [{ [name]: '1' }], name);
+    // Two of them is a list of two, which is what the file says.
+    assert.deepStrictEqual(run(`<data><item><${name}>1</${name}><${name}>2</${name}></item></data>`, 'xml').data,
+      [{ [name]: ['1', '2'] }], name);
+  }
+  // `__proto__` is the other half: assignment to it on a plain object replaces
+  // the prototype instead of adding a field, so the field was *absent* from the
+  // record — `{}` where the file said `1`, exit 0, no warning.
+  // `{ ['__proto__']: … }` and not `{ __proto__: … }`: the latter is a prototype
+  // write in the test itself, and would make this test pass for the wrong reason.
+  assert.deepStrictEqual(run('<data><item><__proto__>1</__proto__><keep>y</keep></item></data>', 'xml').data,
+    [{ ['__proto__']: '1', keep: 'y' }]);
+  // The writer's own spelling, read back: this is the file `json → xml` produced
+  // for a record with that key, so the tool did not read back what it wrote.
+  const round = (key) => run(run(JSON.stringify([{ [key]: 'x', keep: 'y' }]), 'json', [], 'xml').text, 'xml', [], 'json');
+  assert.deepStrictEqual(round('__proto__').data[0]['__proto__'], 'x');
+  assert.deepStrictEqual(round('toString').data[0].toString, 'x');
+  // A key the XML writer cannot spell as a tag travels in a `name` attribute,
+  // and `readFieldName` puts it back through the same two lines.
+  const carried = round('a b');
+  assert.deepStrictEqual(carried.data, [{ 'a b': 'x', keep: 'y' }]);
+});
+
+test('the steps that name fields keep those fields', () => {
+  // Same rule, one layer over: `pick` asked `f in item`, `rename` asked
+  // `mapping[k] ?? k`, and all four steps wrote by assignment. So `pick` dropped
+  // the field it was asked for by name, `omit` dropped the field it was keeping,
+  // and `rename` with no mapping for a field wrote it under the *name* of the
+  // inherited member — `{"__proto__":"x"}` came out as `{"[object Object]":"x"}`
+  // and `constructor` as `{"function Object() { [native code] }":"c"}`.
+  const input = '[{"__proto__":"x","keep":"y"},{"constructor":"c","toString":"t","keep":"y"}]';
+  const pipe = (steps) => runSQL(input, 'json', steps, 'json');
+  assert.deepStrictEqual(pipe([{ op: 'pick', fields: ['keep', '__proto__'] }]).data[0]['__proto__'], 'x');
+  assert.strictEqual(pipe([{ op: 'pick', fields: ['keep', 'nope'] }]).data[0].nope, undefined);
+  assert.strictEqual(pipe([{ op: 'omit', fields: ['keep'] }]).data[0]['__proto__'], 'x');
+  const renamed = pipe([{ op: 'rename', mapping: { keep: 'ny' } }]).data;
+  assert.deepStrictEqual(Object.keys(renamed[0]), ['__proto__', 'ny']);
+  assert.deepStrictEqual(Object.keys(renamed[1]), ['constructor', 'toString', 'ny']);
+  // The mapping and the added field need a computed key: a `{ __proto__ }`
+  // literal in the test itself would set a prototype, which is the very thing
+  // the step has to survive. The CLI gets these from JSON, where the name is a
+  // field like any other.
+  assert.strictEqual(pipe([{ op: 'rename', mapping: { ['__proto__']: 'ny' } }]).data[0].ny, 'x');
+  const added = pipe([{ op: 'add', fields: { ['__proto__']: { expr: '1' } } }]).data[0];
+  assert.strictEqual(added['__proto__'], 1);
+  // Reading it back from the other formats too: a CSV column and a YAML key by
+  // that name were dropped the same way, at the same two lines.
+  assert.strictEqual(run('__proto__,keep\nx,y\n', 'csv', [], 'json').data[0]['__proto__'], 'x');
+  assert.strictEqual(run('__proto__: x\nkeep: y\n', 'yaml', [], 'json').data[0]['__proto__'], 'x');
+  assert.strictEqual(run('{"__proto__":"x","keep":"y"}', 'json', [], 'json').data[0]['__proto__'], 'x');
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
+

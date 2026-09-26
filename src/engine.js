@@ -216,11 +216,11 @@ const parsers = {
           if (!child) throw new Error(`Could not read the XML element at "${content.slice(offset, offset + 40).trim()}"`);
           const [{ tag: childTag, value: childValue }, next] = child;
           const [childKey, unwrapped] = readFieldName(childTag, childValue);
-          if (childKey in value) {
+          if (hasField(value, childKey)) {
             if (!Array.isArray(value[childKey])) value[childKey] = [value[childKey]];
             value[childKey].push(unwrapped);
           } else {
-            value[childKey] = unwrapped;
+            setField(value, childKey, unwrapped);
           }
           pos = next;
         }
@@ -275,6 +275,45 @@ const parsers = {
  * The line number is what makes it actionable — a file with 40 000 records
  * cannot be inspected by hand, but "line 3" is a place to look.
  */
+/**
+ * Does this record already carry that name, and put a name into a record.
+ *
+ * A record is a plain object, and a plain object answers to eleven names it was
+ * never given: `toString`, `constructor`, `__proto__` and the rest of
+ * `Object.prototype`. Reading one with `in` therefore reports "you already have
+ * it" about a field the input never mentioned, and writing one by assignment
+ * goes through the `__proto__` setter, which adds no field at all — it replaces
+ * the object's prototype, and the name is then absent from `Object.keys`, from
+ * every writer and from the output.
+ *
+ * Both halves of that reached real output. `<item><toString>1</toString>` read
+ * back as `{"toString":[null,"1"]}` — a null nobody wrote, inside a list nobody
+ * asked for, growing by one more null on every round trip — because the
+ * repeated-key rule saw an inherited name and wrapped a *function* as the first
+ * member. `<item><__proto__>1</__proto__>` read back as `{}`, and so did a CSV
+ * column and a YAML key by that name. `rename` was the loudest of them: with no
+ * mapping for a field, `mapping[k] ?? k` found the inherited member and wrote
+ * the record's field under the name `"function Object() { [native code] }"`.
+ *
+ * None of this needs a filename or a spelling: `json → xml` already writes
+ * `<__proto__>x</__proto__>`, so the file this tool produced did not read back.
+ * The writer was never wrong about the name; the record was.
+ */
+function hasField(record, key) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function setField(record, key, value) {
+  // Assignment to `__proto__` on a plain object is a prototype write, not a
+  // field write. `defineProperty` is what `JSON.parse` uses for the same name,
+  // which is why a JSON file can hold the field at all.
+  if (key === '__proto__') {
+    Object.defineProperty(record, key, { value, writable: true, enumerable: true, configurable: true });
+    return;
+  }
+  record[key] = value;
+}
+
 function noteDuplicateKey(warnings, format, key, first, second) {
   if (!Array.isArray(warnings)) return;
   if (first.value === second.value) return;
@@ -747,7 +786,7 @@ const operations = {
     return data.map(item => {
       const picked = {};
       for (const f of fields) {
-        if (f in item) picked[f] = item[f];
+        if (hasField(item, f)) setField(picked, f, item[f]);
       }
       return picked;
     });
@@ -757,7 +796,7 @@ const operations = {
     return data.map(item => {
       const omitted = {};
       for (const [k, v] of Object.entries(item)) {
-        if (!fields.has(k)) omitted[k] = v;
+        if (!fields.has(k)) setField(omitted, k, v);
       }
       return omitted;
     });
@@ -821,7 +860,7 @@ const operations = {
     return data.map(item => {
       const renamed = {};
       for (const [k, v] of Object.entries(item)) {
-        renamed[mapping[k] ?? k] = v;
+        setField(renamed, hasField(mapping, k) ? mapping[k] : k, v);
       }
       return renamed;
     });
@@ -860,9 +899,9 @@ const operations = {
       const out = { ...item };
       for (const [name, fn] of compiled) {
         try {
-          out[name] = fn(item, i);
+          setField(out, name, fn(item, i));
         } catch {
-          out[name] = null;
+          setField(out, name, null);
         }
       }
       return out;
@@ -1156,14 +1195,14 @@ function parseCSV(text, opts = {}) {
   for (let r = 1; r < recordsWithIndex.length; r++) {
     const values = recordsWithIndex[r].values;
     const row = {};
-    headers.forEach((h, idx) => { row[h] = idx < values.length ? coerceCSVValue(values[idx]) : ''; });
+    headers.forEach((h, idx) => { setField(row, h, idx < values.length ? coerceCSVValue(values[idx]) : ''); });
     if (values.length > headers.length) {
       extraLines.add(r + 1);
       for (let idx = headers.length; idx < values.length; idx++) {
         // One name per field position, not per value: a file where 900 rows
         // are too long must not produce 1800 columns.
         if (!extraNames.has(idx)) extraNames.set(idx, extraColumnName(idx, headerNames));
-        row[extraNames.get(idx)] = coerceCSVValue(values[idx]);
+        setField(row, extraNames.get(idx), coerceCSVValue(values[idx]));
       }
     }
     rows.push(row);
@@ -1406,7 +1445,7 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     } else {
       seen.set(key, { value, line: no });
     }
-    map[key] = value;
+    setField(map, key, value);
   };
   let i = start;
   while (i < lines.length) {
@@ -1703,7 +1742,7 @@ function parseYAMLFlow(text, ctx) {
       } else {
         seen.set(key, { value: valueRead, line: 0 });
       }
-      out[key] = valueRead;
+      setField(out, key, valueRead);
       skipSpace();
       if (text[i] === ',') { i++; continue; }
       if (text[i] === '}') { i++; return out; }
