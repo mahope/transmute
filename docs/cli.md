@@ -200,6 +200,28 @@ types whatever it reads back. Three rules, all measured on the real binary:
   blank line, and the reader ate it — three records in, two out, exit 0 and
   nothing on stderr.
 
+- A **column name** follows the same rule as a value, and it used not to. A
+  header written bare is trimmed by the reader, so a name with a space at
+  either end came back under a different name — and a header holding nothing
+  but spaces was written as a line the reader read as a *blank line*, which
+  RFC 4180 allows between records, so the header was eaten and the file read
+  back with no rows at all. Names are quoted, never trimmed:
+
+  ```bash
+  printf '[{"Total ":1,"Total":2}]' | transmute --output csv
+  ```
+
+  ```csv
+  "Total ",Total
+  1,2
+  ```
+
+  This is the ordinary shape of it: a spreadsheet export with a stray trailing
+  space in one column name. Before, both names were written bare, both were
+  trimmed to `Total`, the two columns became one, and the second value
+  overwrote the first — a whole column of data gone, exit 0, nothing on
+  stderr.
+
 - A string that **looks like a number or a boolean** is written as text and
   read back as a number or a boolean. Quoting cannot prevent this — the reader
   takes the quotes off before it converts, so `"true"` comes back as `true` —

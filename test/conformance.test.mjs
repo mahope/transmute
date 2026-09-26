@@ -311,6 +311,46 @@ test('docs/cli.md shows the real table cell and sql identifier output', () => {
   assert.ok(section.includes("imports the file"), 'docs/cli.md must say the SQL value still imports');
 });
 
+test('docs/cli.md shows what a quoted column name prints', () => {
+  // The rule is a claim about a file: a column name is quoted, never trimmed.
+  // A paragraph saying so is worth nothing if the command above it prints a
+  // bare name, so the command is run and the bytes compared — and the two
+  // claims that cannot be seen in the output (a trimmed name is *silent*, and a
+  // whitespace-only header loses the whole file) are locked by their own
+  // round trip rather than by the example.
+  const section = (() => {
+    const from = docs.indexOf('### Delimiters, quotes and line endings');
+    const to = docs.indexOf('### Text encoding');
+    assert.ok(from !== -1 && to > from, 'docs/cli.md has lost the section on delimiters and quotes');
+    return docs.slice(from, to);
+  })();
+
+  // Fenced blocks are paired by position, not by the text between them: the
+  // rules sit in a bullet list, so the fences are indented and no two-block
+  // regex survives the indentation. The indentation is the closing fence's
+  // own, and it is stripped from the body — the output a command prints has
+  // nothing to do with the bullet it is quoted in.
+  const blocks = [...section.matchAll(/^([ \t]*)```(\w*)\n([\s\S]*?)^\1```/gm)]
+    .map(m => ({ lang: m[2], body: m[3].split('\n').map(l => l.startsWith(m[1]) ? l.slice(m[1].length) : l).join('\n') }));
+  const idx = blocks.findIndex(b => b.lang === 'bash' && b.body.includes('"Total "'));
+  assert.ok(idx !== -1, 'the column-name rule shows no runnable example');
+  assert.equal(blocks[idx + 1]?.lang, 'csv', 'the column-name example is not followed by its output');
+
+  const result = spawnSync('sh', ['-c', blocks[idx].body.trim().replace(/(^|\s)transmute /g, '$1' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(join(root, 'src', 'cli.js')) + ' ')], {
+    cwd: root,
+    encoding: 'utf-8',
+  });
+  assert.equal(result.status, 0, `the documented command failed: ${blocks[idx].body.trim()}\n${result.stderr}`);
+  assert.equal(result.stdout, blocks[idx + 1].body, `docs/cli.md does not show what this prints:\n$ ${blocks[idx].body.trim()}`);
+
+  // The silent half, locked through the real binary: the two names stay two
+  // columns, and a header that is nothing but spaces is a header.
+  const written = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-', '-f', 'json', '-o', 'csv'], { input: '[{"Total ":1,"Total":2}]', encoding: 'utf-8' });
+  assert.deepEqual(run(written.stdout, 'csv', [], 'json').data, [{ 'Total ': 1, Total: 2 }]);
+  const blank = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-', '-f', 'json', '-o', 'csv'], { input: '[{"  ":1}]', encoding: 'utf-8' });
+  assert.deepEqual(run(blank.stdout, 'csv', [], 'json').data, [{ '  ': 1 }], 'a header of only spaces is a header, not a blank line');
+});
+
 test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () => {
   // The eleventh silence, and the same shape as the tenth: a control character
   // in a value was written into the file raw, so the file declared XML 1.0 and

@@ -2088,6 +2088,36 @@ test('a CSV cell is quoted when a bare one would not read back the same', () => 
   assert.deepStrictEqual(run(inner, 'csv', [], 'json').data, [{ a: ' "q" ' }]);
 });
 
+test('a CSV column name is quoted on the same rule as a CSV value', () => {
+  // The value line got this rule from the test above; the header line never
+  // did, and the gap is three silent losses. A bare header is trimmed by the
+  // reader, a header of nothing but spaces is a blank line, and two headers
+  // that differ only in their edge spaces become one column.
+  //
+  // The second of those is the sharpest: RFC 4180 lets a file carry blank
+  // lines between records, the reader follows that rule for records, and the
+  // header is the first record — so a whitespace-only header was eaten and the
+  // only data line became the header. One record in, zero records out.
+  for (const name of [' a ', '  ', '', ' a', 'a ']) {
+    const records = [{ [name]: 1 }];
+    const text = run(JSON.stringify(records), 'json', [], 'csv').text;
+    assert.deepStrictEqual(run(text, 'csv', [], 'json').data, records, JSON.stringify(name));
+  }
+  // Two headers one space apart are two columns, and both values are kept —
+  // this is the case that lost a whole column of data.
+  const pair = [{ ' a': 1, 'a ': 2 }];
+  const pairText = run(JSON.stringify(pair), 'json', [], 'csv').text;
+  assert.strictEqual(pairText, '" a","a "\n1,2', pairText);
+  assert.deepStrictEqual(run(pairText, 'csv', [], 'json').data, pair);
+  // The quoting is on the name, not a new rule for names: a name holding a
+  // quote still doubles it, and the ones that need nothing stay bare so an
+  // ordinary export is unchanged.
+  assert.strictEqual(run('[{"a\\"b":1," c ":2,"d":3}]', 'json', [], 'csv').text, '"a""b"," c ",d\n1,2,3');
+  // A name a reference reader also keeps: Python's csv holds the spaces, and
+  // Transmute now writes the file that makes that true.
+  assert.strictEqual(run('[{"Total ":1,"Total":2}]', 'json', [], 'csv').text, '"Total ",Total\n1,2');
+});
+
 test('the CSV writer names the columns a reader will type for it', () => {
   // Quoting cannot fix a type change: the reader takes the quotes off before
   // it coerces, so `"true"` comes back as the boolean `true`. The rule is

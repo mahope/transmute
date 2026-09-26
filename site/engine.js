@@ -619,15 +619,9 @@ const serializers = {
     // line — which is why the reader asks whether a field was quoted rather
     // than only what it contained.
     const oneColumn = headers.length === 1;
-    const lines = [headers.map(escapeCSV).join(',')];
+    const lines = [headers.map(h => csvCell(h, oneColumn)).join(',')];
     for (const row of data) {
-      lines.push(headers.map(h => {
-        const cell = cellValue(row[h]);
-        if (cell !== cell.trim() || (oneColumn && cell === '')) {
-          return `"${cell.replace(/"/g, '""')}"`;
-        }
-        return escapeCSV(cell);
-      }).join(','));
+      lines.push(headers.map(h => csvCell(row[h], oneColumn)).join(','));
     }
     reportCSVTypeLoss(data, headers, opts.warnings);
     return lines.join('\n');
@@ -1083,6 +1077,44 @@ function escapeCSV(val) {
     return '"' + val.replace(/"/g, '""') + '"';
   }
   return val;
+}
+
+/**
+ * One CSV cell, for the header line and for the value line alike.
+ *
+ * The value line got this rule in T41 and the header line never did, and the
+ * gap is the whole fourth end of this tool's writer — measured on the real
+ * binary, exit 0 and empty stderr in all three cases:
+ *
+ *   header " a "    written bare, and the reader trims every field it did not
+ *                   read as quoted, so the column came back named `a`
+ *   header "  "     written as a line holding two spaces, and RFC 4180 lets a
+ *   header ""       file carry blank lines between records — which is the rule
+ *                   the reader follows, correctly, for *records*. The header is
+ *                   the first record, so it was eaten: the only data line
+ *                   became the header and the file read back as **zero rows**
+ *   headers " a"    both written bare and both trimmed to `a`, so two columns
+ *          "a "     became one. The second value overwrote the first and a
+ *                   whole column of data was gone, with nothing on stderr
+ *
+ * The third is the one that costs data, and it needs no exotic input: a
+ * spreadsheet export with a stray trailing space in one column name is the
+ * ordinary shape of it. Quoting is the same fix T41 measured for values, and
+ * it is the only one available — RFC 4180 has no escape that says *this field
+ * is exactly these spaces*, so the file has to carry the quotes.
+ *
+ * `oneColumn` covers the blank-line case: a one-column file whose only header is
+ * empty is the shape where a record *is* a line with nothing on it, and `""` is
+ * the RFC's own way to spell a field that is present and empty. The reader asks
+ * whether a field was quoted rather than what it held, so it can tell the two
+ * apart — but only if the writer quotes.
+ */
+function csvCell(val, oneColumn) {
+  const cell = cellValue(val);
+  if (cell !== cell.trim() || (oneColumn && cell === '')) {
+    return '"' + cell.replace(/"/g, '""') + '"';
+  }
+  return escapeCSV(cell);
 }
 
 function parseYAMLValue(val) {
