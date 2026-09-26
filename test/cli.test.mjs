@@ -299,8 +299,56 @@ test('json → xml → json is not a file the tool cannot read back', () => {
   assert.deepEqual(JSON.parse(back), [{ a: { a: '1' } }]);
 });
 
-console.log('── nested YAML is read, not flattened away ──');
+console.log('── a list in XML is a list, and a file expat can read ──');
 
+test('a list survives json → xml → json as a list', () => {
+  // The writer used to spell a list as numbered `<field name="0">` children,
+  // which every reader that maps element name to value collapses to the last
+  // member, and which this reader read back as an object with the indices as
+  // keys. Repeated elements are the shape XML has, and the reader already
+  // turns them back into a list.
+  const xml = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"v":[1,2,3]}]' }));
+  assert.ok(xml.includes('<v>1</v>') && xml.includes('<v>2</v>') && xml.includes('<v>3</v>'), xml);
+  assert.ok(!xml.includes('field'), xml);
+  const back = expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o json`, { input: xml }));
+  assert.deepEqual(JSON.parse(back), [{ v: ['1', '2', '3'] }]);
+  // A list of objects keeps its members apart, which the numbered spelling
+  // could not do: both were `<field>` and one of them was the answer.
+  const objs = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"v":[{"sku":"A"},{"sku":"B"}]}]' }));
+  assert.deepEqual(
+    JSON.parse(expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o json`, { input: objs }))),
+    [{ v: [{ sku: 'A' }, { sku: 'B' }] }]
+  );
+  // A member carrying `@name` used to give the element two `name` attributes,
+  // which is a file expat refuses to parse at all.
+  const named = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"v":[{"@name":"x"},{"@name":"y"}]}]' }));
+  assert.ok(!/name="[^"]*"[^>]*\sname=/.test(named.replace(/\n\s*/g, ' ')), named);
+  assert.ok(named.includes('<v name="x"/>') && named.includes('<v name="y"/>'), named);
+});
+
+test('the three list shapes XML cannot carry are named on stderr', () => {
+  // stdout stays clean data and the run succeeds, because nothing here is
+  // wrong with the command — the file just cannot say what it lost.
+  const r = sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"v":[],"w":[[1,2]],"t":["x"]}]' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.includes('Warning'), false, r.stdout);
+  assert.equal(r.stderr.split('\n').filter((l) => l.startsWith('Warning')).length, 3, r.stderr);
+  for (const field of ['"v" (1)', '"w" (1)', '"t" (1)']) assert.ok(r.stderr.includes(field), r.stderr);
+  // A list of several members is a complete answer in XML, so it is silent.
+  const quiet = sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"v":[1,2]},{"v":[3,4]}]' });
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.equal(quiet.stderr, '', quiet.stderr);
+  // A key that is not a legal tag name still travels in the attribute, once
+  // per member, so the list is still a list on the way in.
+  const carried = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"first name":["a","b"]}]' }));
+  assert.equal((carried.match(/<field name="first name">/g) || []).length, 2, carried);
+  assert.deepEqual(
+    JSON.parse(expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o json`, { input: carried }))),
+    [{ 'first name': ['a', 'b'] }]
+  );
+});
+
+console.log('── nested YAML is read, not flattened away ──');
 test('an indented block survives, instead of vanishing with exit 0', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o json`, {
     input: 'server:\n  host: db.local\n  port: 5432\nlist:\n  - a\n  - b\n'

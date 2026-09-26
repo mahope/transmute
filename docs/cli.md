@@ -552,6 +552,98 @@ INSERT INTO "my_table" ("a") VALUES
 l2');
 ```
 
+### Lists in XML: repeated elements, and the three that have no shape
+
+A list is written as **repeated elements of the same name**, which is the one
+shape XML has for one and what an XML document actually looks like:
+
+```bash
+printf '[{"id":1,"tags":["red","blue"]},{"id":2,"tags":["green"]}]' > tags.json && transmute tags.json --output xml
+```
+
+```
+Warning: xml: 1 field(s) hold a list of one, which XML writes as the single value it is: "tags" (1). It reads back as that value, not as a list of one — the value is kept, the list around it is not.
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <item>
+    <id>1</id>
+    <tags>red</tags>
+    <tags>blue</tags>
+  </item>
+  <item>
+    <id>2</id>
+    <tags>green</tags>
+  </item>
+</data>
+```
+
+Transmute used to write a list as numbered `<field name="0">` children instead.
+That is a list wearing an object's clothes: the index that says *which member*
+lived in an attribute, because an element name cannot say it twice in a row. Any
+reader that maps element name to value then keeps the **last** member and loses
+the rest — `{"tags":["red","blue","green"]}` came out as one tag, `green` — and
+Transmute's own reader read `[1,2,3]` back as `{"0":"1","1":"2","2":"3"}`. A list
+whose members carried `@name` was worse than lossy: the element got **two
+`name` attributes**, and `expat` refused the file outright.
+
+Reading the file above back gives the list, and one field that is not a list
+any more:
+
+```bash
+transmute tags.json --output xml | transmute --format xml --output json
+```
+
+```
+[
+  {
+    "id": "1",
+    "tags": [
+      "red",
+      "blue"
+    ]
+  },
+  {
+    "id": "2",
+    "tags": "green"
+  }
+]
+```
+
+The numbers are text now, as they always were — an XML element is text, so
+`1` reads back as `"1"`. What comes back is a **list**, which is the part that
+used to be lost.
+
+Three list shapes have no answer here, and each is named on stderr. The run
+still succeeds and stdout is still clean data, because nothing is wrong with the
+command — the file just cannot say what it lost:
+
+| Shape | Written as | Reads back as | Why there is no other answer |
+|---|---|---|---|
+| A list of one | the value itself, `<tags>green</tags>` | `"green"` | one element is what a scalar is, and anything that told them apart would have to be on the element a plain value also uses |
+| An empty list | an empty element, `<tags/>` | `{}` | an empty element is exactly what an empty object is |
+| A list inside a list | numbered `<field name="0">` children | `{"0":…}` | `[[1,2]]` and `{"v":[1,2]}` would otherwise be the same document |
+
+Telling those three apart would take a marker attribute, and a marker is a
+convention every other reader would have to know about to see the list at all —
+a worse trade than saying so. A file full of ordinary lists is silent.
+
+A key that is not a legal XML tag name still travels in a `name` attribute on
+`<field>`, once per member, so a list under such a key is still a list:
+
+```bash
+printf '[{"first name":["Ada","Bob"]}]' | transmute --format json --output xml
+```
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <item>
+    <field name="first name">Ada</field>
+    <field name="first name">Bob</field>
+  </item>
+</data>
+```
+
 ### XML output: the characters XML itself cannot hold
 
 XML 1.0 is not able to represent every character. Its `Char` production is

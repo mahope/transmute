@@ -667,18 +667,26 @@ const serializers = {
       return writeYAMLMapping(Object.entries(item), 2, '- ').join('\n');
     }).join('\n');
   },
-  xml: (data, rootName = 'data') => {
+  xml: (data, opts = {}) => {
     if (!Array.isArray(data)) data = [data];
     assertWritable(data, 'xml');
+    const rootName = opts.rootName || 'data';
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<${rootName}>\n`;
     for (const row of data) {
       if (typeof row !== 'object' || row === null) {
         xml += `  <item>${escapeXML(String(row))}</item>\n`;
+      } else if (Array.isArray(row)) {
+        // A record's own boundary is information. A file whose records are
+        // lists must not turn into one element per member, so a row that is a
+        // list takes the numbered spelling — and that is the same spelling a
+        // list inside a list takes, for the same reason.
+        xml += `${writeXMLNumbered('item', row, 1)}\n`;
       } else {
         xml += `${writeXMLElement('item', row, 1)}\n`;
       }
     }
     xml += `</${rootName}>`;
+    reportXMLListShape(data, opts.warnings);
     return xml;
   },
   table: (data) => {
@@ -939,6 +947,79 @@ function reportCSVTypeLoss(data, headers, warnings) {
     `csv: ${lost.length} of ${headers.length} columns hold values that are written as text and read back as a number or a boolean: ` +
     `${lost.join(', ')}. Quoting does not prevent it; json, yaml and xml keep the strings.`
   );
+}
+
+/**
+ * The two list shapes XML has no way to carry, counted per field and named on
+ * stderr. The twin of `reportCSVTypeLoss`, and for the same reason: the file
+ * cannot say what it lost, so it is said here or nowhere.
+ *
+ * A list is repeated elements of the same name, and that is a complete answer
+ * for every list whose members are not themselves lists. These two are the rest:
+ *
+ * - An **empty list** has no repeated element to write, and an empty element is
+ *   exactly what an empty object is. `<v/>` reads back as `{}`, so the field
+ *   survives and its type does not. Distinguishing them needs a marker
+ *   attribute, and a marker is a convention every other reader would have to
+ *   know about to see the list at all — a worse trade than saying so.
+ * - A **list inside a list** cannot be told from an object with one repeated
+ *   child: `[[1,2]]` and `{"v":[1,2]}` are different JSON and would be the same
+ *   document. Here the numbered `<field name="0">` spelling is kept, so the
+ *   structure at least stays visible in the file, and this warning is what
+ *   makes it something other than a quiet corruption.
+ * - A **list of exactly one member** is one element, and one element is what a
+ *   scalar is. `<v>7</v>` is `7` and `<v><sku>A</sku></v>` is `{"sku":"A"}`, so
+ *   `[7]` comes back as `"7"`. The member is not lost — only the fact that it
+ *   was a list of one — and no attribute can carry that fact, because anything
+ *   that distinguishes it has to be on the element that a plain value also
+ *   uses.
+ *
+ * The counts are per field, so a file with 40 000 rows says "v" once and not
+ * 40 000 times — the same rule the CSV warning follows.
+ */
+function reportXMLListShape(data, warnings) {
+  if (!Array.isArray(warnings)) return;
+  const empty = new Map();
+  const nested = new Map();
+  const single = new Map();
+  const note = (map, field) => map.set(field, (map.get(field) || 0) + 1);
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      for (const member of value) walk(member);
+      return;
+    }
+    if (typeof value !== 'object' || value === null) return;
+    for (const [field, member] of Object.entries(value)) {
+      if (Array.isArray(member)) {
+        if (member.length === 0) note(empty, field);
+        else if (member.length === 1) note(single, field);
+        if (member.some((m) => Array.isArray(m))) note(nested, field);
+      }
+      walk(member);
+    }
+  };
+  walk(data);
+  const list = (map) => [...map].map(([field, n]) => `"${field}" (${n})`).join(', ');
+  if (empty.size > 0) {
+    warnings.push(
+      `xml: ${empty.size} field(s) hold an empty list, which XML has no shape for: ${list(empty)}. ` +
+      'Each was written as an empty element and reads back as {} — the field is there, the list is not. ' +
+      'An empty list cannot be told from an empty object in XML without a convention, and this format has none.'
+    );
+  }
+  if (single.size > 0) {
+    warnings.push(
+      `xml: ${single.size} field(s) hold a list of one, which XML writes as the single value it is: ${list(single)}. ` +
+      'It reads back as that value, not as a list of one — the value is kept, the list around it is not.'
+    );
+  }
+  if (nested.size > 0) {
+    warnings.push(
+      `xml: ${nested.size} field(s) hold a list inside a list, which XML cannot tell from an object with a ` +
+      `repeated child: ${list(nested)}. It was written as numbered <field name="0"> children, ` +
+      'which only this tool reads back, and not as the list it was.'
+    );
+  }
 }
 
 /** Delimiters recognised when the caller does not force one. `,` wins a tie. */
@@ -1782,6 +1863,26 @@ function writeYAMLEntry(prefix, key, value, indent) {
 }
 
 /**
+ * A list written out as numbered children, `<field name="0">`, for the two
+ * cases repeated elements cannot spell: a list whose members are lists, and a
+ * record that is itself a list. Both need a boundary that an element name
+ * cannot carry, and both keep the index in an attribute so the structure stays
+ * visible in the file instead of being flattened into it.
+ *
+ * It is one function for both, because they are one rule: when the count of
+ * things matters, the count goes somewhere a reader can see. Two copies of it
+ * would be free to disagree, which is how the numbered spelling and the
+ * repeated one ended up meaning different things in the first place.
+ */
+function writeXMLNumbered(openTag, members, depth) {
+  const pad = '  '.repeat(depth);
+  const inner = members
+    .map((member, i) => writeXMLElement(String(i), member, depth + 1, String(i)))
+    .join('\n');
+  return `${pad}<${openTag}>\n${inner}\n${pad}</${openTag}>`;
+}
+
+/**
  * One element, indented. A field named `@x` is an attribute and `#text` is the
  * element's own text, which is the shape the reader produces — so a document that
  * went through `xml → json → xml` keeps its attributes instead of having them
@@ -1804,8 +1905,7 @@ function readFieldName(tag, value) {
   return [carried, rest];
 }
 
-function writeXMLElement(tag, value, depth, key = null) {
-  const pad = '  '.repeat(depth);
+function writeXMLElement(tag, value, depth, key = null) {  const pad = '  '.repeat(depth);
   // A JSON key is free text; an XML tag name is not. `first name`, `2fa`,
   // `a/b` and an empty key are all things a CSV header row or an API response
   // contains, and writing one as a tag name produced a file that no XML parser
@@ -1816,13 +1916,47 @@ function writeXMLElement(tag, value, depth, key = null) {
   const carried = key !== null && !new RegExp(`^${XML_NAME}$`).test(key);
   const name = carried ? ` name="${escapeXML(key)}"` : '';
   const safeTag = carried ? 'field' : tag;
+  // A list is repeated elements of the same name. It is the one shape XML has
+  // for one, it is what XML documents actually look like, and it is the shape
+  // `parseElement` already turns back into a list, so nothing has to invent a
+  // convention to read it.
+  //
+  // It used to be written as numbered `<field name="0">` children instead,
+  // which is a list wearing an object's clothes: the index that says *which
+  // member* lived in an attribute, because an element name cannot say it twice
+  // in a row. A reader that maps element name to value then keeps the **last**
+  // member and loses the rest — `{"v":[1,2,3]}` came back as one value, `3` —
+  // and every other tool in the world does exactly that. The list is also lost
+  // for this tool: `[1,2,3]` read back as `{"0":"1","1":"2","2":"3"}`.
+  if (Array.isArray(value)) {
+    // Zero members still has to leave the field behind, so an empty list is an
+    // empty element rather than nothing at all. `reportXMLListShape` says on
+    // stderr that it comes back as `{}`.
+    if (value.length === 0) return `${pad}<${safeTag}${name}/>`;
+    // A list inside a list is the one list with no XML shape: `[[1,2]]` and
+    // `{"v":[1,2]}` would be the same document, because both are one element
+    // with two children of the same name. Repeated elements would flatten it
+    // into one list of four, quietly. So it keeps the numbered spelling, where
+    // the index lives in an attribute, and the structure stays visible in the
+    // file instead of being lost in it.
+    if (value.some((member) => Array.isArray(member))) {
+      return writeXMLNumbered(`${safeTag}${name}`, value, depth);
+    }
+    return value.map((member) => writeXMLElement(tag, member, depth, key)).join('\n');
+  }
   if (typeof value !== 'object' || value === null) return `${pad}<${safeTag}${name}>${escapeXML(String(value))}</${safeTag}>`;
   const entries = Object.entries(value);
   // An attribute name follows the same rules as a tag name, and the `@` prefix
   // does not launder them: `@2fa` and a bare `@` wrote `<item 2fa="x">` and
   // `<item ="x">`, which no parser reads. Those go out as child elements through
   // the same `field` marker, so the record still comes back with the key it had.
-  const asAttribute = ([k]) => k.startsWith('@') && new RegExp(`^${XML_NAME}$`).test(k.slice(1));
+  //
+  // A carried key takes the same road, for the same reason and one step
+  // further: the element's one attribute slot already holds `name`, so a member
+  // carrying `@name` of its own wrote `<field name="0" name="x"/>` — two `name`
+  // attributes on one element, which expat refuses to parse at all, so the file
+  // was not merely lossy but unreadable outside this tool.
+  const asAttribute = ([k]) => !carried && k.startsWith('@') && new RegExp(`^${XML_NAME}$`).test(k.slice(1));
   const attrs = entries.filter(asAttribute).map(([k, v]) => ` ${k.slice(1)}="${escapeXML(String(v ?? ''))}"`).join('');
   const rest = entries.filter(([k]) => !asAttribute([k]));
   if (rest.length === 0) return `${pad}<${safeTag}${name}${attrs}/>`;
@@ -2418,11 +2552,12 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
 
     // Serialize
     if (!serializers[outputFormat]) return { error: `Unknown output format: ${outputFormat}` };
-    // CSV is the one writer that has to be told where the warnings go: it is
-    // the only format where the file itself cannot say what it lost, so the
-    // columns it renames on the way out are named here or nowhere.
-    const text = outputFormat === 'csv'
-      ? serializers.csv(data, { warnings })
+    // CSV and XML are the two writers that have to be told where the warnings
+    // go: they are the formats where the file itself cannot say what it lost,
+    // so the columns and fields it renames on the way out are named here or
+    // nowhere.
+    const text = outputFormat === 'csv' || outputFormat === 'xml'
+      ? serializers[outputFormat](data, { warnings })
       : serializers[outputFormat](data, outputFormat === 'sql' ? opts.tableName : undefined);
 
     return { data, text, warnings };

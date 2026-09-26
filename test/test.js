@@ -466,6 +466,93 @@ test('json → xml → json survives a key that repeats on two levels', () => {
   assert.deepStrictEqual(back.data, [{ a: { a: '1' } }, { a: { b: { a: '2' } } }]);
 });
 
+test('a list is repeated elements, so a list is still a list', () => {
+  // The list used to be written as numbered `<field name="0">` children, which
+  // is a list in an object's clothes: the index that says *which member* lived
+  // in an attribute, because an element name cannot say it twice in a row. A
+  // reader that maps element name to value then keeps the last member and drops
+  // the rest, and this reader read `{"0":"1","1":"2","2":"3"}` back.
+  const round = (v) => run(run(JSON.stringify([{ v }]), 'json', [], 'xml').text, 'xml', [], 'json').data[0].v;
+  assert.deepStrictEqual(round([1, 2, 3]), ['1', '2', '3']);
+  assert.deepStrictEqual(round(['a', 'b']), ['a', 'b']);
+  assert.deepStrictEqual(round([{ sku: 'A' }, { sku: 'B' }]), [{ sku: 'A' }, { sku: 'B' }]);
+  // Two empty objects are two elements, and an empty element is not an empty
+  // string the way a self-closed carried key is.
+  assert.deepStrictEqual(round([{}, {}]), [{}, {}]);
+  // A list inside a record, and a record whose own key repeats, are the same
+  // rule: repeated elements wherever the name may say it.
+  const deep = run('[{"a":{"v":[1,2]},"w":3}]', 'json', [], 'xml');
+  assert.ok(deep.text.includes('<v>1</v>') && deep.text.includes('<v>2</v>'), deep.text);
+  assert.deepStrictEqual(run(deep.text, 'xml', [], 'json').data, [{ a: { v: ['1', '2'] }, w: '3' }]);
+  // An object with one repeated child is a different document from a list, and
+  // it stays one: this is the case a list-inside-a-list cannot be told from.
+  const coll = run('[{"v":{"v":[1,2]}}]', 'json', [], 'xml');
+  assert.deepStrictEqual(run(coll.text, 'xml', [], 'json').data, [{ v: { v: ['1', '2'] } }]);
+  // A key that is not a legal tag name still cannot be spelled as a tag, so it
+  // travels in the `name` attribute — once per member, which the reader keys on.
+  const carried = run('[{"first name":["a","b"]}]', 'json', [], 'xml');
+  assert.strictEqual((carried.text.match(/<field name="first name">/g) || []).length, 2, carried.text);
+  assert.deepStrictEqual(run(carried.text, 'xml', [], 'json').data, [{ 'first name': ['a', 'b'] }]);
+  // A record that is a list keeps its own boundary: two records that are lists
+  // must not become one element per member.
+  const rows = run('[[1,2],[3,4]]', 'json', [], 'xml');
+  assert.strictEqual((rows.text.match(/<item>/g) || []).length, 2, rows.text);
+  assert.deepStrictEqual(run(rows.text, 'xml', [], 'json').data, [{ '0': '1', '1': '2' }, { '0': '3', '1': '4' }]);
+});
+
+test('a list member with an attribute cannot be a duplicate attribute', () => {
+  // `<field name="0" name="x"/>` is two `name` attributes on one element, and
+  // expat refuses the file outright — not a lossy read, an unreadable one. A
+  // carried key has already spent the element's attribute slot, so the record's
+  // own attributes go out as child elements, the same road an illegal
+  // attribute name already took.
+  const r = run('[{"first name":[{"@name":"x","sku":"A"}]}]', 'json', [], 'xml');
+  assert.ok(!/name="[^"]*"[^>]*\sname=/.test(r.text.replace(/\n\s*/g, ' ')), r.text);
+  assert.ok(r.text.includes('<field name="@name">'), r.text);
+  // A legal key is unaffected: the attribute is an attribute, as it always was.
+  const ok = run('[{"v":[{"@name":"x","sku":"A"}]}]', 'json', [], 'xml');
+  assert.ok(ok.text.includes('<v name="x">'), ok.text);
+  assert.ok(!ok.text.includes('field'), ok.text);
+});
+
+test('the XML writer names the three list shapes XML cannot carry', () => {
+  // Repeated elements are a complete answer for a list of several members, so
+  // the ordinary case is silent — a file full of lists must not become a file
+  // full of warnings.
+  assert.deepStrictEqual(run('[{"v":[1,2]},{"v":[3,4]}]', 'json', [], 'xml').warnings, []);
+  assert.deepStrictEqual(run('[{"v":[{"a":1},{"a":2}]}]', 'json', [], 'xml').warnings, []);
+  // An empty list, a list of one and a list inside a list are the three that
+  // have no shape here, and each is named with the field and how often.
+  const empty = run('[{"v":[]},{"v":[]}]', 'json', [], 'xml');
+  assert.strictEqual(empty.warnings.length, 1, JSON.stringify(empty.warnings));
+  assert.ok(empty.warnings[0].includes('empty list') && empty.warnings[0].includes('"v" (2)'), empty.warnings[0]);
+  assert.ok(empty.text.includes('<v/>'), empty.text);
+  const one = run('[{"tags":["new"]}]', 'json', [], 'xml');
+  assert.strictEqual(one.warnings.length, 1, JSON.stringify(one.warnings));
+  assert.ok(one.warnings[0].includes('list of one') && one.warnings[0].includes('"tags" (1)'), one.warnings[0]);
+  const nested = run('[{"v":[[1,2]]}]', 'json', [], 'xml');
+  // Two things are true of `[[1,2]]` and both are said: the outer list has one
+  // member, and that member is a list. One line that says neither would be the
+  // same silence as not warning at all.
+  assert.strictEqual(nested.warnings.length, 2, JSON.stringify(nested.warnings));
+  assert.ok(nested.warnings.join(' ').includes('list inside a list'), nested.warnings.join(' '));
+  assert.ok(nested.warnings.join(' ').includes('list of one'), nested.warnings.join(' '));
+  assert.ok(nested.warnings.join(' ').includes('"v" (1)'), nested.warnings.join(' '));
+  // The warning says what was written, so it has to be what was written: a
+  // list inside a list keeps the numbered spelling instead of being flattened
+  // into one list of two.
+  assert.ok(nested.text.includes('<field name="0">1</field>'), nested.text);
+  // Two fields, three shapes between them, and each is named on its own line.
+  const both = run('[{"v":[],"w":[[1]]}]', 'json', [], 'xml');
+  assert.strictEqual(both.warnings.length, 3, JSON.stringify(both.warnings));
+  assert.ok(both.warnings.some((w) => w.includes('"v" (1)')), both.warnings.join(' '));
+  assert.ok(both.warnings.filter((w) => w.includes('"w" (1)')).length === 2, both.warnings.join(' '));
+  // The other four writers have no list shape to lose, so they must stay silent.
+  for (const out of ['json', 'yaml', 'csv', 'table']) {
+    assert.deepStrictEqual(run('[{"v":[],"w":[[1]],"t":["x"]}]', 'json', [], out).warnings, [], out);
+  }
+});
+
 test('parse YAML list', () => {
   const r = run('- name: Alice\n  age: 30\n- name: Bob\n  age: 25', 'yaml');
   assert.strictEqual(r.data.length, 2);

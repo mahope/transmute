@@ -283,7 +283,7 @@ test('docs/cli.md shows the real table cell and sql identifier output', () => {
   // examples and the engine from drifting apart.
   const section = (() => {
     const from = docs.indexOf('### A cell that cannot be shown');
-    const to = docs.indexOf('### XML output: the characters XML itself cannot hold');
+    const to = docs.indexOf('### Lists in XML:');
     assert.ok(from !== -1 && to > from, 'docs/cli.md has lost the section on a cell that cannot be shown');
     return docs.slice(from, to);
   })();
@@ -670,6 +670,47 @@ test('docs/cli.md quotes the real warning for a CSV column that loses its type',
     assert.equal(kept.stderr, '', `${out} must not warn about a column it keeps: ${kept.stderr}`);
     assert.equal(kept.stdout.includes('1'), true, `${out} lost the value: ${kept.stdout}`);
   }
+});
+
+test('docs/cli.md shows a list in XML as repeated elements, and the loss it cannot hide', () => {
+  // The three shapes with no XML form are the whole answer to a list, so the
+  // docs quote the warning verbatim and the counts in it come from the run
+  // below. A paraphrased message is one nobody can match against a real run.
+  const write = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'json', '-o', 'xml'], {
+    cwd: root,
+    encoding: 'utf-8',
+    input: '[{"id":1,"tags":["red","blue"]},{"id":2,"tags":["green"]}]',
+  });
+  assert.equal(write.status, 0, `a list must not fail the run, got exit ${write.status}`);
+  const message = write.stderr.trim().replace(/^Warning: /, '');
+  assert.ok(message.includes('list of one') && message.includes('"tags" (1)'), message);
+  assert.equal(docs.includes(message), true, `docs/cli.md does not quote the warning verbatim: ${message}`);
+  // The file itself, byte for byte: repeated elements, no numbered spelling.
+  assert.equal(docs.includes(write.stdout.trim()), true, `docs/cli.md does not show the file this run wrote:\n${write.stdout}`);
+  // A list of several members is a complete answer in XML, so the docs must not
+  // warn about it — a warning on every file with a list would be noise.
+  const quiet = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'json', '-o', 'xml'], {
+    cwd: root, encoding: 'utf-8', input: '[{"v":[1,2]},{"v":[3,4]}]',
+  });
+  assert.equal(quiet.stderr, '', `a list of several members must be silent: ${quiet.stderr}`);
+  // The other two shapes, and the key that has to travel in an attribute, are
+  // documented the same way: by running the command the docs show.
+  for (const [input, expected] of [
+    ['[{"v":[]}]', '<v/>'],
+    ['[{"first name":["Ada","Bob"]}]', '<field name="first name">Ada</field>'],
+  ]) {
+    const r = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'json', '-o', 'xml'], {
+      cwd: root, encoding: 'utf-8', input,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(r.stdout.includes(expected), `docs/cli.md claims ${expected} for ${input}:\n${r.stdout}`);
+  }
+  // And the round trip the docs promise: a list is a list on the way back.
+  const back = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'xml', '-o', 'json'], {
+    cwd: root, encoding: 'utf-8', input: write.stdout,
+  });
+  assert.equal(back.status, 0, back.stderr);
+  assert.deepEqual(JSON.parse(back.stdout)[0].tags, ['red', 'blue']);
 });
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
