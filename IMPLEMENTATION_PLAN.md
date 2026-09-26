@@ -212,7 +212,7 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ### 59. [x] Bind sidens egen adresse til kontrakten, i siderne og i værktøjerne
 
-**Status:** FÆRDIG på `ceo/tool-claims` (fra `ceo/no-tracked-bytecode`), ikke mergeret til `main` — `DEPLOY-MISSING` står, 35. gang i træk. **Diffen rører ingen `site/`-fil** (bevist ved regenerering, se nedenfor), så den tilføjer intet til bunken der afventer deploy.
+**Status:** FÆRDIG på `ceo/tool-claims` (fra `ceo/no-tracked-bytecode`), commit `9fb18d0`, ikke mergeret til `main` — `DEPLOY-MISSING` står, 35. gang i træk. **Diffen rører ingen `site/`-fil** (bevist ved regenerering, se nedenfor), så den tilføjer intet til bunken der afventer deploy.
 **Mislykkede forsøg:** 0/2
 **Opgaven:** T58's næste flade, som var T57's (b) og T56's tredje kandidat — claims i kildekode som ingen regel læser, samme klasse som `make_og.py` blev målt i.
 
