@@ -25,6 +25,25 @@ export const describeCommit = (repo, sha) =>
   git(repo, 'log', '-1', '--format=%h %ad %s', '--date=short', sha);
 
 /**
+ * The newest commit that touched src/, named as itself.
+ *
+ * This line used to print HEAD under the label "last change to src/", which on
+ * 2026-09-26 named c0f559b — a commit that never opened src/ — while the real
+ * last change was 7646e11. A release checklist that points at the wrong commit
+ * sends the releaser looking at the wrong diff.
+ */
+export const lastSrcChange = (repo) => {
+  const sha = (() => {
+    try {
+      return git(repo, 'log', '-1', '--format=%H', '--', 'src/');
+    } catch {
+      return '';
+    }
+  })();
+  return sha ? describeCommit(repo, sha) : 'src/ has never been committed';
+};
+
+/**
  * The one implementation of the drift rule, so the release script and this
  * report can never disagree about it.
  */
@@ -49,7 +68,7 @@ function report(repo = root) {
 
   console.log(`version in package.json: ${version}`);
   console.log(bump ? `version claimed by:      ${line(bump)}` : 'version claimed by:      never committed');
-  console.log(`last change to src/:    ${line('HEAD')}`);
+  console.log(`last change to src/:    ${lastSrcChange(repo)}`);
   console.log(`commits touching src/ since the version was claimed: ${drifted.length}`);
 
   if (drifted.length === 0) {
