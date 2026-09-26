@@ -296,6 +296,28 @@ test('the dropped column is visible in CSV output, not only in the warning', () 
   assert.equal(r.stdout.split('\n')[0], 'id,name,email');
 });
 
+console.log('── a name only the first row has ──');
+
+test('a missing value is empty, not a function from the prototype', () => {
+  // `constructor` is a name a real join or a spreadsheet can produce, and the
+  // first row here is the only one that has it.
+  const input = JSON.stringify([{ name: 'a' }, { other: 1 }]);
+  for (const format of ['csv', 'table', 'sql']) {
+    const r = sh(`"${process.execPath}" "${cli}" --format json --output ${format} --pipe '${JSON.stringify([{ op: 'rename', mapping: { name: 'constructor' } }])}'`, { input });
+    assert.equal(r.status, 0, `${format}: ${r.stderr}`);
+    assert.equal(r.stdout.includes('native code'), false, `${format} wrote a function into the data:\n${r.stdout}`);
+  }
+});
+
+test('a row that is not a record is written, not thrown at', () => {
+  const input = JSON.stringify([null, { a: 1 }]);
+  for (const format of ['csv', 'table', 'sql']) {
+    const r = sh(`"${process.execPath}" "${cli}" --format json --output ${format} --pipe '[]'`, { input });
+    assert.equal(r.status, 0, `${format} exited ${r.status}: ${r.stderr}`);
+    assert.equal(r.stderr.includes('Cannot convert'), false, `${format} leaked a JavaScript error: ${r.stderr}`);
+  }
+});
+
 test('records with different keys export every key to CSV', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o csv`, {
     input: '[{"id":1,"name":"Alice"},{"id":2,"name":"Bob","email":"bob@x.dk"}]'

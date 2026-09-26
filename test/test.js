@@ -225,6 +225,60 @@ test('two different repeated headers are reported separately', () => {
   assert.ok(r.warnings.some(w => w.includes('"b" twice')), r.warnings.join('\n'));
 });
 
+// ─── WRITERS: A NAME ONLY SOME ROWS HAVE ────────────────────────────────
+
+// The key union is built from the first row that has the name, and then every
+// writer asks the *other* rows for that value. `row[name]` walks the prototype
+// chain, so a name like `constructor` came back as the inherited function and
+// was written into the output as its own source text.
+
+test('a value only the first row has is empty in the others, not an inherited one', () => {
+  const data = JSON.stringify([{ name: 'a' }, { other: 1 }]);
+  const pipeline = [{ op: 'rename', mapping: { name: 'constructor' } }];
+  const csv = run(data, 'json', pipeline, 'csv');
+  assert.strictEqual(csv.text, 'constructor,other\na,\n,1');
+  const table = run(data, 'json', pipeline, 'table');
+  assert.ok(!table.text.includes('native code'), table.text);
+  const sql = run(data, 'json', pipeline, 'sql');
+  assert.ok(!sql.text.includes('native code'), sql.text);
+  assert.ok(sql.text.includes("('a', NULL)"), sql.text);
+});
+
+test('every prototype name is a missing value, not a function', () => {
+  const data = JSON.stringify([{ name: 'a' }, { other: 1 }]);
+  for (const name of ['toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString']) {
+    const csv = run(data, 'json', [{ op: 'rename', mapping: { name } }], 'csv');
+    assert.strictEqual(csv.text, `${name},other\na,\n,1`, name);
+  }
+});
+
+test('a field named __proto__ is still written as the field it is', () => {
+  const csv = run('{"__proto__":1,"a":2}', 'json', [], 'csv');
+  assert.strictEqual(csv.text, '__proto__,a\n1,2');
+  const sql = run('{"__proto__":1,"a":2}', 'json', [], 'sql');
+  assert.ok(sql.text.includes('"__proto__"'), sql.text);
+});
+
+test('a row that is not a record does not crash the flat writers', () => {
+  const data = JSON.stringify([null, { a: 1 }]);
+  for (const format of ['csv', 'table', 'sql']) {
+    const r = run(data, 'json', [], format);
+    assert.ok(r.text !== undefined, `${format} threw instead of writing: ${r.error}`);
+  }
+  // `""` and not a bare blank line: in a one-column file an empty line is the
+  // blank line RFC 4180 lets between records, and the reader drops it — so the
+  // bare form loses the row on the way back in. T43's rule, and it is the
+  // reader that decides it, not the writer.
+  const csv = run(data, 'json', [], 'csv');
+  assert.strictEqual(csv.text, 'a\n""\n1');
+  assert.strictEqual(run(csv.text, 'csv', [], 'json').data.length, 2);
+});
+
+test('a record after a row that is not one still decides the columns', () => {
+  const csv = run(JSON.stringify([null, { b: 2 }, { a: 1 }]), 'json', [], 'csv');
+  assert.strictEqual(csv.text, 'b,a\n,\n2,\n,1');
+});
+
 test('rows with fewer fields than the header are still padded with empty strings', () => {
   const r = run('a,b,c\n1,2,3\n4', 'csv');
   assert.deepStrictEqual(r.data[1], { a: 4, b: '', c: '' });
