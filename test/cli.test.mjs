@@ -1520,5 +1520,111 @@ test('a join on a field neither side has invents nothing, and says why', () => {
   }
 });
 
+console.log('── a row that is not a record, on the way out ──');
+
+test('sql writes every record, not an empty file, when the first row is not a record', () => {
+  // The measured bug, on the real binary: `serializers.sql` asked whether the
+  // *first* row was an object, so this wrote a one-byte file and said nothing.
+  // Every record in the file was gone, at exit 0, on the way to disk.
+  const dir = mkdtempSync(join(tmpdir(), 't50-'));
+  try {
+    const path = join(dir, 'mixed.json');
+    writeFileSync(path, '["Alice",{"name":"Bob","city":"Aarhus"}]');
+    const file = join(dir, 'mixed.sql');
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'sql', '--out', file],
+      { encoding: 'utf-8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, '', 'the data went to the file, not to stdout');
+    const sql = readFileSync(file, 'utf-8');
+    assert.match(sql, /INSERT INTO "my_table" \("name", "city"\) VALUES/);
+    // The row that is not a record is a NULL, and the record that is one is
+    // still in the file — before, neither was.
+    assert.match(sql, /\(NULL, NULL\),\n  \('Bob', 'Aarhus'\);/);
+    assert.match(r.stderr, /Warning: sql: 1 of 2 rows is not a record/, r.stderr);
+    assert.match(r.stderr, /row 1 is a string \("Alice"\)/, r.stderr);
+    assert.match(r.stderr, /written as NULL/, r.stderr);
+    // The formats that can carry it are untouched by the warning.
+    const json = spawnSync(process.execPath, [cli, path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(json.stderr, '', json.stderr);
+    assert.deepEqual(JSON.parse(json.stdout), ['Alice', { name: 'Bob', city: 'Aarhus' }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a file with no records at all is empty, and the warning says the values are in it', () => {
+  // The reachable version of the same thing: one `map` step turns a file of
+  // records into a file of values, and the three flat formats have no column
+  // to put a value in. The empty file is the format's honest answer — there is
+  // no header to write — so the warning has to say the values are not in it.
+  const dir = mkdtempSync(join(tmpdir(), 't50-'));
+  try {
+    const path = join(dir, 'people.json');
+    writeFileSync(path, '[{"name":"Ada"},{"name":"Bob"}]');
+    const file = join(dir, 'names.sql');
+    const r = spawnSync(process.execPath, [cli, path, '--pipe',
+      '[{"op":"map","expr":"item.name"}]', '-o', 'sql', '--out', file],
+      { encoding: 'utf-8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(file, 'utf-8').trim(), '', 'no columns, so no statement');
+    assert.match(r.stderr, /Warning: sql: 2 of 2 rows are not records/, r.stderr);
+    assert.match(r.stderr, /no records to make columns from/, r.stderr);
+    assert.match(r.stderr, /json, yaml and xml keep them/, r.stderr);
+    // csv says the same about the file it cannot make a header for.
+    const csv = spawnSync(process.execPath, [cli, path, '--pipe',
+      '[{"op":"map","expr":"item.name"}]', '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(csv.status, 0, csv.stderr);
+    assert.match(csv.stderr, /no records to make a header from/, csv.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a row that is not a record is named in the file the user asked for', () => {
+  const dir = mkdtempSync(join(tmpdir(), 't50-'));
+  try {
+    const path = join(dir, 'mixed.json');
+    writeFileSync(path, '[{"a":1},"Alice",{"a":2}]');
+    const out = join(dir, 'mixed.csv');
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'csv', '--out', out],
+      { encoding: 'utf-8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, '', 'stdout stays empty when --out is given');
+    assert.equal(readFileSync(out, 'utf-8'), 'a\n1\n""\n2\n');
+    assert.match(r.stderr, /Warning: csv: 1 of 3 rows is not a record/, r.stderr);
+    assert.match(r.stderr, /row 2 is a string \("Alice"\)/, r.stderr);
+    // A file of records is not warned about — the common case must stay quiet.
+    writeFileSync(path, '[{"a":1},{"a":2}]');
+    const quiet = spawnSync(process.execPath, [cli, path, '-o', 'csv'],
+      { encoding: 'utf-8' });
+    assert.equal(quiet.status, 0, quiet.stderr);
+    assert.equal(quiet.stderr, '', `unexpected warning: ${quiet.stderr}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the preview says what the other writers have said since the warning existed', () => {
+  // The preview is the run almost every user makes — no flags at all — and it
+  // kept none of the warnings. `ragged.csv` recovered the extra value into
+  // `column4` and said nothing about the row it came from, while the same file
+  // with `-o json` named it. Every warning written since T14 died on this path.
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/ragged.csv`);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /column4/, 'the preview still shows the table');
+  assert.match(r.stderr, /Warning: 1 of 3 CSV rows has more fields than the header/, r.stderr);
+  // And a row that is not a record reaches the default path too.
+  const dir = mkdtempSync(join(tmpdir(), 't50-'));
+  try {
+    const path = join(dir, 'mixed.json');
+    writeFileSync(path, '[{"a":1},"Alice"]');
+    const preview = spawnSync(process.execPath, [cli, path], { encoding: 'utf-8' });
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stderr, /Warning: table: 1 of 2 rows is not a record/, preview.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

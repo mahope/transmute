@@ -351,6 +351,49 @@ test('docs/cli.md shows what a quoted column name prints', () => {
   assert.deepEqual(run(blank.stdout, 'csv', [], 'json').data, [{ '  ': 1 }], 'a header of only spaces is a header, not a blank line');
 });
 
+test('docs/cli.md shows the warning and the file for a row that is not a record', () => {
+  // The section is about a value that is *not in the file*, so the file alone
+  // cannot prove the page is honest — the warning is half of the claim and it
+  // goes to stderr. Both streams are compared, in order, against the blocks the
+  // page prints, and the exit code is locked at 0: a warning, not a refusal.
+  const section = (() => {
+    const from = docs.indexOf('### A row that is not a record: `csv`, `table` and `sql`');
+    const to = docs.indexOf('## Operations');
+    assert.ok(from !== -1 && to > from, 'docs/cli.md has lost the section on a row that is not a record');
+    return docs.slice(from, to);
+  })();
+
+  const blocks = [...section.matchAll(/^```(\w*)\n([\s\S]*?)^```/gm)]
+    .map(m => ({ lang: m[1], body: m[2] }));
+  const examples = [];
+  for (let i = 0; i < blocks.length; i++) {
+    if (blocks[i].lang !== 'bash') continue;
+    const output = blocks[i + 1];
+    assert.ok(output, `the example ${i} shows no output`);
+    // The page puts the warning inside the output block, first, because that is
+    // the order the terminal prints it in.
+    const warning = output.body.startsWith('Warning: ');
+    examples.push({ command: blocks[i].body, output: warning ? output.body.slice(output.body.indexOf('\n') + 1) : output.body, warning: warning ? output.body.slice(0, output.body.indexOf('\n')) : '' });
+  }
+  assert.equal(examples.length, 2, `the section should show two runnable examples, found ${examples.length}`);
+
+  for (const { command, output, warning } of examples) {
+    const result = spawnSync('sh', ['-c', command.trim().replace(/(^|\s)transmute /g, '$1' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(join(root, 'src', 'cli.js')) + ' ')], {
+      cwd: root,
+      encoding: 'utf-8',
+    });
+    assert.equal(result.status, 0, `a row that is not a record is a warning, not a failure: ${result.stderr}`);
+    assert.equal(result.stdout, output, `docs/cli.md does not show what this writes:\n$ ${command.trim()}`);
+    assert.equal(result.stderr.trim(), warning, `docs/cli.md does not show what this warns:\n$ ${command.trim()}`);
+  }
+
+  // The claim the examples cannot show: the file `sql` used to write instead.
+  // One line of engine, and every record in the file was gone.
+  const lost = run('["Alice",{"name":"Bob"}]', 'json', [], 'sql');
+  assert.match(lost.text, /\('Bob'\);/, 'the record after a row that is not one must survive');
+  assert.equal(lost.text.trim().split('\n').length, 4, lost.text);
+});
+
 test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () => {
   // The eleventh silence, and the same shape as the tenth: a control character
   // in a value was written into the file raw, so the file declared XML 1.0 and

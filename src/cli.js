@@ -326,6 +326,14 @@ function showPreview(text, format, delimiter) {
     console.error(`Error: ${result.error}`);
     process.exit(EXIT.transform);
   }
+  // The preview is the run most users see and it kept none of the warnings:
+  // `transmute ragged.csv` with no flags showed the recovered `column4` and
+  // said nothing about the row it came from, while the same file with
+  // `--output json` named it. Every warning the tool has written since T14 died
+  // here, on the default path. stderr again, so the box on stdout stays data.
+  for (const warning of result.warnings) {
+    console.error(`Warning: ${warning}`);
+  }
 
   console.log('\n╔════════════════════════════════════╗');
   console.log('║   Transmute — Data Transformer    ║');
