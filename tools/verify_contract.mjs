@@ -35,7 +35,12 @@ const LOCKED = {
 const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, en: 1, to: 2, tre: 3, fire: 4, fem: 5, seks: 6, syv: 7, otte: 8, ni: 9, ti: 10 };
 const COUNT = `(?:\\d+|${Object.keys(NUMBER_WORDS).join('|')})`;
 const SECRET_PATTERN = /\b(?:sk|rk|pk|whsec)_[A-Za-z0-9]{8,}|\bBearer\s+[A-Za-z0-9._-]{12,}/;
-const RECURRING_CLAIM = /\b(?:per month|monthly|per year|yearly|annually|subscription fee|per month or year)\b|\b(?:pr\. måned|månedlig|per år|årlig)\b/i;
+// \b is ASCII-only in JavaScript, so it fires between "d" and "år" in "dårlig" and a Danish
+// page saying a licence server had "en dårlig eftermiddag" would be read as a recurring-billing
+// claim. The Danish half therefore uses explicit Unicode letter lookarounds instead.
+const WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
+const WORD_AFTER = '(?![\\p{L}\\p{N}_])';
+const RECURRING_CLAIM = new RegExp(`${WORD_BEFORE}(?:per month|monthly|per year|yearly|annually|subscription fee|per month or year)${WORD_AFTER}|${WORD_BEFORE}(?:pr\\. måned|månedlig|per år|årlig)${WORD_AFTER}`, 'iu');
 /** Anything that promises a desktop build this repository does not publish. */
 const PUBLIC_DOWNLOAD_CLAIM = /github\.com\/mahope\/transmute\/releases/i;
 const DESKTOP_LABEL = /desktop[-\s]?app|desktopapp|macos,? windows/i;
@@ -211,6 +216,27 @@ check('npm, the CLI and the site agree on the version', () => {
   assert(cli.includes("require('../package.json')"), 'src/cli.js must read its version from package.json instead of hardcoding it');
   const contractVersion = /^\d+\.\d+\.\d+$/.test(String(contract.version ?? '')) ? contract.version : null;
   assert(contractVersion === null || contractVersion === version, `tools/product-contract.json pins version ${contractVersion}, package.json is ${version}`);
+});
+
+check('the Danish support page says what the English one says', () => {
+  const en = readFileSync(join(root, 'site', 'support', 'index.html'), 'utf8');
+  const da = readFileSync(join(root, 'site', 'da', 'support', 'index.html'), 'utf8');
+  const sections = text => [...text.matchAll(/<h[23] id="([^"]+)"/g)].map(m => m[1].length);
+  const stripe = text => [...new Set([...text.matchAll(/https:\/\/(?:buy|donate)\.stripe\.com\/[A-Za-z0-9]+/g)].map(m => m[0]))].sort();
+  assert(sections(da).length === sections(en).length,
+    `the Danish support page has ${sections(da).length} sections, the English one has ${sections(en).length}: a section must be translated, not dropped`);
+  assert(stripe(da).join() === stripe(en).join(),
+    `the Danish support page links ${stripe(da).join(', ')}, the English one links ${stripe(en).join(', ')}: both languages must sell and donate through the same links`);
+  const machines = text => [...new Set([...text.matchAll(new RegExp(`\\b(?:${COUNT}|\\d+)\\s+(?:machines|maskiner)`, 'gi'))]
+    .map(m => NUMBER_WORDS[m[0].split(/\s+/)[0].toLowerCase()] ?? Number(m[0].split(/\s+/)[0])))].sort();
+  assert(machines(da).join() === machines(en).join() && machines(en).length > 0,
+    `the Danish support page quotes the machine limit as ${machines(da).join(', ') || '(never)'}, the English one as ${machines(en).join(', ') || '(never)'}: both must state the same limit`);
+  const words = text => text.replace(/<(script|style)[\s\S]*?<\/\1>/g, ' ').replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+  assert(words(da) >= Math.round(words(en) * 0.6),
+    `the Danish support page has ${words(da)} words against ${words(en)} in the English one, so it reads as a stub rather than a translation`);
+  for (const page of [['site/support/index.html', en], ['site/da/support/index.html', da]]) {
+    assert(page[1].includes(`<link rel="alternate" hreflang="${page[1] === da ? 'en' : 'da'}"`), `${page[0]} has no hreflang link to its translated counterpart`);
+  }
 });
 
 check('the desktop app is not built or published from this repository', () => {

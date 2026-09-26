@@ -172,7 +172,7 @@ def footer(lang: str, alt_url: str | None) -> str:
     fam = "".join(f'<li><a href="{u}"{" aria-current=\"true\"" if u == BASE else ""}>{n}</a></li>' for n, u in FAMILY)
     fam += f'<li><a href="{FAMILY_ALL[1]}">{FAMILY_ALL[0]}</a></li>'
     privacy = "/da/privacy/" if lang == "da" else "/privacy/"
-    support = "/support/"
+    support = "/da/support/" if lang == "da" else "/support/"
     return f'''<footer class="site-footer">
   <div class="container">
     <div class="footer-grid">

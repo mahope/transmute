@@ -95,7 +95,7 @@ def check(url: str, text: str) -> list[str]:
             f.append("missing hreflang x-default")
         if "en" not in hl:
             f.append("missing hreflang en")
-        if url in ("/", "/da/", "/privacy/", "/da/privacy/") and "da" not in hl:
+        if url in ("/", "/da/", "/privacy/", "/da/privacy/", "/support/", "/da/support/") and "da" not in hl:
             f.append("missing hreflang da")
 
     for prop in ("og:title", "og:description", "og:url", "og:type", "og:image", "og:site_name", "og:locale", "og:image:alt"):

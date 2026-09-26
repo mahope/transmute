@@ -21,6 +21,13 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/privacy/"/>
   </url>
   <url>
+    <loc>https://transmute.run/da/support/</loc>
+    <lastmod>2026-09-26</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/support/"/>
+    <xhtml:link rel="alternate" hreflang="da" href="https://transmute.run/da/support/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/support/"/>
+  </url>
+  <url>
     <loc>https://transmute.run/guides/add-computed-fields/</loc>
     <lastmod>2026-09-25</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/guides/add-computed-fields/"/>
@@ -98,6 +105,7 @@
     <loc>https://transmute.run/support/</loc>
     <lastmod>2026-09-25</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://transmute.run/support/"/>
+    <xhtml:link rel="alternate" hreflang="da" href="https://transmute.run/da/support/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://transmute.run/support/"/>
   </url>
 </urlset>
