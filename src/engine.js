@@ -11,6 +11,21 @@
 
 // ─── Format parsers / serializers ────────────────────────────────────────
 
+/**
+ * An XML name, loose enough for what real documents contain: a namespace
+ * prefix, dots and dashes (`dc:creator`, `content-type`, `order.id`). Kept as
+ * a string so the tag patterns below stay readable.
+ */
+const XML_NAME = '[A-Za-z_][A-Za-z0-9._-]*(?::[A-Za-z_][A-Za-z0-9._-]*)?';
+
+/**
+ * `name="value"`, `name='value'` or a bare `name=value`; 1 is the name, 2–4 the
+ * value. A bare value may not *end* in `/`, so `<i b=two/>` reads `two` and not
+ * `two/` — the slash is the tag's own closing marker. Unquoted values are not
+ * valid XML anyway; they are read leniently, not strictly.
+ */
+const XML_ATTR = '([A-Za-z_][A-Za-z0-9._:-]*)\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'=<>`]*[^\s"\'=<>`/]))';
+
 const parsers = {
   json: (text) => {
     const data = JSON.parse(text);
@@ -19,17 +34,27 @@ const parsers = {
   csv: (text, opts) => parseCSV(text, opts),
   yaml: (text, opts) => parseYAML(text, opts),
   xml: (text) => {
-    // Minimal XML to array-of-objects conversion.
+    // XML to array-of-objects conversion.
     // Strategy: find the root element's matching close tag, parse its direct
     // children; if each child has the same tag and contains sub-elements,
     // flatten to one row per child (array-of-records shape).
+    //
+    // An XML name is not a bare `\w+`: a tag or attribute may carry a namespace
+    // prefix, and may contain `.` and `-`. Matching only `\w+` did not make the
+    // reader reject such a file — it stopped at the first name it could not read
+    // and returned what it had, so `<ns:item>` or a `<!DOCTYPE>` prologue turned a
+    // whole document into `[]` with exit 0. Attributes were dropped outright, and
+    // an attribute whose name matched a child element's silently lost to it.
     const strip = (s) => s
       .replace(/<\?[\s\S]*?\?>/g, '')
       .replace(/<!--[\s\S]*?-->/g, '')
+      // A DOCTYPE may carry an internal subset in `[...]`, which can itself
+      // contain `>`, so the declaration cannot be closed on the first one.
+      .replace(/<!DOCTYPE[^>\[]*(?:\[[\s\S]*?\])?[^>]*>/gi, '')
       .trim();
 
     text = strip(text);
-    const rootMatch = text.match(/^<(\w+)([^>]*)>/);
+    const rootMatch = text.match(new RegExp(`^<(${XML_NAME})((?:[^>"']|"[^"]*"|'[^']*')*)>`));
     if (!rootMatch) return [];
     const rootTag = rootMatch[1];
     const openLen = rootMatch[0].length;
@@ -37,21 +62,37 @@ const parsers = {
     if (closeIdx === -1) return [];
     const inner = text.slice(openLen, closeIdx);
 
+    // Attributes are fields of their own, prefixed with `@` the way xmltodict,
+    // xml2json and BadgerFish do it. The prefix is what makes the parse
+    // lossless: `<item name="a"><name>b</name></item>` keeps both, where a bare
+    // `name` could only hold one of them. A prefixed name cannot collide with a
+    // child element, because an element name may not start with `@`.
+    const parseAttributes = (raw) => {
+      const attrs = {};
+      if (!raw.trim()) return attrs;
+      for (const m of raw.matchAll(new RegExp(XML_ATTR, 'g'))) {
+        const value = m[2] !== undefined ? m[2] : (m[3] !== undefined ? m[3] : m[4]);
+        attrs['@' + m[1]] = decodeXML(value);
+      }
+      return attrs;
+    };
+
     // Parse one element starting at index i in `inner`.
     // Returns [{ tag, value }, nextIndex] so parents can key children by tag name.
     const parseElement = (inner, i) => {
-      const m = inner.slice(i).match(/^<(\w+)((?:[^>"']|"[^"]*"|'[^']*')*)>/);
+      const m = inner.slice(i).match(new RegExp(`^<(${XML_NAME})((?:[^>"']|"[^"]*"|'[^']*')*)>`));
       if (!m) return null;
       const tag = m[1];
+      const attrs = parseAttributes(m[2]);
       const contentStart = i + m[0].length;
-      if (m[2].trim().endsWith('/')) return [{ tag, value: '' }, contentStart];
+      if (m[2].trim().endsWith('/')) return [{ tag, value: attrs }, contentStart];
       const closeTag = '</' + tag + '>';
       const closeIdx = inner.indexOf(closeTag, contentStart);
       if (closeIdx === -1) return null;
       const content = inner.slice(contentStart, closeIdx).trim();
       let value;
       if (content.startsWith('<')) {
-        value = {};
+        value = { ...attrs };
         let pos = 0;
         while (pos < content.length) {
           const rest = content.slice(pos);
@@ -69,7 +110,7 @@ const parsers = {
           pos = next;
         }
       } else {
-        value = decodeXML(content);
+        value = Object.keys(attrs).length ? { ...attrs, '#text': decodeXML(content) } : decodeXML(content);
       }
       return [{ tag, value }, closeIdx + closeTag.length];
     };
@@ -176,11 +217,7 @@ const serializers = {
       if (typeof row !== 'object' || row === null) {
         xml += `  <item>${escapeXML(String(row))}</item>\n`;
       } else {
-        xml += `  <item>\n`;
-        for (const [key, val] of Object.entries(row)) {
-          xml += `    <${key}>${escapeXML(String(val ?? ''))}</${key}>\n`;
-        }
-        xml += `  </item>\n`;
+        xml += `${writeXMLElement('item', row, 1)}\n`;
       }
     }
     xml += `</${rootName}>`;
@@ -1062,6 +1099,25 @@ function writeYAMLEntry(prefix, key, value, indent) {
   }
 
   return [head + ' ' + formatYAMLValue(value)];
+}
+
+/**
+ * One element, indented. A field named `@x` is an attribute and `#text` is the
+ * element's own text, which is the shape the reader produces — so a document that
+ * went through `xml → json → xml` keeps its attributes instead of having them
+ * demoted to child elements.
+ */
+function writeXMLElement(tag, value, depth) {
+  const pad = '  '.repeat(depth);
+  if (typeof value !== 'object' || value === null) return `${pad}<${tag}>${escapeXML(String(value))}</${tag}>`;
+  const entries = Object.entries(value);
+  const attrs = entries.filter(([k]) => k.startsWith('@')).map(([k, v]) => ` ${k.slice(1)}="${escapeXML(String(v ?? ''))}"`).join('');
+  const rest = entries.filter(([k]) => !k.startsWith('@'));
+  if (rest.length === 0) return `${pad}<${tag}${attrs}/>`;
+  const inner = rest.map(([k, v]) =>
+    k === '#text' ? `${pad}  ${escapeXML(String(v ?? ''))}` : writeXMLElement(k, v, depth + 1)
+  ).join('\n');
+  return `${pad}<${tag}${attrs}>\n${inner}\n${pad}</${tag}>`;
 }
 
 function escapeXML(val) {

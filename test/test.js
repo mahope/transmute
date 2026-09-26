@@ -488,5 +488,84 @@ t('pipeline + sql works', () => {
   if (!(idx1 < idx2 && idx2 < idx3)) throw new Error('sort not applied');
 });
 
+t('XML attributes are kept, not dropped', () => {
+  const r = run('<r><i sku="A-1" stock="7"><name>Bog</name></i></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data[0]['@sku'] !== 'A-1') throw new Error('sku lost: ' + JSON.stringify(r.data));
+  if (r.data[0]['@stock'] !== '7') throw new Error('stock lost: ' + JSON.stringify(r.data));
+  if (r.data[0].name !== 'Bog') throw new Error('child lost: ' + JSON.stringify(r.data));
+});
+
+t('XML attribute and child of the same name both survive', () => {
+  const r = run('<r><i name="attr"><name>child</name></i></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data[0]['@name'] !== 'attr') throw new Error('attribute lost: ' + JSON.stringify(r.data));
+  if (r.data[0].name !== 'child') throw new Error('child lost: ' + JSON.stringify(r.data));
+});
+
+t('XML single-quoted and bare attribute values are read', () => {
+  const r = run("<r><i a='one' b=two/></r>", 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data[0]['@a'] !== 'one') throw new Error('single quotes: ' + JSON.stringify(r.data));
+  if (r.data[0]['@b'] !== 'two') throw new Error('bare value: ' + JSON.stringify(r.data));
+});
+
+t('XML entity references inside an attribute are decoded', () => {
+  const r = run('<r><i title="Tom &amp; Jerry"/></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data[0]['@title'] !== 'Tom & Jerry') throw new Error(JSON.stringify(r.data));
+});
+
+t('XML namespaced tags do not empty the file', () => {
+  const r = run('<r><ns:item><a>1</a></ns:item><ns:item><a>2</a></ns:item></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data.length !== 2) throw new Error('expected 2 records, got ' + JSON.stringify(r.data));
+  if (r.data[0].a !== '1' || r.data[1].a !== '2') throw new Error(JSON.stringify(r.data));
+});
+
+t('XML DOCTYPE prologue does not empty the file', () => {
+  const r = run('<?xml version="1.0"?>\n<!DOCTYPE users SYSTEM "u.dtd">\n<users><user id="1"><name>A</name></user></users>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data.length !== 1) throw new Error('expected 1 record, got ' + JSON.stringify(r.data));
+  if (r.data[0]['@id'] !== '1' || r.data[0].name !== 'A') throw new Error(JSON.stringify(r.data));
+});
+
+t('XML DOCTYPE with an internal subset is skipped whole', () => {
+  const r = run('<!DOCTYPE r [<!ELEMENT r (#PCDATA)>]>\n<r><i><a>1</a></i></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data.length !== 1) throw new Error('expected 1 record, got ' + JSON.stringify(r.data));
+});
+
+t('XML dashes and dots in tag names are read', () => {
+  const r = run('<r><order-item><order.id>7</order.id></order-item></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data[0]['order.id'] !== '7') throw new Error(JSON.stringify(r.data));
+});
+
+t('XML round trip keeps attributes as attributes', () => {
+  const first = run('<r><i sku="A-1"><name>Bog</name></i></r>', 'xml', [], 'json');
+  if (first.error) throw new Error(first.error);
+  const back = run(JSON.stringify(first.data), 'json', [], 'xml');
+  if (back.error) throw new Error(back.error);
+  if (!back.text.includes('sku="A-1"')) throw new Error('attribute not written back: ' + back.text);
+  if (!back.text.includes('<name>Bog</name>')) throw new Error('child not written: ' + back.text);
+  const again = run(back.text, 'xml', [], 'json');
+  if (again.error) throw new Error(again.error);
+  if (again.data[0]['@sku'] !== 'A-1' || again.data[0].name !== 'Bog') throw new Error(JSON.stringify(again.data));
+});
+
+t('XML writer escapes quotes in an attribute value', () => {
+  const r = run('[{"@title":"say \\"hi\\""}]', 'json', [], 'xml');
+  if (r.error) throw new Error(r.error);
+  if (!r.text.includes('title="say &quot;hi&quot;"')) throw new Error(r.text);
+});
+
+t('XML element with attributes and text keeps both', () => {
+  const r = run('<r><i unit="kg">5</i></r>', 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data[0]['@unit'] !== 'kg') throw new Error(JSON.stringify(r.data));
+  if (r.data[0]['#text'] !== '5') throw new Error(JSON.stringify(r.data));
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
