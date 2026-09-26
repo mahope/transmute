@@ -51,7 +51,10 @@ with `node src/cli.js`.
 Exactly one input file is accepted. Use `-` or a pipe to read from stdin.
 
 With no `--pipe` and no `--output`, Transmute prints a preview table of the
-input, which is the quickest way to check what a file contains.
+input, which is the quickest way to check what a file contains. The preview is
+the same run with the same flags, `--delimiter` included — it used to read the
+file with the auto-detected delimiter and show you a table of a file you had
+already told it how to read.
 
 ## Exit codes
 

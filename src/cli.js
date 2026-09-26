@@ -119,7 +119,7 @@ async function main() {
 
   // Preview only when the user gave neither --pipe nor --output.
   if (pipeline === null && outputFormat === null) {
-    showPreview(inputText, inputFormat);
+    showPreview(inputText, inputFormat, delimiter);
     return;
   }
   if (outputFormat === null) outputFormat = 'table';
@@ -179,9 +179,14 @@ function parsePipeline(raw) {
   return parsed;
 }
 
-function showPreview(text, format) {
+function showPreview(text, format, delimiter) {
   const { serializers } = require('./engine');
-  const result = run(text, format, []);
+  // The preview is the same run the user would get, so it has to read with the
+  // same delimiter. It used to call `run` without the flag, which made
+  // `--delimiter` validated, accepted and thrown away whenever no `--output`
+  // was given: the same command showed three columns in the preview and one in
+  // the real export.
+  const result = run(text, format, [], 'table', { delimiter });
   if (result.error) {
     console.error(`Error: ${result.error}`);
     process.exit(EXIT.transform);

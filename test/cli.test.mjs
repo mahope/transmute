@@ -99,6 +99,14 @@ test('no flags prints a preview table and exits 0', () => {
   assert.equal(out.includes('(4 rows, 5 columns)'), true);
 });
 
+test('--delimiter is honoured in the preview, not only with --output', () => {
+  // The preview used to call the engine without the flag, so the same command
+  // showed the auto-detected `;` as three columns and the real export as one.
+  const out = expectOk(sh(`transmute --delimiter ,`, { input: 'a;b;c\n1;2;3\n' }));
+  assert.equal(out.includes('(1 rows, 1 columns)'), true, `preview ignored --delimiter:\n${out}`);
+  assert.equal(out.includes('| a;b;c |'), true, `preview ignored --delimiter:\n${out}`);
+});
+
 test('50 records in one run — no purchase, no run limit', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" -p '[{"op":"sort","by":"score","dir":"desc"}]' -o csv`, { input: bigDataset(50) }));
   assert.equal(out.trim().split('\n').length, 51);
