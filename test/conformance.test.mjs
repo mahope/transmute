@@ -303,6 +303,126 @@ test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () =>
   }
 });
 
+console.log('── the browser frame must forward what stderr prints ──');
+
+/** Run site/try.html's own frame script, driven the way the parent page drives it. */
+function ask(message) {
+  const page = readFileSync(join(root, 'site', 'try.html'), 'utf-8');
+  const script = page.slice(page.lastIndexOf('<script>') + 8, page.lastIndexOf('</script>'));
+  let handler = null, ready = null, answer = null;
+  const frame = { postMessage(msg) { if (msg.type === 'ready') ready = msg; } };
+  const sandbox = {
+    module: { exports: {} },
+    console,
+    parent: frame,
+    addEventListener(type, fn) { if (type === 'message') handler = fn; },
+  };
+  sandbox.exports = sandbox.module.exports;
+  sandbox.module.exports = { ...engine };
+  vm.createContext(sandbox);
+  vm.runInContext(script, sandbox, { filename: 'try.html' });
+  assert.ok(ready, 'the frame never announced itself ready to the parent page');
+  assert.ok(handler, 'the frame script registered no message handler');
+  // e.source is the parent window as far as the frame is concerned; the frame
+  // answers with reply(src, msg), so the answer lands on the object we hand in.
+  const parent = { postMessage(msg) { if (msg.type === 'result') answer = msg; } };
+  handler({ source: parent, data: message });
+  assert.ok(answer, `the frame did not answer a ${message.type} message`);
+  return answer;
+}
+
+test('the frame forwards the warnings the CLI prints on stderr', () => {
+  // The twelfth silence, and the only one with no file behind it: the engine has
+  // returned warnings since T13 and the CLI has printed them on stderr, but
+  // site/try.html forwarded text, error and rows and dropped them. So the
+  // playground — the most used surface in the product, and the one people try a
+  // pipeline in — showed an empty table for a `pick` with a typo in a field
+  // name, and one row out of three for `unique --by` on a field no row has, with
+  // nothing at all on screen. The frame is the wire, so the test is the wire.
+  const cases = [
+    { name: 'a pick on a field no record has', input: '[{"name":"Ada","age":37}]', input_format: 'json', pipeline: '[{"op":"pick","fields":["nmae"]}]' },
+    { name: 'a key that says two things at once', input: '{"name":"Ada","name":"Bob"}', input_format: 'json', pipeline: '[]' },
+    { name: 'a unique --by on a field no record has', input: '[{"a":1},{"a":2},{"a":3}]', input_format: 'json', pipeline: '[{"op":"unique","by":"ag"}]' },
+    { name: 'a CSV row with more fields than the header', input: 'a,b\n1,2,3,4', input_format: 'csv', pipeline: '[]' },
+    { name: 'a YAML file with two documents', input: 'a: 1\n---\na: 2', input_format: 'yaml', pipeline: '[]' },
+  ];
+  for (const { name, input, input_format, pipeline } of cases) {
+    const answer = ask({ type: 'run', id: 1, input, input_format, pipeline, output_format: 'table' });
+    assert.equal(answer.error, undefined, `${name}: the frame should not have failed — ${answer.error}`);
+    assert.ok(Array.isArray(answer.warnings), `${name}: the frame forwarded no warnings array, so the browser cannot show any`);
+    assert.ok(answer.warnings.length > 0, `${name}: the engine warned and the frame forwarded nothing`);
+    // The browser must be told what the terminal tells the user: the same words,
+    // from the same pipeline, on the same input.
+    const cli = runCli(['-f', input_format, '--pipe', pipeline, '-o', 'table'], input);
+    const printed = cli.stderr.trim().split('\n').filter(Boolean);
+    assert.equal(cli.status, 0, `${name}: the CLI should succeed, got exit ${cli.status} — ${cli.stderr}`);
+    assert.equal(
+      answer.warnings.map(w => `Warning: ${w}`).join('\n'),
+      printed.join('\n'),
+      `${name}: the frame and the CLI disagree about what to warn about`
+    );
+    // And the output the frame forwards is the output the CLI writes: the warning
+    // is an addition, never a substitute. (The CLI terminates its last line; the
+    // frame forwards the engine's text as it is.)
+    assert.equal(answer.text, cli.stdout.replace(/\n$/, ''), `${name}: the frame and the CLI disagree about the output`);
+  }
+});
+
+test('a run that succeeds says so, and one that fails carries its warnings too', () => {
+  // A warning is not an error: the output is still written and still correct, so
+  // the frame must not turn one into the other. And the engine collects warnings
+  // before a step throws, so a run that ends in an error can still have said
+  // something worth hearing on the way there.
+  const clean = ask({ type: 'run', id: 1, input: '[{"a":1},{"a":2}]', input_format: 'json', pipeline: '[{"op":"pick","fields":["a"]}]', output_format: 'table' });
+  assert.equal(clean.error, undefined, 'a clean run reported an error');
+  assert.deepEqual(clean.warnings, [], 'a clean run invented warnings');
+  assert.equal(clean.rows, 2, 'the row count is not what the parent page shows as "N rows"');
+  assert.match(clean.text, /a/, 'the frame forwarded no output text for a clean run');
+  // A bad expression is the user's own input, so the frame answers with an error
+  // and nothing else — but the warnings gathered before the failure travel with it.
+  const broken = ask({ type: 'run', id: 1, input: '{"a":1,"a":2}', input_format: 'json', pipeline: '[{"op":"filter","expr":"item.age >"}]', output_format: 'table' });
+  assert.ok(broken.error, 'an expression that is not JavaScript should reach the parent as an error');
+  assert.ok(Array.isArray(broken.warnings), 'a failed run must still answer with a warnings array, or the parent page has to special-case it');
+  assert.equal(broken.warnings.length, 1, 'the warning the reader made before the expression failed was dropped');
+});
+
+test('the parent page renders the warnings next to the output, in both languages', () => {
+  // The wire is only half the surface. Without JS the playground shows its static
+  // example, so the element has to exist in the markup, be hidden while there is
+  // nothing to say, and be written from `e.data.warnings` — and the label has to
+  // exist in both languages the site is served in, or a Danish reader gets an
+  // English word for the one thing he must not miss.
+  const site = readFileSync(join(root, 'site', 'site.js'), 'utf-8');
+  assert.match(site, /data\.warnings/, 'site.js never reads the warnings the frame now forwards');
+  const labels = [...site.matchAll(/warningsLabel:\s*'([^']+)'/g)].map(m => m[1]);
+  assert.equal(labels.length, 2, `the warnings label must exist in both languages, found ${labels.length}`);
+  assert.notEqual(labels[0], labels[1], 'the warnings label is the same word in both languages');
+  assert.match(site, /\[data-role=warnings\]/, 'site.js does not write the warnings into their own element');
+  // Copy and download read the output element. A warning folded into it would be
+  // copied and downloaded as data — the one thing the CLI's stderr/stdout split
+  // exists to prevent. Checked inside the function that paints the warnings, not
+  // on a keyword: routing them through a variable is the same mistake.
+  const paint = site.slice(site.indexOf('function warnings('), site.indexOf('window.addEventListener', site.indexOf('function warnings(')));
+  assert.ok(paint.length > 0, 'site.js no longer has the function that paints the warnings');
+  assert.equal(paint.includes('outEl'), false, 'the warnings are written into the output element, so they would be copied and downloaded as data');
+  assert.equal(
+    /outEl\.(textContent|innerHTML)\s*=[^;]*warning/i.test(site),
+    false,
+    'the warnings are written into the output element, so they would be copied and downloaded as data'
+  );
+  // And the block is rebuilt every time, so a warning cannot outlive the run that
+  // caused it: the next clean run has to leave nothing behind.
+  assert.match(paint, /warnEl\.textContent\s*=\s*''/, 'the warnings block is never emptied, so a stale warning survives a clean run');
+  assert.match(paint, /warnEl\.hidden\s*=\s*true/, 'the warnings block is never hidden again when there is nothing to warn about');
+  // Both playground pages carry the element, and it starts hidden: without
+  // JavaScript the page shows its static example, and a warning box that is
+  // empty but visible is a lie about there being something to say.
+  for (const page of ['index.html', 'da/index.html']) {
+    const html = readFileSync(join(root, 'site', page), 'utf-8');
+    assert.match(html, /data-role="warnings"[^>]*hidden/, `${page}: the warnings element is missing or not hidden by default`);
+  }
+});
+
 for (const testCase of CASES) {
   test(`docs/cli.md shows the exact output for: ${testCase.name}`, () => {
     assert.equal(docs.includes(testCase.command), true, `command not found in docs: ${testCase.command}`);

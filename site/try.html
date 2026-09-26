@@ -20,11 +20,15 @@
     if (d.type !== 'run' || !e.source) return;
     var pipe = [];
     try { pipe = d.pipeline && d.pipeline.trim() ? JSON.parse(d.pipeline) : []; }
-    catch (err) { return reply(e.source, { type: 'result', id: d.id, error: 'Pipeline is not valid JSON: ' + err.message }); }
-    if (!Array.isArray(pipe)) return reply(e.source, { type: 'result', id: d.id, error: 'Pipeline must be a JSON array of steps.' });
+    catch (err) { return reply(e.source, { type: 'result', id: d.id, error: 'Pipeline is not valid JSON: ' + err.message, warnings: [] }); }
+    if (!Array.isArray(pipe)) return reply(e.source, { type: 'result', id: d.id, error: 'Pipeline must be a JSON array of steps.', warnings: [] });
     var fmt = d.input_format === 'auto' ? (api.detectFormat(null, d.input) || 'json') : d.input_format;
     var r = api.run(d.input || '', fmt, pipe, d.output_format || 'table', { tableName: 'my_table' });
-    reply(e.source, { type: 'result', id: d.id, text: r.text, error: r.error, rows: r.data ? r.data.length : null, format: fmt });
+    /* warnings travel with every answer, including the failing ones: the engine
+       collects them on the way, and the CLI prints the same lines on stderr. The
+       parent page is what puts them on screen, so dropping them here is what left
+       a `pick` on a misspelled field looking like an empty result. */
+    reply(e.source, { type: 'result', id: d.id, text: r.text, error: r.error, rows: r.data ? r.data.length : null, format: fmt, warnings: r.warnings || [] });
   });
   parent.postMessage({ type: 'ready' }, '*');
 })();

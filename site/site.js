@@ -11,11 +11,13 @@
     en: { copy: 'Copy', copied: 'Copied', failed: 'Select and copy', open: 'Open menu', close: 'Close menu',
           search: 'Search', placeholder: 'Search guides, operations, questions…', none: 'No results for', results: 'results',
           hint: '↑↓ to move · Enter to open · Esc to close', all: 'See all results', running: 'Running…', rows: 'rows',
-          link: 'Copy link to this pipeline', linked: 'Link copied', download: 'Download output' },
+          link: 'Copy link to this pipeline', linked: 'Link copied', download: 'Download output',
+          warningsLabel: 'Warnings' },
     da: { copy: 'Kopiér', copied: 'Kopieret', failed: 'Markér og kopiér', open: 'Åbn menu', close: 'Luk menu',
           search: 'Søg', placeholder: 'Søg i guides, operationer, spørgsmål…', none: 'Ingen resultater for', results: 'resultater',
           hint: '↑↓ flytter · Enter åbner · Esc lukker', all: 'Se alle resultater', running: 'Kører…', rows: 'rækker',
-          link: 'Kopiér link til denne pipeline', linked: 'Link kopieret', download: 'Download output' }
+          link: 'Kopiér link til denne pipeline', linked: 'Link kopieret', download: 'Download output',
+          warningsLabel: 'Advarsler' }
   }[lang];
 
   function $(sel, el) { return (el || doc).querySelector(sel); }
@@ -396,17 +398,35 @@
     var box = $('.try'); if (!box) return;
     var inputEl = $('[data-role=input]', box), pipeEl = $('[data-role=pipeline]', box), outEl = $('[data-role=output]', box),
         fmtIn = $('[data-role=informat]', box), fmtOut = $('[data-role=outformat]', box), status = $('[data-role=status]', box),
+        warnEl = $('[data-role=warnings]', box),
         cmdEl = $('[data-role=command]', box), presets = $$('[data-preset]', box);
     var frame = el('iframe', { src: '/try', sandbox: 'allow-scripts', title: 'Transmute engine', 'aria-hidden': 'true', tabindex: '-1', hidden: '' });
     var ready = false, pending = null, seq = 0, timer;
     box.classList.add('is-live');
     outEl.setAttribute('aria-live', 'polite');
+    /* A warning is not an error: the run succeeded and the output below is what
+       the CLI would have written. The engine has said these things since the
+       readers learned to speak, and the CLI prints them on stderr — so they are
+       shown under the output, in their own element, and never inside the one
+       copy and download read. Rebuilt on every answer, so a warning from an
+       earlier run cannot survive a clean one. */
+    function warnings(list) {
+      if (!warnEl) return;
+      warnEl.textContent = '';
+      if (!list || !list.length) { warnEl.hidden = true; return; }
+      warnEl.appendChild(el('p', { 'class': 'try-warnings-label' }, esc(t.warningsLabel)));
+      var ul = el('ul');
+      list.forEach(function (w) { ul.appendChild(el('li', null, esc(w))); });
+      warnEl.appendChild(ul);
+      warnEl.hidden = false;
+    }
     window.addEventListener('message', function (e) {
       if (e.source !== frame.contentWindow || !e.data) return;
       if (e.data.type === 'ready') { ready = true; if (pending) { frame.contentWindow.postMessage(pending, '*'); } return; }
       if (e.data.type !== 'result' || e.data.id !== seq) return;
       if (e.data.error) { outEl.textContent = e.data.error; box.classList.add('has-error'); status.textContent = ''; }
       else { outEl.textContent = e.data.text || ''; box.classList.remove('has-error'); status.textContent = e.data.rows != null ? e.data.rows + ' ' + t.rows : ''; }
+      warnings(e.data.warnings);
     });
     doc.body.appendChild(frame);
     function command() {

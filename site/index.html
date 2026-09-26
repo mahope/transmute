@@ -28,9 +28,9 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://transmute.run/og/home.png">
 <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/style.css?v=670bcea0">
+<link rel="stylesheet" href="/style.css?v=31937458">
 <script src="/theme.js?v=a037820b"></script>
-<script src="/site.js?v=53356298" defer></script>
+<script src="/site.js?v=5db72920" defer></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -264,6 +264,7 @@
       <pre data-role="output" aria-labelledby="try-output-label" tabindex="0">id,customer,total
 1039,Cara Vind,2199.99
 1042,Alice Hansen,1299</pre>
+      <div class="try-warnings" data-role="warnings" role="status" hidden></div>
     </div>
   </div>
   <p class="try-command">The same thing in the terminal: <code data-role="command">transmute data.json --pipe &#x27;[{&quot;op&quot;: &quot;filter&quot;, &quot;expr&quot;: &quot;item.status === \&quot;shipped\&quot;&quot;},{&quot;op&quot;: &quot;pick&quot;, &quot;fields&quot;: [&quot;id&quot;, &quot;customer&quot;, &quot;total&quot;]},{&quot;op&quot;: &quot;sort&quot;, &quot;by&quot;: &quot;total&quot;, &quot;dir&quot;: &quot;desc&quot;}]&#x27; -o csv</code></p>
