@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T39)
+Opdateret: 2026-09-26 (T40)
 
 
 ## Mission
@@ -11,11 +11,11 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. T22 er færdig med commit `0115204` på `ceo/format-detect` og har samme grund. T23 er færdig med commit `29f1e9a` og T24 med `ca259c1`, begge på `ceo/expression-syntax` — T24 lå i samme iteration, fordi T22's research allerede havde fundet og reproduceret den. Begge har samme grund. T25 er færdig med commit `5fd4648` på `ceo/pipeline-validation`, bygget oven på `ceo/expression-syntax`, og har samme grund. T26 er færdig på `ceo/missing-fields`, bygget oven på `ceo/pipeline-validation`, og har samme grund. T27 er færdig med commit `0abe7a3` på `ceo/record-shape`, bygget oven på `ceo/missing-fields`, og har samme grund. T28 er færdig med commit `763efbc` på `ceo/repeated-flags`, bygget oven på `ceo/record-shape`, og har samme grund. T29 er færdig med commit `e156dec` på `ceo/dead-options`, bygget oven på `ceo/repeated-flags`, og har samme grund — den rører heller ingen `site/`-fil. T30 er færdig med commit `837eb4a` på `ceo/utf8-input`, bygget oven på `ceo/dead-options`, og har samme grund: den rører kun `src/cli.js`, `docs/cli.md` og to testfiler, ingen `site/`-fil. T31 er færdig med commit `c5e7d4b` på `ceo/paths-locale-limits`, bygget oven på `ceo/utf8-input`, og har samme grund — den rører `site/engine.js`, så den kræver en `VERIFICÉR DEPLOY`-note når bunken merges. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje. T34 er færdig med commit `e8641c1` på `ceo/reader-gaps`, bygget oven på `ceo/reader-ambiguity`, og har samme grund — den rører `site/engine.js`. T38 er færdig med commit (se punkt 38) på `ceo/nonfinite-numbers`, bygget oven på `ceo/lone-surrogate-loss`, og har samme grund: rører `site/engine.js`. T36 er færdig med commit `6c13df1` på `ceo/download-guard`, bygget oven på `ceo/playground-warnings`, og har samme grund. T35 er færdig med commit `7fdd7d8` på `ceo/playground-warnings`, bygget oven på `ceo/reader-gaps`, og har **samme grund, men en anden**: den rører hverken `engine.js` (motoren er urørt) eller andet end rammen, `site.js` og CSS — men `DEPLOY-MISSING` gælder alle merges til `main`, uanset hvor lille diffen er.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T38-iterationen):** uændret for **fjortonde** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 med `npm run check:deploy`, starten på T40-iterationen):** uændret for **femtende** gang i træk. Live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
 **VIGTIGT — læs planen på den nyeste `ceo/*`-branch, ikke på `main`.** `main`'s kopi af denne plan er frosset ved T10 (`f4a0a9d`): den nævner hverken T11–T29, fordi ingen af de efterfølgende commits er mergeret mens `DEPLOY-MISSING` står. Kontrakten siger "check ud på default-branchen og læs planen", og det er det den iteration, der kommer, skal gøre — men den skal læse planen fra `ceo/dead-options` (eller den branch der nu er nyest), ellers læser den en kø, der slutter ved T10, og genopfinder arbejde, der allerede er gjort. Det er en følge af deploy-stillen, ikke en selvstændig fejl, og den opløses automatisk når bunken merges.
 
-**Næste iteration:** T39 er færdig (se punkt 39) på `ceo/yaml-float-spelling`, bygget oven på `ceo/nonfinite-numbers`, med samme grund: rører `site/engine.js`. Deploy-stillen er uændret, så bunken er nu **toogtyve** færdige commits på nitten branch uden merge. Kør `npm run check:deploy` først; er `DEPLOY-MISSING` væk, merges hele bunken til `main` og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal næste opgave være **T40**, målt før den skrives. Den skal fortsætte i den flade T39 lige målte — **YAML-skriverens skalarer** — fordi T39's måling afsluttede ved *talskalaren*, og kun den er undersøgt: `null`/`true`/`false` skrives bare, mens *strenge* går gennem `needsYAMLQuotes`, som er målt ni gange (T17, T21, T37) men aldrig for de skalare der ligner tal. Den skal især se på det T39 bevidst lod ligge: punkt 16 i `❓ Til Mads` er en beslutning, ikke en flade, så den skal **ikke** måles igen som om den var en fejl.
+**Næste iteration:** T40 er færdig (se punkt 40) på `ceo/yaml-string-scalars`, bygget oven på `ceo/yaml-float-spelling`, med samme grund: rører `site/engine.js`. Den **lukker den flade T39 målte** — YAML-skriverens skalare — og den lå i **to** dele, ikke én: værdier (`yes` → `True`, `12:30` → `750`, `1_000` → `1000`, `2026-09-26` → en dato, og `<<`/`=` som fik PyYAML til at afvise hele dokumentet) og nøgler (`0074` → den oktale `60`). Deploy-stillen er uændret, så bunken er nu **treogtyve** færdige commits på tyve branch uden merge. Kør `npm run check:deploy` først; er `DEPLOY-MISSING` væk, merges hele bunken til `main` og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, skal næste opgave være **T41**, målt før den skrives, og den skal **ikke** genåbne punkt 16 i `❓ Til Mads` (en beslutning, ikke en flade) eller punkt 15's tabsfri læser (en ændret værdi, ikke en målt tavshed). Den næste ubeskrevne flade i skriveren er den **anden** ende: `csv`, `table` og `xml` på værdier, der ligner tal og typer — målt, ikke antaget, fordi T31's måling af `table` kun dækkede skærmkolonner.
 
 **T38's anden måling, den store, er stadig åben og er ikke en flade.** `9007199254740993` → `9007199254740992` i alle seks formater kan **ikke** fanges ved skrivningen, fordi tabet sker i `JSON.parse`. Den ligger i `❓ Til Mads` punkt 15 og afgøres sammen med punkt 16, fordi begende kræver den samme nye læsevej.
 
@@ -55,7 +55,7 @@ T17 (nested YAML på input) er færdig på `ceo/nested-yaml` og ligger på branc
 
 Den obligatoriske gate er denne, i den angivne rækkefølge:
 
-1. Root: `npm test && npm pack --dry-run`. `npm test` kører otte trin i rækkefølge: `test/test.js` (142 engine-tests), `test/cli.test.mjs` (130 reelle CLI-kørsler), `test/conformance.test.mjs` (76 CLI-vs-site- og dokumentationskontroller), `test/readme.test.mjs` (6 README-eksempelkontroller), workflow-regressionerne (39), `tools/verify_workflows.mjs` (4 workflows) og siden T9 `tools/verify_contract.mjs` (173 kontrat- og claimkontroller over 28 filer). Den kan også køres alene med `npm run check:contract`.
+1. Root: `npm test && npm pack --dry-run`. `npm test` kører otte trin i rækkefølge: `test/test.js` (157 engine-tests), `test/cli.test.mjs` (138 reelle CLI-kørsler), `test/conformance.test.mjs` (83 CLI-vs-site- og dokumentationskontroller), `test/readme.test.mjs` (6 README-eksempelkontroller), workflow-regressionerne (39), `tools/verify_workflows.mjs` (4 workflows) og siden T9 `tools/verify_contract.mjs` (173 kontrat- og claimkontroller over 28 filer). Den kan også køres alene med `npm run check:contract`.
 2. Site: `npm run check:site` (opbygger `.venv-site` med Python 3.13.15, Playwright 1.60.0 og Chromium, kører SEO-, layout- og selftesten) og `npm run audit:site` (`pip-audit` på den hash-låste lockfil). Begge er T6 og kører med præcis samme kommando lokalt og i CI.
 3. Deploy: `npm run check:deploy` (`tools/check_deploy_freshness.py`) henter hver tekstfil under `site/` fra live **én gang** og matcher den mod hvert site-commit i `origin/main` fra nyeste til ældste. Det udskriver det commit live faktisk serverer, listen af udeployede commits og de afvigende filer. `tools/deploy_freshness_selftest.py` er offline og ligger i `check:site`, så gaten beviser, at værktøjet stadig kan se drift. Kør den efter hver batch-deploy; **dens exit 0 erstatter alle manuelle live-tjek i denne plan.** Den siger intet om funktion og udseende — til det bruges `tools/verify_live.py --no-report`.
 
@@ -63,7 +63,7 @@ Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bru
 
 ## Deploy
 
-**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26, **fjortonde** måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
+**DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26, **femtende** måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
 
 **Den tidligere diagnose var fejl, og det er den vigtigste rettelse i denne plan.** Planen hævdede i fem iterationer, at batchdeployeren ikke havde kørt siden 2026-09-08. Beviset var `sitemap.xml`'s `lastmod 2026-09-08` plus et 404 på `/support/`. Den første halvdel var en **målefejl**: `lastmod` skrives kun, når `site_chrome.py` regenererer sitemap'en (`tools/site_chrome.py:629`), altså ikke når der deployes. Commit `3d90812` — som *er* live — har selv `lastmod 2026-09-08` i sin sitemap. Først da indholdet sammenlignes mod git, bliver tallene rigtige:
 
@@ -128,6 +128,99 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Den automatiske site-deploy er stadig aktiv i kode, selv om kontrakten siger, at den er slået fra. Den afvigelse bliver T5, før sitearbejde merges.
 
 ## Prioriteret opgavekø
+
+### 40. [x] Skriv en streng, en YAML 1.1-læser læser som noget andet, med citater
+
+**Status:** FÆRDIG med commit `1c8e97a` på `ceo/yaml-string-scalars`, bygget oven på `ceo/yaml-float-spelling` — **ligger på branch, ikke mergeret**, fordi `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Metode:** Som T20–T39: målt på den rigtige binary **før** koden blev rørt, fundet skrevet som en test mod output og kørt mod den gamle kode, låsen mutationstestet med tænder.
+
+**Begrundelse:** T39's måling afsluttede ved *talskalaren* og efterlod hele den anden
+halvdel af YAML-skriverens skalare uudforsket: `null`/`true`/`false` skrives bare,
+mens *strenge* går gennem `needsYAMLQuotes` — som er målt ni gange (T17, T21, T37)
+men aldrig for de skalare, der ligner tal. Det er den største tavshed i planens
+historie målt i én måling.
+
+**Målingen, attende måling gennem den rigtige binary, exit 0, tom stderr.** 63 rene
+strenge gennem `transmute probe.json -o yaml`, læst tilbage med **PyYAML 6.0.3**:
+
+| input | skrevet | PyYAML læser | |
+|---|---|---|---|
+| `yes` / `No` / `on` / `OFF` | `yes` | **`True` / `False`** | fire ord til for |
+| `.inf` / `.NaN` | `.inf` | **`float`** | |
+| `1_000` / `1__0` / `0b1010_1` / `07_7` / `0x1_F` | `1_000` | **`int` 1000** | underscores er i YAML's heltalsregel |
+| `12:30` / `1:30:45` / `12:00:00` | `12:30` | **`int` 750 / 5445 / 43200** | et klokkeslæg er base 60 |
+| `190:20:30.15` | `190:20:30.15` | **`float` 685230.15** | |
+| `2026-09-26` | `2026-09-26` | **`date`** | |
+| `2026-09-26T12:00:00Z` | `2026-09-26T12:00:00Z` | **`datetime`** | |
+| `<<` | `<<` | **`ConstructorError`** | hele dokumentet |
+| `=` | `=` | **`ConstructorError`** | hele dokumentet |
+
+**Svar af 63: syvogtyve værdier læst som noget andet, to af dem ødelagte hele
+filen, og 14 nøgler læst under et andet navn** (`yes` → `True`, `0074` → den
+**oktale** `60`). Det er ikke eksotiske værdier: `yes`/`no` er, hvad et regneark
+eller en eksport indeholder, `12:30` er et klokkeslæg, `2026-09-26` er en dato,
+og `1_000` er et tal skrevet som et menneske skriver det.
+
+**De to værste er værre end en ændret type.** `<<` (merge) og `=` (value) er de
+eneste to tags i PyYAMLs resolver, der **ikke har en constructor**, så en
+streng med værdien `<<` lavede et dokument, PyYAML afviste med
+`ConstructorError: could not determine a constructor for the tag` — en fil
+Transmute producerede med exit 0, som ingen læser i den viste verden kan åbne.
+
+**Årsagen er målt, ikke gættet: den er YAML 1.1's vocabulary, ikke en fejl i
+logikken.** Resolverens fem productions er hentet ud af PyYAMLs egen
+`yaml/resolver.py` med `add_implicit_resolver` — bool (12 stavninger, kun de fire
+`true`/`false` var dækket), int (med underscores, octal, hex, binær **og
+sekstagesimal**), float (`.inf`/`.nan`), timestamp (to former) og null. Rettelsen
+er disse productions transskriberet **hele**, i `YAML_1_1_RESOLVES_ELSEWHERE` i
+`src/engine.js`, kaldt fra både `needsYAMLQuotes` og `formatYAMLKey` — så reglen
+hører til skriveren, ikke til den flade målingen lå på, og den gælder mappings,
+sekvenser, dybe nøgler og topniveauskalarer.
+
+**Nøglerne var den halvdel, scope ikke havde set.** `formatYAMLKey` lod alle
+tegn `[A-Za-z0-9_.\-/ ]` stå, så `0074` blev skrevet som nøgle og læst som den
+oktale `60`, og `2026-09-26` som nøgle læst som en `date`. Det er det samme
+fund: et felt kommer tilbage under et navn inputtet aldrig havde. De otte
+strukturelle regler røres ikke, så `name` og `1.2.3` bliver stående uquotede.
+
+**Test: én engine-test (156 → 157) og ét CLI-test (137 → 138), begge kørt mod den
+gamle kode.** De faldt med præcis de målte symptomer (`"yes" is written bare, and a
+YAML 1.1 reader resolves it to bool` og `- answer: yes`). Som i T39 låses
+**stavingen, ikke round-trip**, og det er ikke en formalisme: **vores egen læser
+er mere tillidende end PyYAML** og læser `yes` og `12:30` tilbage som strenge, så
+en round-trip-test gennem `run(..., 'yaml', ...)` passerer mod den ødelagde
+skriver.
+
+**Målingen lå desuden to veje den gamle kode allerede lavede for rigtigt**, og
+begge er låst, fordi en for bred regel ville gøre enhver fil til støj: `y`, `n`,
+`12:60`, `12:30:60`, `1.2.3`, `2026-9-26`, `2026/09/26`, `2026-09-26t12:00:00z`
+(lille `t`/`z` er ikke i timestamp-reglen), `NaN`, `inf`, `+.5` (intet fortegn på
+`.`-grenen) og `a:b` er **strenge** hos PyYAML. To af mine egne gæt var forkerte
+og blev rettet efter at være målt: `2026-13-45` **er** en timestamp — resolveren
+er leksisk og validerer ikke datoen — og `1:2:3:4` er et gyldigt sekstagesimal.
+Det er præcis derfor productionerne er transskriberet fra kilden og ikke samlet
+af hånden.
+
+**Ni mutationer, otte gyldige dræbt.** Bool-vocabularet, sekstagesimal-grenen i
+int, underscores, timestampens datetime-gren, `merge`/`value`, nøglernes brug af
+reglen, en for bred regel (skriv alt i citater) og `.inf`/`.nan`-grene dræbes
+alle. Den niende var en ugyldig mutation (et regex der ikke kompilerede) og blev
+**ikke** talt med som bevis — den fejlede af en syntaxfejl, ikke af testen.
+
+**Playgroundet arvæder rettelsen, fordi motoren er den samme.** `site/engine.js` er
+byte-identisk med `src/engine.js` (`cmp` bekræfter) og blev kopieret;
+`tools/site_chrome.py` regenererede kun `engine.js`-hashen i `try.html`, søgeindeks
+uændret på 104, ingen anden side ændret.
+
+**Deploy-stillen er uændret, og derfor merger denne commit ikke til `main`.**
+
+VERIFICÉR DEPLOY: playgroundet skriver strenge, en YAML 1.1-læser læser som andet,
+med citater — `yes`, `12:30`, `1_000`, `2026-09-26`, `<<` — `site/engine.js`,
+commit `1c8e97a`, push 2026-09-26 ca. 11:5x CEST. Verificér på
+https://transmute.run/ med input `yes` (eller `12:30`) og output `yaml` — feltet
+skal vise `"yes"`. PyYAML skal læse filen tilbage uden fejl, og `<<` må ikke længere
+få den til at afvise dokumentet.
 
 ### 39. [x] Skriv et tal med eksponent sådan, at en YAML-læser læser det som et tal
 
@@ -2208,3 +2301,5 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 - Beslutning under T35: **rammens kontrakt skal være total.** `site/try.html` svarer nu med `warnings: []` også på de to tidlige veje (ugyldig pipeline-JSON, pipeline der ikke er et array), så forsiden ikke skal special-case to fejl den ikke kan ramme med de andre. En forgrening, der kun findes i nogle svar, er en forgrening der bliver en tavshed ved den næste tilfælde der tilføjes.
 
 - Procesfejl under T35, tre, og den tredje er den interessante. (1) Min egen konformitest kaldte CLI'en uden `--pipe`, så den sammenlignede en tom stderr med en advarsel og rapporterede "frame og CLI er uenige" om en fejl i testen. (2) Et 400-tegns vindue omkring `outEl.textContent` fangede mit eget nye `warnings(e.data.warnings)` som om advarslerne stod i outputelementet. (3) **Efter at begge var rettet, slap en mutation stadig igennem**: den lagde advarslerne i outputelementet via en variabel (`outEl.textContent = list.join('\n')`), og min test greb kun et nøgleord på *samme linje*. Låsen blev derfor flyttet til at undersøge **selve funktionskroppen** for `outEl` — det er den der siger noget om hvorhen noget skrives, ikke hvor linjen tilfældigvis står. Samme slags som T22's og T32's procesregler: en test der kun kan fange den mutation man selv tænkte på, er en test der pynter.
+
+- 2026-09-26 ca. 11:2x–11:5x CEST: **T40 gennemført på `ceo/yaml-string-scalars` (branch fra `ceo/yaml-float-spelling`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **femtende** gang i træk, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — så bunken er nu **treogtyve** commits på tyve branch, og der oprettes ingen `VERIFICÉR DEPLOY`-note for intet der er mergeret (T40's egen note står under punkt 40). T39's måling havde efterladt **hele den anden halvdel af YAML-skriverens skalare** som uudforsket, så målingen blev tagen der: 63 rene strenge gennem den rigtige binary før koden blev rørt, exit 0, tom stderr, læst tilbage med **PyYAML 6.0.3**. **Svar af 63: syvogtyve værdier kom tilbage som noget andet end den streng der gik ind, to af dem fik PyYAML til at afvise hele dokumentet, og 14 nøgler kom tilbage under et andet navn.** `yes`/`No`/`on`/`OFF` → `True`/`False` (YAML 1.1 har fire ord til `true`, og kun `true`/`false` var dækket); `.inf`/`.NaN` → `float`; `1_000`, `1__0`, `0b1010_1`, `07_7`, `0x1_F` → `int` (underscores er *inde i* YAML's heltalsregel); `12:30` → **750**, `1:30:45` → 5445, `12:00:00` → 43200, `190:20:30.15` → 685230.15 (et klokkeslæg er base 60 i YAML 1.1); `2026-09-26` → `datetime.date`; `2026-09-26T12:00:00Z` → `datetime`. De to værste er værre end en ændret type: `<<` (merge) og `=` (value) er de eneste to tags i resolveren uden en constructor, så en værdi `<<` lavede et dokument PyYAML afviste med `ConstructorError` — en fil produceret med exit 0, som ingen læser kan åbne. **Nøglerne var den halvdel, scope ikke havde set:** `formatYAMLKey` lod `[A-Za-z0-9_.\-/ ]` stå, så nøglen `0074` blev læst som den **oktale** `60` og `2026-09-26` som en `date`. Rettelsen er YAML 1.1's egne productions, transskriberet **hele** fra den resolver PyYAML faktisk har (`yaml/resolver.py`, `add_implicit_resolver` — bool/int/float/timestamp/null plus de to constructorløse tags) i `YAML_1_1_RESOLVES_ELSEWHERE`, kaldt fra både `needsYAMLQuotes` og `formatYAMLKey`, så reglen hører til skriveren. Kun de manglende productions er tilføjet: de otte strukturelle regler og `Number()`-reglen røres ikke, så de otte strukturchars og de tal der allerede læses rigtigt beholder deres staving. Som i T39 låses **stavingen og ikke round-trip**, fordi vores egen læser er mere tillidende end PyYAML og læser `yes` og `12:30` tilbage som strenge. 1 ny engine-test (156 → 157) og 1 ny CLI-test på den rigtige binary (137 → 138), begge **kørt mod den gamle kode** og ude med præcis de målte symptomer (`"yes" is written bare, and a YAML 1.1 reader resolves it to bool` / `- answer: yes`). **Målingen lå desuden tolve veje den gamle kode allerede lavede for rigtigt**, og de er låst, fordi en for bred regel ville gøre enhver fil til støj: `y`, `n`, `12:60`, `12:30:60`, `1.2.3`, `2026-9-26`, `2026/09/26`, `2026-09-26t12:00:00z`, `NaN`, `inf`, `a:b` er strenge hos PyYAML. To af mine egne gæt var forkerte og blev rettet **efter at være målt**: `2026-13-45` *er* en timestamp (resolveren er leksisk og validerer ikke datoen) og `1:2:3:4` *er* et gyldigt sekstagesimal — præcis derfor er productionerne transskriberet fra kilden og ikke samlet af hånden. **Tænder:** ni mutationer, otte gyldige dræbt alle (bool-vocabularet, sekstagesimal-grenen i int, underscores, timestampens datetime-gren, `merge`/`value`, nøglernes brug af reglen, en for bred regel der skriver alt i citater, `.inf`/`.nan`-grene); den niende var en ugyldig mutation — et regex der ikke kompilerede — og tælles **ikke** med som bevis, fordi den fejlede af en syntaxfejl og ikke af testen. Procesfejl undervejs, to, begge fanget af målingen og ikke af testen: min første mutationstest brugte `engine.orig.js` som "gammel kode", men filen var taget **efter** rettelsen, så et tandskør virkede grønt mod den ødelagte skriver; den rigtige gamle kode er hentet med `git show HEAD:src/engine.js`. Og to controls var klassificeret forkert i første udkast (`1e5` er quotet af den *gamle* `Number()`-regel, `+.5` af den gamle tegnregel) — begge rettet, fordi en lås der sigter på den forkerte regel er en lås der pynter. `site/engine.js` byte-identisk med `src/engine.js` (`cmp` bekræfter); `tools/site_chrome.py` regenererede kun `engine.js`-hashen i `try.html` (`7a7d9085` → ny), søgeindeks uændret på 104, ingen anden side ændret. Lokalt grøn: `npm test` 157+138+83+6+39+4+173 med 0 fejl, `npm pack --dry-run` 5 filer uændret, `npm run check:site` `0 finding(s) across 20 pages` + `deviations: 0` og alle selftester grønne inkl. deploy-friskheds-selvfesten, `npm run audit:site` `No known vulnerabilities found`, `npm audit` `found 0 vulnerabilities`. **Ingen merge til `main`** — `DEPLOY-MISSING` står, og det er en menneskebeslutning (`❓ Til Mads` punkt 1). Næste opgave er **T41**: målt før den skrives, i den anden ende af skriveren (`csv`, `table`, `xml` på værdier der ligner tal og typer).
