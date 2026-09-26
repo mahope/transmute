@@ -516,6 +516,93 @@ Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") er **lukket, ikke merged*
 - `.nvmrc`, `engines` og CI-matrix peger på dokumenterede, testede versioner.
 - Hver major-version har én selvstændig commit, så præcis rollback kan ske.
 
+### 19. [ ] Afklar tom streng mod NULL i SQL-output
+
+**Status:** ÅBEN — fundet under T18, bevidst ikke rettet i samme iteration
+**Begrundelse:** `sqlValue` skriver både `null` og `''` som `NULL`. I SQL er det to
+**forskellige** værdier, så `WHERE middle = ''` finder intet efter en import af en CSV
+med tomt felt. Det er ikke en tilfældighed: `test/test.js` har en grøn test
+`SQL NULL for empty values`, der låser adfærden, så den er en bevidsagtig valg, ikke
+en forglemt fejl. Den skal derfor ændres med en note og en migrationslinje, ikke ved
+at slå en test fra.
+
+**Scope:**
+
+- Afklar med Mads om tom streng skal være `''` (SQL-korrekt) eller `NULL`.
+- Ret `sqlValue` i begge engines og opdatér den grønne test til den valgte kontrakt.
+- Overvej `CAST`/quoting for de klokkeformede talstrenge, serializeren slipper igennem
+  uden citater (`/^-?\d+(\.\d+)?$/`), fx et dansk postnummer `0074` bliver tallet 74.
+
+**Acceptkriterier:**
+
+- En CSV med et tomt felt round-tripper til SQL og tilbage med tom streng bevaret.
+- `null` er stadig `NULL`, så null-semantikken kan ikke forveksles med den tomme streng.
+- Begge engines er byte-identiske, og `npm test` er grøn.
+
+### 18. [x] Behold XML-attributter, navnerum og DOCTYPE i XML-læseren
+
+**Status:** FÆRDIG som `a31aba8` på `ceo/xml-attributes` — **ligger på branch, ikke
+mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** Samme fejlklasse som T13, T14, T16 og T17: **stille datakorruption med
+exit 0**. XML-læseren matchede kun `\w+` som tagnavn, og den smidte hele
+attributstrengen væk. Alt hvad der lå uden for den snævre syntaks, forsvandt — uden
+fejl, uden advarsel, uden en eneste mistet record talt.
+
+**Fire fund, alle reproduceret på den gamle kode:**
+
+1. **Attributter forsvandt totalt.** `<product sku="A-1" stock="7">` blev
+   `{"name":"Bog","price":"199.00"}`. `sku` og `stock` var væk, og da de to var
+   nøglefelterne i et produkfeed, kunne intet derefter joines på dem.
+2. **Navnerum tømte hele filen.** `<ns:item>` matchede ikke `\w+`, `parseElement`
+   returnerede `null`, løkken `break`ede, og resultatet blev `[]` med exit 0. RSS,
+   Atom, SOAP og alt OOXML er præcis denne fil.
+3. **En `<!DOCTYPE>`-prolog tømte også hele filen** til `[]` — og en intern subset
+   `[...]` kan selv indeholde `>`, så deklarationen kan ikke lukkes på det første.
+4. **Et attribut med samme navn som et barnelement blev lydløst tabt.**
+   `<item name="a"><name>b</name></item>` gav `{"name":"b"}`.
+
+**Valg:**
+
+- **Attributter beholder præfiks `@`**, som xmltodict, xml2json og BadgerFish gør.
+  Præfikset er det, der gør parsingen tabsfri: punkt 4 er umuligt, fordi et
+  elementnavn ikke må starte med `@`. Det er også en **additiv** ændring — de XML-fixtures
+  og -filer, der virkede før, har ingen attributter, så ingen eksisterende korrekt
+  output ændrer sig.
+- **Navnerumspræfikset bevares** i nøglen (`ns:item`), ikke strippes. Det er tabsfrit og
+  utvetydigt: i OOXML betyder `a:` og `r:`-præfikser forskellige ting for det samme
+  lokale navn, så stripning ville slå to forskellige felter sammen.
+- **Runden lukkes i writeren**: `@x` skrives tilbage som attribut, og `#text` som
+  elementets egen tekst, så `xml → json → xml` bevarer attributterne i stedet for at
+  degradere dem til børnelementer.
+- Uskrevne attributværdier (`b=two/`) læses lenient: en bare værdi må ikke *ende* med
+  `/`, så skråstregen er tagets egen afsluttning. Uquoterede værdier er ikke gyldig XML
+  alligevel; de læses fornødent, ikke stramt.
+
+**Resultat:**
+
+- `XML_NAME` og `XML_ATTR` i `src/engine.js` og den byte-identiske `site/engine.js`.
+  `parsers.xml` bruger dem i stedet for `\w+`, og `parseAttributes()` læser navn,
+  dobbelt- og enkeltcitate og bare værdier, alle dekodet gennem `decodeXML`.
+- `writeXMLElement()` erstattede writerens flade løkke, så attributter, `#text` og
+  **indlejrede** objekter skrives rekursivt. Indrykningen er bevidst uændret, så
+  `json-to-xml`-snapshotet er byte-identisk med før.
+- 11 nye engine-tests (67 → 78): attributter, navnekollision, alle tre værdiformer,
+  entities i attributværdier, navnerum, DOCTYPE med og uden intern subset, `-` og `.`
+  i navne, runde tur begge veje, quote-escaping i attributter, og element med både
+  attribut og tekst.
+- **Ingen af de 26 eksisterende snapshots ændrede sig**, og `verify_contract.mjs` står
+  uændret på 173 checks — de fixtures, der virkede, virker stadig.
+
+**Verifikation:** `npm test` grøn med 78 engine-, 70 CLI-, 65 conformance-, 6 README-tests,
+39 workflow-regressioner, 4 workflow-kontrakter og 173 kontratkontroller. `npm pack
+--dry-run` uændret på 5 filer. Deploy genverificeret først i iterationen (se Deploy).
+
+**En fejl i min egen kode, værd at huske:** den første `XML_ATTR` tog `([^"'\s=<>`]+)` til
+en bare værdi, så `<i b=two/>` læste `two/`. Fandtes af den eneste test, der krævede en
+bare værdi, og rettet ved at forbyde `/` som sidste tegn. Samme lektion som T14 slice 1 og
+T16: påstanden skal ramme den **ualmindelige** halvdel af en egenskab.
+
 ### 11. [ ] Implementér den første dokumenterede Pro-værdi i privat repo
 
 **Status:** BLOCKED: det private `mahope/transmute-desktop` er navngivet, men ikke tilgængeligt fra dette checkout
