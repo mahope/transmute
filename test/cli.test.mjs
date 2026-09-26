@@ -1276,5 +1276,40 @@ test('a string a YAML 1.1 reader resolves to something else is written quoted', 
 });
 
 
+test('a one-column CSV keeps its empty rows, and says which columns lose their type', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'list.json');
+    writeFileSync(path, '[{"v":"first"},{"v":""},{"v":"third"}]', 'utf-8');
+
+    // Three records go in. Before the fix the empty one was written as a blank
+    // line, the reader dropped it as RFC 4180 allows, and the file that came
+    // back held two records that looked like the whole list: exit 0, no stderr.
+    const csv = spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(csv.status, 0, `exit ${csv.status}: ${csv.stderr}`);
+    assert.equal(csv.stderr, '', csv.stderr);
+    assert.equal(csv.stdout, 'v\nfirst\n""\nthird\n', csv.stdout);
+
+    const back = spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' });
+    const csvPath = join(dir, 'list.csv');
+    writeFileSync(csvPath, back.stdout, 'utf-8');
+    const again = spawnSync(process.execPath, [cli, csvPath, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(again.status, 0, `exit ${again.status}: ${again.stderr}`);
+    assert.equal(again.stderr, '', again.stderr);
+    assert.equal(JSON.parse(again.stdout).length, 3, again.stdout);
+
+    // The type change that quoting cannot prevent is named on stderr, and the
+    // file is still written: the run did what it was asked.
+    writeFileSync(path, '[{"id":"1","navn":"Ada"},{"id":"2","navn":"Bob"}]', 'utf-8');
+    const warned = spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(warned.status, 0, `exit ${warned.status}: ${warned.stderr}`);
+    assert.ok(warned.stderr.includes('"id" (2)'), warned.stderr);
+    assert.ok(!warned.stderr.includes('"navn"'), warned.stderr);
+    assert.equal(warned.stdout, 'id,navn\n1,Ada\n2,Bob\n', warned.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

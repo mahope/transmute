@@ -1910,5 +1910,67 @@ t('the root element ends where its own nesting ends, not at the last close tag',
   assert.ok(!crossed.error.includes('never closed'), crossed.error);
 });
 
+test('a one-column CSV record with an empty value survives the round trip', () => {
+  // RFC 4180 lets a file carry blank lines between records, and the reader
+  // dropped every record whose only field was empty. A one-column export
+  // therefore wrote its empty values as blank lines and lost those rows on the
+  // way back in: three records in, two out, exit 0, empty stderr, and the two
+  // that survived looked like the whole file.
+  for (const value of ['', ' ', '  ']) {
+    const records = [{ v: 'first' }, { v: value }, { v: 'third' }];
+    const text = run(JSON.stringify(records), 'json', [], 'csv').text;
+    assert.strictEqual(text, `v\nfirst\n"${value}"\nthird`, JSON.stringify(value));
+    const back = run(text, 'csv', [], 'json').data;
+    assert.deepStrictEqual(back, records, JSON.stringify(value));
+  }
+  // A genuinely blank line is still a blank line, in a one-column file as much
+  // as any other: that is the reader's own tolerance, and this does not touch it.
+  assert.deepStrictEqual(run('v\nfirst\n\nthird\n', 'csv', [], 'json').data, [{ v: 'first' }, { v: 'third' }]);
+  assert.deepStrictEqual(run('a,b\n1,x\n\n2,y\n', 'csv', [], 'json').data, [{ a: 1, b: 'x' }, { a: 2, b: 'y' }]);
+  // `null` reaches the cell as an empty string, so it is the same record.
+  assert.deepStrictEqual(run('[{"v":"a"},{"v":null},{"v":"c"}]', 'json', [], 'csv').text, 'v\na\n""\nc');
+  // A quoted empty field is a record, not a blank line, however many columns
+  // the file has — this is the reader half of the fix on its own.
+  assert.deepStrictEqual(run('a,b\n1,""\n2,y\n', 'csv', [], 'json').data, [{ a: 1, b: '' }, { a: 2, b: 'y' }]);
+});
+
+test('a CSV cell is quoted when a bare one would not read back the same', () => {
+  // The reader trims every field it did not read as quoted, so `"  x  "` was
+  // written bare and came back as `"x"`. Quoting is the one thing that does
+  // work in CSV, and this is where it belongs.
+  const text = run('[{"a":"  x  ","b":"y","c":"","d":"z"}]', 'json', [], 'csv').text;
+  assert.strictEqual(text, 'a,b,c,d\n"  x  ",y,,z', text);
+  assert.deepStrictEqual(run(text, 'csv', [], 'json').data, [{ a: '  x  ', b: 'y', c: '', d: 'z' }]);
+  // Quotes inside a quoted cell are doubled, so this does not become four
+  // quotes and an unterminated field.
+  const inner = run('[{"a":" \\"q\\" "}]', 'json', [], 'csv').text;
+  assert.deepStrictEqual(run(inner, 'csv', [], 'json').data, [{ a: ' "q" ' }]);
+});
+
+test('the CSV writer names the columns a reader will type for it', () => {
+  // Quoting cannot fix a type change: the reader takes the quotes off before
+  // it coerces, so `"true"` comes back as the boolean `true`. The rule is
+  // therefore `coerceCSVValue` itself, and the answer is a warning.
+  const r = run('[{"id":"1","navn":"Ada","ok":"true"},{"id":"2","navn":"Bob","ok":"false"}]', 'json', [], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  const w = r.warnings[0];
+  assert.ok(w.includes('"id" (2)'), w);
+  assert.ok(w.includes('"ok" (2)'), w);
+  assert.ok(!w.includes('"navn"'), w);
+  // Nothing to warn about: these came in as numbers and go out as numbers, and
+  // a value a reader keeps as a string (`0074`, `12:30`, `1e5`) keeps its type.
+  for (const text of ['[{"id":1,"ok":true}]', '[{"id":"0074"}]', '[{"t":"12:30"}]', '[{"t":"1e5"}]', '[{"t":"yes"}]']) {
+    assert.deepStrictEqual(run(text, 'json', [], 'csv').warnings, [], text);
+  }
+  // The other five writers have no equivalent, so they must stay silent.
+  for (const out of ['json', 'yaml', 'xml', 'table', 'sql']) {
+    assert.deepStrictEqual(run('[{"id":"1"}]', 'json', [], out).warnings, [], out);
+  }
+  // A column that mixes strings and numbers is named for the strings only.
+  const mixed = run('[{"a":"1"},{"a":2},{"a":"x"}]', 'json', [], 'csv').warnings;
+  assert.strictEqual(mixed.length, 1, JSON.stringify(mixed));
+  assert.ok(mixed[0].includes('"a" (1)'), mixed[0]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

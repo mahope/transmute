@@ -511,14 +511,36 @@ const serializers = {
     assertWritable(data, 'json');
     return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
   },
-  csv: (data) => {
+  csv: (data, opts = {}) => {
     if (data.length === 0) return '';
     assertWritable(data, 'csv');
     const headers = unionKeys(data);
+    // The reader trims every field it did not read as quoted, so a cell written
+    // bare comes back with its edge spaces gone — `"  x  "` became `"x"` in a
+    // plain two-column export. Quoting is the fix for that, and the one place
+    // in CSV where quoting does work.
+    //
+    // One column needs the empty case as well, because it is the one shape
+    // where a record can be a line with nothing on it: RFC 4180 lets a file
+    // carry blank lines between records and the reader drops them, so a record
+    // whose only value was empty was written as a line the reader ate. The row
+    // was gone, exit 0, empty stderr, and the rows left looked complete.
+    // `""` and `" "` are the RFC's own way to spell a record holding one empty
+    // or blank field, and the two spellings the reader can tell from a blank
+    // line — which is why the reader asks whether a field was quoted rather
+    // than only what it contained.
+    const oneColumn = headers.length === 1;
     const lines = [headers.map(escapeCSV).join(',')];
     for (const row of data) {
-      lines.push(headers.map(h => escapeCSV(cellValue(row[h]))).join(','));
+      lines.push(headers.map(h => {
+        const cell = cellValue(row[h]);
+        if (cell !== cell.trim() || (oneColumn && cell === '')) {
+          return `"${cell.replace(/"/g, '""')}"`;
+        }
+        return escapeCSV(cell);
+      }).join(','));
     }
+    reportCSVTypeLoss(data, headers, opts.warnings);
     return lines.join('\n');
   },
   yaml: (data) => {
@@ -763,6 +785,42 @@ function coerceCSVValue(val) {
   return val;
 }
 
+/**
+ * Name the columns whose values are written as text and read back as a number
+ * or a boolean.
+ *
+ * The rule is not written out here — it *is* `coerceCSVValue`, the same
+ * function the CSV parser calls — so this cannot promise something the reader
+ * does not do. That matters more than it looks: a warning about a type change
+ * is worthless if it guesses the type, and the guess is exactly where a second
+ * copy of the rule would go wrong.
+ *
+ * Quoting is not the fix, and that was measured rather than assumed: the
+ * reader takes the quotes off a field before it coerces it, so `"true"` comes
+ * back as the boolean `true` while `"0074"` comes back as the string `0074`.
+ * RFC 4180 has no way to say *this cell is a string*, which is why the answer
+ * is a warning naming the columns and not a rewrite of the file. Writing the
+ * strings bare is still right: a spreadsheet is the most likely next hop, and
+ * there a number usually is what the user meant.
+ */
+function reportCSVTypeLoss(data, headers, warnings) {
+  if (!Array.isArray(warnings)) return;
+  const lost = [];
+  for (const h of headers) {
+    let count = 0;
+    for (const row of data) {
+      const val = row[h];
+      if (typeof val === 'string' && typeof coerceCSVValue(val) !== 'string') count++;
+    }
+    if (count > 0) lost.push(`"${h}" (${count})`);
+  }
+  if (lost.length === 0) return;
+  warnings.push(
+    `csv: ${lost.length} of ${headers.length} columns hold values that are written as text and read back as a number or a boolean: ` +
+    `${lost.join(', ')}. Quoting does not prevent it; json, yaml and xml keep the strings.`
+  );
+}
+
 /** Delimiters recognised when the caller does not force one. `,` wins a tie. */
 const CSV_DELIMITERS = [',', ';', '\t', '|'];
 
@@ -847,16 +905,19 @@ function parseCSV(text, opts = {}) {
   let field = '';
   let inQuotes = false;
   let quoted = false;
+  let recordQuoted = false;
 
   const endField = () => {
+    if (quoted) recordQuoted = true;
     record.push(quoted ? field : field.trim());
     field = '';
     quoted = false;
   };
   const endRecord = () => {
     endField();
-    records.push(record);
+    records.push({ values: record, quoted: recordQuoted });
     record = [];
+    recordQuoted = false;
   };
 
   for (let i = 0; i < text.length; i++) {
@@ -877,17 +938,22 @@ function parseCSV(text, opts = {}) {
   }
   if (field !== '' || record.length > 0 || quoted) endRecord();
 
-  // RFC 4180 allows blank lines between records; the first real record is the header.
-  const recordsWithIndex = records.filter((values) => !(values.length === 1 && values[0] === ''));
+  // RFC 4180 allows blank lines between records; the first real record is the
+  // header. A record that was *quoted* is not one of them: `""` is a record
+  // holding one empty field, and dropping it because its value happens to be
+  // empty is how a one-column export lost every row whose value was empty.
+  const recordsWithIndex = records.filter(
+    r => !(r.values.length === 1 && r.values[0] === '' && !r.quoted)
+  );
   if (recordsWithIndex.length === 0) return [];
-  const headers = recordsWithIndex[0].map((h, i) => (i === 0 ? h.replace(/^﻿/, '') : h));
+  const headers = recordsWithIndex[0].values.map((h, i) => (i === 0 ? h.replace(/^﻿/, '') : h));
 
   const rows = [];
   const headerNames = new Set(headers);
   const extraNames = new Map();
   const extraLines = new Set();
   for (let r = 1; r < recordsWithIndex.length; r++) {
-    const values = recordsWithIndex[r];
+    const values = recordsWithIndex[r].values;
     const row = {};
     headers.forEach((h, idx) => { row[h] = idx < values.length ? coerceCSVValue(values[idx]) : ''; });
     if (values.length > headers.length) {
@@ -2194,7 +2260,12 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
 
     // Serialize
     if (!serializers[outputFormat]) return { error: `Unknown output format: ${outputFormat}` };
-    const text = serializers[outputFormat](data, outputFormat === 'sql' ? opts.tableName : undefined);
+    // CSV is the one writer that has to be told where the warnings go: it is
+    // the only format where the file itself cannot say what it lost, so the
+    // columns it renames on the way out are named here or nowhere.
+    const text = outputFormat === 'csv'
+      ? serializers.csv(data, { warnings })
+      : serializers[outputFormat](data, outputFormat === 'sql' ? opts.tableName : undefined);
 
     return { data, text, warnings };
   } catch (err) {
