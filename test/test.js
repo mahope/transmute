@@ -1531,6 +1531,75 @@ t('a number that is not finite is refused by every writer, not written as null o
   }
 });
 
+t('a float with an exponent is written the way a YAML reader reads it back', () => {
+  // Measured on the real binary, before the fix: seventeen numbers through
+  // `transmute nums.json -o yaml`, exit 0, empty stderr, and PyYAML read seven
+  // of them back as something else. Five were a *string*:
+  //
+  //   1e-7        -> '1e-7'        1e+21   -> '1e+21'      5e-324 -> '5e-324'
+  //   -1e-7       -> '-1e-7'       1e+308  -> '1e+308'
+  //
+  // A number that comes out as text, written bare so it looks like a number.
+  // YAML's own float production is stricter than JavaScript's: it wants a `.`
+  // and a *signed* exponent, so `1.0e-7` is a float to YAML 1.1 and YAML 1.2
+  // alike, while `1e-7` is a float only to 1.2 and a string to 1.1 — and 1.1 is
+  // what PyYAML, Ruby, Go and most of a pipeline actually speak. `1.0e308` fails
+  // the same way, which is why the sign is part of the rule and not a detail.
+  //
+  // This asserts the *spelling*, and it has to: our own reader is more
+  // permissive than PyYAML and reads `1e-7` back as a number, so a round-trip
+  // test through `run(..., 'yaml', ...)` passes against the broken writer too.
+  // A tool agreeing with itself is not evidence that a file is readable.
+  // PyYAML's own float production, decimal branches: the `.` is mandatory and
+  // the exponent's sign is mandatory. Written out longhand, it is
+  // `[-+]?[0-9]*\.[0-9]*(?:[eE][-+][0-9]+)?` — its other branches are the
+  // sexagesimal form and `.inf`/`.nan`, which are non-finite and already refused.
+  const YAML11_FLOAT = /^[-+]?[0-9]*\.[0-9]*(?:[eE][-+][0-9]+)?$/;
+  const YAML11_INT = /^[-+]?[0-9]+$/;
+  const written = [];
+  for (const literal of ['1e-7', '-1e-7', '1e21', '1e308', '5e-324', '1.5', '0.1',
+    '0.000001', '1.7976931348623157e308', '0.30000000000000004', '1.2345678901234567',
+    '1', '-2.5', '1000000000000000', '0']) {
+    const r = runSQL(`[{"v":${literal}}]`, 'json', [], 'yaml');
+    assert.ok(!r.error, `${literal} must be writable: ${r.error}`);
+    const scalar = r.text.split('v: ')[1].trim();
+    written.push([literal, scalar]);
+    // The negative case is the value: a scalar no YAML 1.1 reader resolves to a
+    // number is a string wearing a number's clothes.
+    assert.ok(
+      YAML11_FLOAT.test(scalar) || YAML11_INT.test(scalar),
+      `${literal} is written ${JSON.stringify(scalar)}, which a YAML 1.1 reader reads as a string`
+    );
+    // And the number it resolves to must be the number that went in.
+    const back = Number(scalar);
+    assert.strictEqual(back, Number(literal), `${literal} came back as ${back} from ${scalar}`);
+  }
+  // The spellings themselves, so a fix that quotes the value, or that trades the
+  // bug for a different one, cannot pass on the regex alone.
+  const byLiteral = Object.fromEntries(written);
+  assert.strictEqual(byLiteral['1e-7'], '1.0e-7');
+  assert.strictEqual(byLiteral['-1e-7'], '-1.0e-7');
+  assert.strictEqual(byLiteral['1e21'], '1.0e+21');
+  assert.strictEqual(byLiteral['1e308'], '1.0e+308');
+  assert.strictEqual(byLiteral['5e-324'], '5.0e-324');
+  // The numbers that already worked must keep the spelling they had: this is
+  // not a licence to reformat every float in a file.
+  assert.strictEqual(byLiteral['1.5'], '1.5');
+  assert.strictEqual(byLiteral['0.1'], '0.1');
+  assert.strictEqual(byLiteral['1.7976931348623157e308'], '1.7976931348623157e+308');
+  assert.strictEqual(byLiteral['1'], '1');
+  assert.strictEqual(byLiteral['1000000000000000'], '1000000000000000');
+  // Inside a sequence, in a nested mapping and as a top-level scalar — the rule
+  // belongs to the writer, not to the one place the shape happened to be flat.
+  assert.ok(/v: 1\.0e-7/.test(runSQL('[{"v":1e-7}]', 'json', [], 'yaml').text));
+  assert.ok(/- 1\.0e-7/.test(runSQL('[1e-7]', 'json', [], 'yaml').text));
+  assert.ok(/deep: 1\.0e-7/.test(runSQL('[{"a":{"b":{"deep":1e-7}}}]', 'json', [], 'yaml').text));
+  // SQL has the same bare form and no such problem: SQLite resolves `1e-7` to a
+  // real. The bug is YAML's stricter production, not a rule about exponents.
+  assert.ok(/'1e-7'/.test(runSQL('[{"v":1e-7}]', 'json', [], 'sql').text)
+    || /\(1e-7\)/.test(runSQL('[{"v":1e-7}]', 'json', [], 'sql').text));
+});
+
 t('NaN from an expression is refused too, and the path to it is named', () => {
   // JSON cannot spell NaN, so the only way in is a computation: `1/0` and `0/0`
   // in an `add` expression. That makes this a user-reachable value, not an exotic

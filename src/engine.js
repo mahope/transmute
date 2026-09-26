@@ -1429,12 +1429,37 @@ function isYAMLPlainObject(value) {
  */
 function formatYAMLValue(val) {
   if (val === null || val === undefined) return 'null';
-  if (typeof val === 'boolean' || typeof val === 'number') return String(val);
+  if (typeof val === 'boolean') return String(val);
+  if (typeof val === 'number') return formatYAMLNumber(val);
   if (typeof val === 'string') {
     if (val.includes('\n') || val.trim() === '') return JSON.stringify(val);
     return needsYAMLQuotes(val) ? JSON.stringify(val) : val;
   }
   return JSON.stringify(val);
+}
+
+/**
+ * A number spelled the way a YAML reader reads it back. `String(val)` gives the
+ * shortest form that round-trips in JavaScript, and that form is looser than
+ * YAML's: `1e-7`, `1e+21` and `5e-324` all come out bare, and YAML 1.1's float
+ * production wants a `.` and a *signed* exponent, so a conforming reader takes
+ * every one of them as a **string** — a number written to look like a number and
+ * read as text. The missing piece is added and nothing else is touched, so the
+ * numbers that already round-trip keep the spelling they had. YAML 1.2 accepts
+ * the result as well, which makes it the one form every reader agrees on.
+ *
+ * A float that happens to be integral (`1.0`) is left alone on purpose: by the
+ * time a value is a number, `1.0` and `1` are the same number, so writing `1.0`
+ * would invent a float identity the input may never have had.
+ */
+function formatYAMLNumber(val) {
+  // The exponent's sign is required by the pattern, not added by a branch:
+  // Number::toString always prints one (`1e+21`, `1e-7`), so a guard for a
+  // missing sign would be code no input can reach and no test can kill.
+  const parts = /^(-?[0-9.]*)([eE])([+-][0-9]+)$/.exec(String(val));
+  if (!parts) return String(val);
+  const mantissa = parts[1].includes('.') ? parts[1] : `${parts[1]}.0`;
+  return `${mantissa}e${parts[3]}`;
 }
 
 function needsYAMLQuotes(value) {
