@@ -362,5 +362,40 @@ test('--delimiter without a value → exit 2', () => {
   expectFail(`"${process.execPath}" "${cli}" test/fixtures/people.csv --delimiter`, 2, '--delimiter needs a value');
 });
 
+test('a nested value survives the real binary as parseable JSON', () => {
+  // The bug this closes was invisible from the API: a nested object came out
+  // as the literal `[object Object]` and the command still exited 0 with an
+  // empty stderr, so a script could not tell a good export from a broken one.
+  const out = expectOk(sh(`transmute test/fixtures/orders.json --output csv`));
+  assert.equal(out.includes('object Object'), false, `lost the nested value:\n${out}`);
+  const back = expectOk(sh(`"${process.execPath}" "${cli}" -f csv -o json`, { input: out }));
+  const rows = JSON.parse(back);
+  assert.equal(rows.length, 3);
+  const cell = rows[0].items;
+  assert.equal(typeof cell, 'string', 'the cell should be CSV-quoted, not raw JSON');
+  assert.equal(JSON.stringify(JSON.parse(cell)), '[{"sku":"a-1","qty":2}]');
+});
+
+test('a nested value in SQL output is a JSON literal, not the word Object', () => {
+  const out = expectOk(sh(`transmute test/fixtures/orders.json --output sql --table orders`));
+  assert.equal(out.includes('object Object'), false, `lost the nested value:\n${out}`);
+  assert.ok(out.includes(`'[{"sku":"a-1","qty":2}]'`), `not a JSON string literal:\n${out}`);
+});
+
+test('join --prefix keeps the colliding field in the real binary', () => {
+  const out = expectOk(sh(`transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","prefix":"was_","with":[{"customer":"alice","status":"refunded"}]}]' --output json`));
+  const row = JSON.parse(out)[0];
+  assert.equal(row.status, 'paid', 'the left side must win without a prefix');
+  assert.equal(row.was_status, 'refunded', `the prefixed field was dropped:\n${out}`);
+});
+
+test('join without a prefix still keeps the left value and drops the right one', () => {
+  const out = expectOk(sh(`transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","with":[{"customer":"alice","status":"refunded"}]}]' --output json`));
+  const row = JSON.parse(out)[0];
+  assert.equal(row.status, 'paid');
+  assert.equal(Object.prototype.hasOwnProperty.call(row, 'refunded'), false);
+  assert.equal(Object.keys(row).join(','), 'id,customer,status,items,total');
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -183,6 +183,15 @@ export const CASES = [
     command: `transmute test/fixtures/people.csv --output json`
   },
   {
+    name: 'nested-values-to-csv',
+    docOutput: '1,alice,paid,"[{""sku"":""a-1"",""qty"":2}]",120',
+    op: null,
+    fixture: 'json',
+    pipeline: [],
+    outputFormat: 'csv',
+    command: `transmute test/fixtures/orders.json --output csv`
+  },
+  {
     name: 'yaml-to-csv',
     docOutput: "name,age,city\nAlice,30,Aarhus\nBob,25,Odense\nCarla,41,Aarhus",
     op: null,

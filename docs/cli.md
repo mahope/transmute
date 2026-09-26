@@ -189,13 +189,42 @@ id,name,email
 2,Bob,bob@example.com
 ```
 
+#### Nested values in a flat cell
+
+A CSV column and a SQL column hold one scalar. An object or an array is not
+one, and this tool used to write it with `String()`: an object became the
+literal text `[object Object]` and an array became its elements joined with
+commas. Both exited 0 with nothing on stderr, so an API response with a nested
+`user` object produced a CSV whose `user` column was those fourteen characters,
+and two different arrays — `["a,b"]` and `["a","b"]` — produced the same file.
+
+Now an object and an array are written as compact JSON in the cell, and
+`csv`, `table` and `sql` all do it the same way. This is what `jq`'s `@csv`
+writes for a non-scalar, so the cell is faithful and still parseable:
+
+```bash
+transmute test/fixtures/orders.json --output csv
+```
+
+```csv
+id,customer,status,items,total
+1,alice,paid,"[{""sku"":""a-1"",""qty"":2}]",120
+2,bob,open,"[{""sku"":""b-1"",""qty"":1},{""sku"":""b-2"",""qty"":3}]",60
+3,carla,paid,"[{""sku"":""c-1"",""qty"":5}]",250
+```
+
+`null` and a missing key still write an empty cell, because an empty cell is
+what the CSV reader reads back as an empty string. JSON in a cell is faithful
+but it is not a column you can sort or sum, so promote the field you actually
+want when you need a real column — see [`flatten`](#flatten) and
+[`map`](#map).
+
 `test/fixtures/european.csv` is a semicolon file with a quoted comma and a
 quoted newline, and it is part of the test suite:
 
 ```bash
 transmute test/fixtures/european.csv --pipe '[{"op":"sort","by":"antal","dir":"desc"}]' --output json
 ```
-
 ```json
 [
   {
@@ -535,8 +564,8 @@ transmute test/fixtures/orders.json --pipe '[{"op":"add","fields":{"lines":"item
 Merge rows from an inline table on a shared field. `with` holds the other side,
 `on` is the key, and `keep` decides what happens to records with no match:
 `left` keeps them, anything else drops them. Matching fields never overwrite
-existing ones, so a `prefix` on the other side is only needed for genuinely new
-names.
+existing ones, so a `prefix` is what you need when the other side has a field
+name you already have:
 
 ```bash
 transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","keep":"left","with":[{"customer":"alice","tier":"gold"},{"customer":"bob","tier":"silver"}]}]' --output table
@@ -552,6 +581,36 @@ transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","keep"
 +----+----------+--------+---------------------------------+-------+--------+
 (3 rows, 6 columns)
 ```
+
+Both sides have their own `status` in real data, and a join cannot invent a
+third answer for one field. Without a `prefix` the existing name wins and the
+other side's value is dropped. With one, both survive under their own names:
+
+```bash
+transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","prefix":"was_","with":[{"customer":"alice","status":"refunded"}]}]' --output json
+```
+
+```json
+[
+  {
+    "id": 1,
+    "customer": "alice",
+    "status": "paid",
+    "items": [
+      {
+        "sku": "a-1",
+        "qty": 2
+      }
+    ],
+    "total": 120,
+    "was_status": "refunded"
+  }
+]
+```
+
+A `prefix` only helps when the prefixed name is itself free. If the left record
+already has `was_status`, that field is dropped the same way, and the join says
+nothing about it — pick a prefix that is not already in use.
 
 ## Conversions
 
@@ -587,6 +646,20 @@ name,age,city
 Alice,30,Aarhus
 Bob,25,Odense
 Carla,41,Aarhus
+```
+
+JSON to CSV with a nested value — see [Nested values in a flat
+cell](#nested-values-in-a-flat-cell) for why the cell holds JSON:
+
+```bash
+transmute test/fixtures/orders.json --output csv
+```
+
+```csv
+id,customer,status,items,total
+1,alice,paid,"[{""sku"":""a-1"",""qty"":2}]",120
+2,bob,open,"[{""sku"":""b-1"",""qty"":1},{""sku"":""b-2"",""qty"":3}]",60
+3,carla,paid,"[{""sku"":""c-1"",""qty"":5}]",250
 ```
 
 Nested YAML to JSON — mappings, sequences, a block scalar and a quoted string,

@@ -9,11 +9,11 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — **alle ni ligger u mergerede på `ceo/xml-attributes` og dens afkom**, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `1e3f8a2` på `ceo/nested-cells` og har samme grund. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
 
-**Deploy-status ⚠️ (genverificert 2026-09-26 ca. 03:5x CEST med `npm run check:deploy`):** uændret. Live er `3d90812`, 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 04:0x CEST med `npm run check:deploy`):** uændret. Live er `3d90812`, 5 site-commit i drift, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
-**Næste iteration:** deploy-stillen er uændret, og derfor ligger **ni** færdige commits på tre branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; hvis `DEPLOY-MISSING` er væk, merges hele bunken (T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643` og T12 på `ceo/nested-yaml`, samt T18 `a31aba8` på `ceo/xml-attributes`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, er det nye produktarbejde, der skal vælges — XML-læseren (T18) er nu renset for de fire tavse tab, så næste fund bør ledes efter samme metode: kør **rigtige** filer gennem `src/cli.js` og se efter exit 0 med mistet data. Den bør også køre `npm run check:site`, som T18 ikke fik kørt. `❓ Til Mads` punkt 1 er stadig den eneste beslutning, der frigør mest, og intet i køen kan løse den.
+**Næste iteration:** deploy-stillen er uændret, og derfor ligger **ti** færdige commits på fire branch uden merge. Den næste iteration skal **først** køre `npm run check:deploy`; hvis `DEPLOY-MISSING` er væk, merger hele bunken (T13 `4d7fc35`, T14 `5f64894`, T15 `2fb9631`, T16 `bf61cce`, T17 `8be3643` og T12 på `ceo/nested-yaml`, T18 `a31aba8` på `ceo/xml-attributes` og T20 `1e3f8a2` på `ceo/nested-cells`) til `main`, og `VERIFICÉR DEPLOY`-noterne lukkes. Står den stadig, er det nye produktarbejde, der skal vælges, og **T20's metode er den der virkede**: kør rigtige filer gennem `src/cli.js` med hvert output-format, og se efter exit 0 med mistet data. T20 fandt tre fejl på den måde i én iteration, efter at parserne var renset i T13, T14, T16, T17 og T18. De uundersøgte flader er nu serialiseringssiden og resten af `operations`: `group` skriver hele grupper ind i `items`, `unique` uden `by` sammenligner `JSON.stringify(item)`, `sort` på blandede typer bruger `localeCompare` på tal-strenge, og `detectFormat` på en fil der er halvt JSON. Samme metode, samme fejlklasse. `npm run check:site` er grøn efter T20. `❓ Til Mads` punkt 1 er stadig den eneste beslutning, der frigør mest, og intet i køen kan løse den.
 
 T17 (nested YAML på input) er færdig på `ceo/nested-yaml` og ligger på branch, ligesom T13/T14/T15/T16, fordi `DEPLOY-MISSING` står.
 
@@ -516,6 +516,85 @@ Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") er **lukket, ikke merged*
 - `.nvmrc`, `engines` og CI-matrix peger på dokumenterede, testede versioner.
 - Hver major-version har én selvstændig commit, så præcis rollback kan ske.
 
+### 20. [x] Skriv nestede værdier som JSON i flade celler, og gør `join --prefix` brugbar
+
+**Status:** FÆRDIG som `1e3f8a2` på `ceo/nested-cells` — **ligger på branch, ikke
+mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Metode:** T18-metoden anvendt på serialiseringssiden i stedet for parsersiden: kør
+**rigtige** filer gennem `src/cli.js` med hvert output-format og se efter exit 0 med
+mister data. Alle fund er reproduceret på den gamle kode.
+
+**Fund 1 — et objekt blev til bogstavelig `[object Object]`.** `serializers.csv` og
+`serializers.sql` skrev værdierne med `String()`. Et API-svar med `user: {name, email}`
+blev til en CSV, hvis `user`-kolonne indeholdt de fjorten tegn, exit 0, tom stderr.
+Tre ting gjorde det værre end en tilfældighed:
+
+- **Sitets egen guide navngiver fejlen som en fejl hos konkurrenterne.**
+  `site/guides/flatten-nested-json/index.html` åbnede med "most 'JSON to CSV' tools
+  either choke on nesting or silently turn your data into `[object Object]`" og
+  skrev en hel sektion om at omgå den. Transmute *var* et af de værktøjer, teksten
+  handlede om.
+- **`table` og `docs/cli.md` gjorde det modsatte.** `docs/cli.md:546` viste allerede
+  `items` som `[{"sku":"a-1","qty":2}]`, fordi `table`-serializeren brugte
+  `JSON.stringify`. Tre af fire formater var altså i overensstemmelse, og den fjerde
+  var ikke.
+- **Ingen test låste fejlen.** `grep -c "object Object" test/fixtures/expected.json` → 0.
+  Ingen af de 27 `CASES` satte et objekt eller en array i CSV- eller SQL-output.
+
+**Fund 2 — to forskellige arrays gav den samme fil.** Et array blev skrevet som
+elementerne med komma mellem, så `["a,b"]` og `["a","b"]` begge blev `a,b` og læstes
+tilbage som én streng. `{}` og `[]` blev begge et tomt felt, altså uløselige.
+Kollisionen er præcis T17's lære: *en streng der læses som noget andet skal skrives
+så den ikke kan* — T17 løste det for YAML-strenge, her var samme fejl i CSV-cellen.
+
+**Fund 3 — `join --prefix` gjorde præcis ikke sit arbejde.** `operations.join` skrev
+`if (k !== on && !(k in merged)) merged[prefix + k] = v;`. Guarden spurgte, om det
+**upræfikserede** navn allerede fandtes på venstre side, men skrev til det præfikserede.
+Så et join med `prefix: "r_"` på to sider med et fælles `tier`-felt droppede `tier`
+alligevel, exit 0. Det er den eneste mulighed, `prefix` findes for — og både
+`docs/cli.md` og `site/guides/join-two-files/index.html` lovede den modsatte.
+
+**Rettelse:**
+
+- Ny `cellValue(val)` i begge engines: `null`/`undefined` → tom streng, objekt og
+  array → kompakt JSON, ellers `String(val)`. `csv`, `table` **og** `sql` bruger den
+  nu, så de tre kan ikke glide fra hinanden igen. Det er samme form som `jq`'s
+  `@csv` skriver for en ikke-skalær, så cellen er både troværdig og parsebar af
+  læseren på næste hop.
+- `sqlValue` får sit eget objekt-/array-tjek, så en indlæsning beholder indholdet i
+  stedet for ordet `Object`. Enlig apostrof escapes stadig (`'{"name":"O''Brien"}'`).
+- `join`-guarden spørger om `prefix + k`, altså det navn den faktisk skriver til.
+  Uden `prefix` er adfærden **uændret** — "matching fields never overwrite" holder.
+- `docs/cli.md` får en ny sektion `#### Nested values in a flat cell` med kommando og
+  output, `join`-afsnittet får et prefix-eksempel på et kolliderende felt, og
+  flatten-guiden samt join-guiden er rettet, så ingen af dem længere beskriver fejlen
+  som en advarsel brugeren skal omgå. `tools/site_chrome.py` regenererede
+  søgeindeks (104 entries), asset-hashes og sitemap på 20 sider.
+
+**Verifikation:** `npm test` grøn med 89 engine- (78 → 89, 11 nye), 76 CLI- (70 → 76,
+6 nye), 69 konformance-, 6 README-tests, 39 workflow-regressioner, 4 workflow-kontrakter
+og 173 kontratkontroller. `npm pack --dry-run` uændret på 5 filer. `npm run check:site`
+grøn med `0 finding(s) across 20 pages`, `deviations: 0` og grøn selftest.
+`npm run audit:site` og `npm audit` uden fund. Deploy genverificeret i starten af
+iterationen (se Deploy).
+
+**Ingen af de 27 eksisterende snapshots ændrede sig.** `npm run snapshots:cli` lagde
+præcis én tilføjelse i `expected.json` (den nye case), hvilket er beviset på at
+rettelsen er additiv: de fixtures, der virkede, virker stadig.
+
+**To læringer fra denne iteration:**
+
+1. **Min egen test havde den anden fejl.** Jeg delte en CSV-linje på `,` for at finde
+   cellen — men cellen *er* JSON med kommaer i. Testen fejlede, og den fejlede
+   *fordi den havde en svagere idé om CSV end værktøjet selv.* Løsningen var at læse
+   cellen tilbage med `parsers.csv` i stedet for med et hjemmelavet split. Samme
+   pointe som T18 og T14: påstanden skal gå gennem den kode, den udsiger noget om.
+2. **Falskhed i en guide er en fejl i varen.** Guideen var ikke bare forældet, den
+   *beskrev en fejl som en konkurrentens*. Den blev læst som en kravliste mod os selv,
+   fordi hver eneste anden kilde i repoet sagde det modsatte. En diff på `site/`
+   burde derfor læses som en påstand om varen, ikke som tekst.
+
 ### 19. [x] Skeln mellem tom streng og NULL i SQL-output
 
 **Status:** FÆRDIG som `538aa2e` på `ceo/sql-empty-string` — **ligger på branch, ikke
@@ -859,6 +938,22 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 
 ## Beslutninger og fund
 
+- **En diff på `site/` er en påstand om varen, ikke en tekstændring.** T20 fandt en
+  fejl, ingen af de 78 tests, 27 snapshots eller 173 kontratkontroller holdt fast i:
+  `serializers.csv` skrev et objekt som `[object Object]`, mens `site/guides/flatten-nested-json`
+  åbnede med at kalde `[object Object]` den fejl, *andre* værktøjer har. Da guideen
+  blev læst som en kravliste mod os selv, fordi `table` og `docs/cli.md` sagde det
+  modsatte, var den tydeligt en **påstand om varen**. Derfor er den ikke længere
+  en advarsel, men en beskrivelse af den nye adfærd, med et eksempel på det output
+  værktøjet faktisk giver.
+- **Falskhed i en guide er en salgdsfejl.** Det er den anden fejlform end
+  datakorruptionen, men den rammer den samme bruger: en bruger, der læser at
+  værktøjet taber et objekt, køber ikke værktøjet. Derfor blev fundet prioriteret
+  over de næste par parsere.
+- **Én hjælper, tre brugere.** `cellValue()` er skrevet fordi `table` allerede
+  gjorde det rigtige og de to andre ikke gjorde det. Tre steder der *skal* svare
+  til hinanden, men hvor kun to af dem gjorde det, er to fejlkilder.
+
 - **Målefejlen bag fem iterationers deploy-dom.** `sitemap.xml`'s `lastmod` er ikke en deploy-dato; den skrives, når `site_chrome.py` regenererer sitemap'en (`tools/site_chrome.py:629`). Commit `3d90812`, som faktisk *er* live, har selv `lastmod 2026-09-08`. Læst som deploy-dato fik et levende site til at se dødt ud. Derfor er reglen nu et værktøj, ikke en sætning: `npm run check:deploy`.
 - Processregel fra T15: deploy-alder må aldrig fastslås ved at læse et felt i det publicerede output. Beviset skal være en sammenligning mod git. Det er den forskel, der skilte en falsk `DEPLOY-MISSING` med fem ganske gode, men u mergerede commits fra en rigtig.
 - T5 fjernede `deploy-site.yml` og dermed det eneste deployapparat i repoet. Det var korrekt — kontrakten forbyder push-triggeret auto-deploy — men intet noterede, at det efterlod repoet **uden** deployvej, fordi den eksterne batchdeployer antagelig forventede en bestemt mekanisme. At slette en integrations eneste implementering skal efterlade en note om, hvad der erstatter den.
@@ -975,6 +1070,7 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
    adfærd gjorde `WHERE middle = ''` meningsløs efter en import. Det er bevidst truffet uden
    svar, da den er én commit at rulle tilbage til. **Hvis du vil have `NULL` for tomme
    felter, så sig det** — så bytter jeg regex'en tilbage og justerer `docs/cli.md`.
+- 2026-09-26 ca. 04:0x–04:2x CEST: **T20 gennemført på `ceo/nested-cells`, ikke mergeret til `main`.** Deploy genverificeret **først** i iterationen med `npm run check:deploy`: uændret, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, `/support/index.html` utilgængelig, så `DEPLOY-MISSING` står ved. T18's metode kørt for **første gang på serialiseringssiden**: rigtige filer gennem `src/cli.js` med hvert output-format, jagt efter exit 0 med mistet data. Tre fund, alle reproduceret på den gamle kode: (1) `serializers.csv` og `serializers.sql` skrev værdier med `String()`, så et objekt blev til den bogstavelige `[object Object]` — exit 0, tom stderr, og sitets egen flatten-guide skrev en hel sektion om at omgå præcis det; (2) arrays blev skrevet komma-joinet, så `["a,b"]` og `["a","b"]` gav den samme fil, og `{}`/`[]` gav begge et tomt felt; (3) `operations.join` spurgte om det **upræfikserede** navn i sin kollisions-guard, så `join --prefix` droppede præcis det felt prefixen findes for — exit 0, mens både `docs/cli.md` og join-guiden lovede det modsatte. Rettet med `cellValue()` delt af `csv`/`table`/`sql` (kompakt JSON for ikke-skalærer, samme form som `jq`'s `@csv`), et eget objekt-tjek i `sqlValue`, og en guard der spørger om det navn den faktisk skriver til; uden `prefix` er adfærden uændret. `docs/cli.md` fik sektionen `#### Nested values in a flat cell` plus et prefix-eksempel på et kolliderende felt; flatten- og join-guiden er rettet, så ingen af dem længere beskriver en fejl som en advarsel. `tools/site_chrome.py` regenererede søgeindeks (104 entries), asset-hashes og sitemap på 20 sider. 11 nye engine-tests (78 → 89) og 6 nye CLI-tests (70 → 76); **0 af 27 eksisterende snapshots ændret**, den nye case `nested-values-to-csv` er den eneste tilføjelse i `expected.json`, hvilket er beviset på at rettelsen er additiv. Procesfejl undervejs, gjort permanent: min egen test delte CSV-linjen på `,` for at finde cellen, men cellen *er* JSON med kommaer i, så testen havde en svagere idé om CSV end værktøjet selv — den læser nu cellen tilbage med `parsers.csv`. Lokalt grøn: `npm test` 89+76+69+6+39+4+173, 0 fejl, `npm pack --dry-run` 5 filer uændret, `npm run check:site` `0 finding(s) across 20 pages`, `deviations: 0` og fire grønne selvtesttrin inkl. deploy-friskheds-selvfesten, `npm run audit:site` og `npm audit` uden fund. Næste iteration: kør `npm run check:deploy` først; er `DEPLOY-MISSING` væk, merges bunken på fire branch til `main`.
 - 2026-09-26 ca. 04:0x–04:2x CEST: T19 gennemført på `ceo/sql-empty-string`, bygget oven på `ceo/xml-attributes`, så bunken nu er ni commits. Deploy genverificeret **først** i iterationen med `npm run check:deploy`: uændret, `DEPLOY-MISSING` står ved, og diffen mergeret **ikke** til `main` (den rørrer `site/engine.js`); ingen `VERIFICÉR DEPLOY`-note, fordi intet er mergeret. To tavse datatab fundet i `serializers.sql`, begge med exit 0 og gyldig SQL: (1) `sqlValue` skrev både `null` og `''` som `NULL`, så en CSV med et tomt felt importerede fint og `WHERE middle = ''` fandt intet bagefter; (2) regex'en `/^-?\d+(\.\d+)?$/` skrev det danske postnummer `0074` som tallet 74. Rettet i begge engines (byte-identiske) til `null`/`undefined` → `NULL`, `''` → `''`, og regex'en snævret til `/^-?(0|[1-9]\d*)(\.\d+)?$/`, så kun et forulede nul tvinger citater på. Nyt fixture `test/fixtures/sql-empty.csv` som `CASES`-case, så konformancen dækker det i begge engines og i den rigtige CLI; `docs/cli.md` fik en firelinjes-tabel over `NULL` / `''` / `2100` / `'0074'` med kommando og fuldt output, altså migrationen er skrevet ned. Den grønne test `SQL NULL for empty values` blev omskrevet til tre tests, der hver især kan fange en regression: null mod tom streng, tom streng gennem en CSV-runde, nulforpræfiks. **Procesfejl, begge fanget af de nye tests:** jeg skrev begge de to første tests ud fra hovedet i stedet for fra outputtet — `(NULL, NULL)` optræder jo i tredjerækken med den manglende nøgle, så min `includes`-påstand ramte den, og `"0.5"` er et decimaltal uden nulforpræfiks, så den ville være quotet i min nye forventning. Rettet til at sammenligne hele rækker mod den faktiske output. Snapshots regenereret til 27 entries **uden at ét eneste eksisterende snapshot ændrede sig** — beviset på, at rettelsen kun rammer de to tilfælde, den handler om. **Den gæld fra T18-iterationen er betalt:** `npm run check:site` er kørt og grøn (`0 finding(s) across 20 pages`, `deviations: 0`, fire grønne selvtesttrin inkl. deploy-friskheds-selvfesten), så bunken er nu grøn i hele gaten, ikke kun i root-gaten. Lokalt grøn: `npm test` 80+71+67+6+39+4+173, 0 fejl, `npm pack --dry-run` 5 filer uændret. Implementationscommit `538aa2e`, pushet til `ceo/sql-empty-string`, **ikke mergeret til `main`**. Næste opgave: kør `npm run check:deploy` først; er `DEPLOY-MISSING` væk, merges bunken på ni commits til `main`.
 
 - 2026-09-26 ca. 04:2x–05:1x CEST: T17 gennemført på `ceo/nested-yaml`. `parsers.yaml` erstattet af en indrykningsdrevet læser (`parseYAML` → `tokenizeYAML` → `parseYAMLBlock`): mappings og sekvenser i vilkårlig dybde, `- key: value` med indrykket inline-mapping, sekvens på samme indrykning som sin nøgle, blokskalarer (`|`, `>`, `|-`, `|+`), enkelt- og dobbeltcitate med escapes, flow-kollektioner (`[a, b]`, `{k: v}`), `#`-kommentarer og `---`/`...`. Den gamle læser lod en indrykket blok forsvinde og exitede 0 — hele `service`-blokken i en almindelig config-fil var væk. `serializers.yaml` skriver den samme struktur tilbage (nested mappings, sekvenser af mappings, blokskalarer, citater), og en streng der læses som noget andet skrives quotet, så `0074` ikke bliver 74. Ny fixture `test/fixtures/nested.yaml` (tre niveauer) som `CASE`, så conformance dækker den i begge engines, plus to konverteringer med fuldt output i `docs/cli.md`; afsnittet om YAML-understøttelse er skrevet om og siger nu, at anchors og multi-dokument-filer ikke understøttes, og at kun første dokument læses med en advarsel på stderr. 12 nye engine-tests (55 → 67), 7 nye CLI-tests (63 → 70), conformance 63 → 65. `detectFormat` genkender nu `key: value` som YAML og ser på første meningsbærende linje, så en indsat config-fil i browserplaygroundet ikke læses som JSON. Snapshots regenereret til 26 entries **uden at ét eneste eksisterende snapshot ændrede sig** — beviset på, at rettelsen er en no-op for data, der allerede virkede. Fund undervejs: (1) `blockScalarHeader` skrev `style: m[1]`, som er chomping-indikatoren, så *alle* blokskalarer blev literale — fanget af den test, der hævede den foldede egenskab, ikke af dem, der testede `|`; (2) min første CLI-test påstod `zip: 0074` på en yaml-fil, hvilket er YAML'ens egen coercing, ikke writerens — påstanden flyttedes til json → yaml → json, fordi det er den vej, et postnummer faktisk rejser; (3) `expectFail(..., 1, ...)` viste exit **3**, CLI'ens kontrakt for ulæseligt input, så testen blev skrevet om til den. Lokalt grøn: `npm test` 67+70+65+6+39+4+166, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px, `Site-gate grøn.` med syv grønne selvtesttrin. Deploy genverificeret **først** med `npm run check:deploy`: live `3d90812`, 5 site-commit / 25 filer u deployede, `/support/index.html` utilgængelig — uændret, så `DEPLOY-MISSING` står ved, diffen mergeret **ikke** til `main` (den rørrer `site/engine.js`), og der er oprettet ingen `VERIFICÉR DEPLOY`-note. Næste opgave er T12 (dansk support-side); T13/T14/T15/T16/T17 ligger som seks u mergerede commits på to branch-kæder.

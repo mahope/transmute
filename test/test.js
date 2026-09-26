@@ -598,5 +598,99 @@ t('XML element with attributes and text keeps both', () => {
   if (r.data[0]['#text'] !== '5') throw new Error(JSON.stringify(r.data));
 });
 
+t('CSV writes a nested object as JSON, not [object Object]', () => {
+  // This was the worst quiet failure in the tool: a nested `user` object became
+  // the literal fourteen characters `[object Object]`, exit 0, no warning. The
+  // site's own flattening guide names that string as the defect it works around.
+  const src = '[{"id":1,"user":{"name":"Ada","email":"ada@example.com"}}]';
+  const r = run(src, 'json', [], 'csv');
+  if (r.text.includes('object Object')) throw new Error('still stringified: ' + r.text);
+  // Read the cell back with the tool's own reader, so the test does not carry
+  // a second, weaker idea of what a CSV cell is.
+  const back = run(r.text, 'csv', [], 'json');
+  if (back.error) throw new Error(back.error);
+  if (JSON.parse(back.data[0].user).email !== 'ada@example.com') {
+    throw new Error('the email is not recoverable from the cell: ' + r.text);
+  }
+});
+
+t('CSV writes arrays as JSON, so two different arrays stay two different files', () => {
+  // A comma-joined array collides: `["a,b"]` and `["a","b"]` both wrote `a,b`
+  // and read back as one string. The cell has to be parseable to tell them apart.
+  const r = run('[{"t":["a,b"]},{"t":["a","b"]}]', 'json', [], 'csv');
+  const back = run(r.text, 'csv', [], 'json');
+  if (back.error) throw new Error(back.error);
+  if (back.data[0].t === back.data[1].t) throw new Error('the two arrays produced the same file: ' + r.text);
+  if (JSON.stringify(JSON.parse(back.data[0].t)) !== '["a,b"]') throw new Error(back.data[0].t);
+  if (JSON.stringify(JSON.parse(back.data[1].t)) !== '["a","b"]') throw new Error(back.data[1].t);
+});
+
+t('an empty object and an empty array are not the same cell', () => {
+  // Both used to write an empty CSV field, so `{}` and `[]` became
+  // indistinguishable and both read back as ''.
+  const r = run('[{"a":{},"b":[]}]', 'json', [], 'csv');
+  const cells = r.text.trim().split('\n')[1];
+  if (!cells.includes('{}')) throw new Error('empty object lost: ' + r.text);
+  if (!cells.includes('[]')) throw new Error('empty array lost: ' + r.text);
+});
+
+t('csv, sql and table agree on a nested value', () => {
+  // They disagreed: table and docs/cli.md wrote JSON, csv and sql wrote
+  // `[object Object]`. One helper now serves all three.
+  const src = '[{"v":{"a":1}}]';
+  const cell = '{"a":1}';
+  if (!run(src, 'json', [], 'csv').text.includes(cell.replace(/"/g, '""'))) throw new Error('csv disagrees');
+  if (!run(src, 'json', [], 'sql').text.includes(`'${cell}'`)) throw new Error('sql disagrees');
+  if (!run(src, 'json', [], 'table').text.includes(cell)) throw new Error('table disagrees');
+});
+
+t('SQL imports a nested object as a JSON string literal, not as [object Object]', () => {
+  const r = run('[{"id":1,"user":{"name":"O\'Brien"}}]', 'json', [], 'sql');
+  if (r.text.includes('object Object')) throw new Error('still stringified: ' + r.text);
+  // The single quote has to survive as data inside the literal.
+  if (!r.text.includes(`'{"name":"O''Brien"}'`)) throw new Error('quote not escaped: ' + r.text);
+});
+
+t('a nested value survives a csv → json round trip as parseable JSON', () => {
+  const r = run('[{"v":{"a":[1,2]}}]', 'json', [], 'csv');
+  const back = run(r.text, 'csv', [], 'json');
+  if (back.error) throw new Error(back.error);
+  const cell = back.data[0].v;
+  if (typeof cell !== 'string') throw new Error('unquoted: ' + JSON.stringify(back.data));
+  if (JSON.stringify(JSON.parse(cell)) !== '{"a":[1,2]}') throw new Error('lost on the way back: ' + cell);
+});
+
+t('join with a prefix keeps the field whose name collided', () => {
+  // The guard asked whether the *unprefixed* right-hand name existed on the
+  // left, so a prefix — the one option that exists to survive a collision —
+  // dropped the field anyway and still exited 0. docs/cli.md promises the
+  // opposite.
+  const r = run('[{"id":1,"tier":"basic"}]', 'json', [
+    { op: 'join', on: 'id', prefix: 'r_', with: [{ id: 1, tier: 'gold' }] }
+  ], 'json');
+  if (r.data[0].r_tier !== 'gold') throw new Error('the prefixed field was dropped: ' + JSON.stringify(r.data));
+  if (r.data[0].tier !== 'basic') throw new Error('the left side was overwritten: ' + JSON.stringify(r.data));
+});
+
+t('join without a prefix still refuses to overwrite an existing field', () => {
+  // The fix must not turn the documented "matching fields never overwrite"
+  // rule into a data race.
+  const r = run('[{"id":1,"tier":"basic"}]', 'json', [
+    { op: 'join', on: 'id', with: [{ id: 1, tier: 'gold' }] }
+  ], 'json');
+  if (r.data[0].tier !== 'basic') throw new Error('overwrote without a prefix: ' + JSON.stringify(r.data));
+  if ('tier2' in r.data[0] || Object.keys(r.data[0]).length !== 2) {
+    throw new Error('the field landed under some other name: ' + JSON.stringify(r.data));
+  }
+});
+
+t('join prefix only helps when the prefixed name is itself taken', () => {
+  const r = run('[{"id":1,"tier":"basic","r_tier":"already"}]', 'json', [
+    { op: 'join', on: 'id', prefix: 'r_', with: [{ id: 1, tier: 'gold' }] }
+  ], 'json');
+  if (r.data[0].r_tier !== 'already') throw new Error('overwrote a taken name: ' + JSON.stringify(r.data));
+  if (r.data[0].tier !== 'basic') throw new Error(JSON.stringify(r.data));
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -149,6 +149,28 @@ function escapeSQLString(val) {
   return String(val).replace(/'/g, "''");
 }
 
+/**
+ * A value written into a flat cell — one CSV field, one SQL literal, one
+ * column of the `table` preview. All three need the same answer, and they
+ * disagreed: `table` and `docs/cli.md` wrote an object as compact JSON while
+ * `csv` and `sql` ran it through `String()`, which produced the literal
+ * `[object Object]` and a comma-joined array that reads back as one string.
+ *
+ * That was the lossiest thing this tool could do quietly. An API response with
+ * a nested `user` object became a CSV whose `user` column held those fourteen
+ * characters, exit 0, no warning — and the site's own flattening guide names
+ * `[object Object]` as the defect it tells users to work around.
+ *
+ * Compact JSON is what `jq`'s `@csv` writes for a non-scalar, so the cell is
+ * both faithful and parseable by the reader on the next hop. One helper keeps
+ * the three serializers from drifting apart a second time.
+ */
+function cellValue(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+}
+
 function sqlValue(val) {
   // `null` and `undefined` are the absence of a value, so they become NULL.
   // An empty string is a value: it becomes ''. Writing it as NULL silently
@@ -156,6 +178,10 @@ function sqlValue(val) {
   if (val === null || val === undefined) return 'NULL';
   if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
   if (typeof val === 'number' && Number.isFinite(val)) return String(val);
+  // An object or an array is data, not a value to stringify. It goes in as a
+  // JSON string literal, so importing it keeps the content instead of the word
+  // `[object Object]`.
+  if (typeof val === 'object') return `'${escapeSQLString(JSON.stringify(val))}'`;
   const s = String(val);
   // Numeric-looking strings stay unquoted so CSV numbers insert as numbers,
   // but a leading zero marks an identifier rather than a number — a Danish
@@ -202,7 +228,7 @@ const serializers = {
     const headers = unionKeys(data);
     const lines = [headers.map(escapeCSV).join(',')];
     for (const row of data) {
-      lines.push(headers.map(h => escapeCSV(String(row[h] ?? ''))).join(','));
+      lines.push(headers.map(h => escapeCSV(cellValue(row[h]))).join(','));
     }
     return lines.join('\n');
   },
@@ -231,15 +257,10 @@ const serializers = {
   table: (data) => {
     if (data.length === 0) return '(empty)';
     const headers = unionKeys(data);
-    const cell = (v) => {
-      if (v === null || v === undefined) return '';
-      if (typeof v === 'object') return JSON.stringify(v);
-      return String(v);
-    };
     // Calculate column widths
     const colWidths = headers.map(h => Math.max(
       h.length,
-      ...data.map(row => cell(row[h]).length)
+      ...data.map(row => cellValue(row[h]).length)
     ));
     // Build separator
     const sep = '+-' + colWidths.map(w => '-'.repeat(w)).join('-+-') + '-+';
@@ -249,7 +270,7 @@ const serializers = {
     // Rows (first 20)
     const maxRows = 20;
     const rows = data.slice(0, maxRows).map(row =>
-      '| ' + headers.map((h, i) => cell(row[h]).padEnd(colWidths[i])).join(' | ') + ' |'
+      '| ' + headers.map((h, i) => cellValue(row[h]).padEnd(colWidths[i])).join(' | ') + ' |'
     );
     let output = [headerSep, header, headerSep, ...rows, headerSep];
     if (data.length > maxRows) {
@@ -393,7 +414,13 @@ const operations = {
       if (match) {
         const merged = { ...item };
         for (const [k, v] of Object.entries(match)) {
-          if (k !== on && !(k in merged)) merged[prefix + k] = v;
+          // The guard has to ask about the name we are about to write, not the
+          // one on the right. It asked about the unprefixed one, so a join that
+          // passed a `prefix` — which exists precisely to survive a collision —
+          // dropped the field anyway and still exited 0. `docs/cli.md` and the
+          // join guide both promise that a prefix prevents the collision.
+          const target = prefix + k;
+          if (k !== on && !(target in merged)) merged[target] = v;
         }
         result.push(merged);
       } else if (keepMissing) {
