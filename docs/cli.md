@@ -278,6 +278,40 @@ guess would rewrite your bytes. Convert the file, then run it again — everythi
 valid UTF-8 is read, including `Møller`, `🚀` and `日本`, and including a file
 that really does contain a `U+FFFD` character.
 
+### A name the input gives twice
+
+`{"id": 1, "id": 2}` is not valid JSON, and `id: 1` followed by `id: 2` is the
+classic YAML trap: the second line wins, the first value is gone, and both
+runners exit 0 with nothing on stderr. It reads like a merge that went the way
+you meant, which is exactly why it is worth saying out loud. A key in JSON is
+always a string with a `:` after it, so the collision can be found exactly, at
+any depth, in JSON, in a YAML block mapping and in a YAML flow mapping.
+
+The value is kept — the **last** one, the same answer `JSON.parse` and `jq`
+give — the run succeeds, and the collision is named on stderr with the key, both
+values and the lines they are on. stdout stays pure data, so a script can pipe
+it onward without stripping a warning off the front. In a file of 40 000
+records nobody is going to read it by hand, but "lines 2 and 4" is a place to
+look.
+
+```bash
+printf '{\n  "id": 1,\n  "name": "Ada",\n  "name": "Bob"\n}\n' > dup.json && transmute dup.json --output csv
+```
+
+```
+id,name
+1,Bob
+```
+
+```
+Warning: JSON: key "name" has two different values (lines 3 and 4) — "Ada" and "Bob"; the last one is kept. One of them is a mistake in the input.
+```
+
+The same input twice with the **same** value — `{"a":1,"a":1}` — is not a
+collision: there is nothing to decide, so it stays silent. Neither is a key that
+appears in two different records, or a key that merely looks like one inside a
+string value.
+
 ### XML output: the characters XML itself cannot hold
 
 XML 1.0 is not able to represent every character. Its `Char` production is
@@ -1118,6 +1152,26 @@ transmute test/fixtures/entities.xml --output json
 `&amp;amp;` in that `tag` is a literal `&amp;` in the file — an escaped ampersand,
 decoded exactly one level, which is what the file said. An entity this tool does
 not know, such as `&nbsp;`, is passed through unchanged rather than guessed at.
+
+#### One root element, and nothing after it
+
+Batch tools append their output, so a file can arrive holding two documents
+back to back. An XML document has exactly one root element, and Transmute reads
+one — so the second document is not quietly dropped, which is what happened
+before this rule: the first document was read, the rest of the file was never
+looked at, and the run exited 0 with a result that was half the file.
+
+```bash
+printf '<rows><row><a>1</a></row></rows>\n<more><row><b>2</b></row></more>\n' | transmute --format xml --output json
+```
+
+```
+Error: Could not parse input as xml: an XML document has one root element, but this file has more after </rows>: "<more><row><b>2</b></row></more>". Concatenated XML is not one document — split it first, or read the documents one at a time.
+```
+
+Exit **3** — the input is not one document, and Transmute will not choose which
+document you meant. Split the file, or read the parts one at a time. A prologue,
+a `DOCTYPE` and comments are not extra documents and are read as usual.
 
 JSON to SQL, with `--table` choosing the table name:
 
