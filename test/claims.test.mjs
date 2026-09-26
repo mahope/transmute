@@ -32,6 +32,7 @@ const COPIED = [
   'package.json', 'package-lock.json', 'README.md', 'LICENSE', '.nvmrc',
   'src', 'docs', 'site', 'scripts',
   'tools/verify_contract.mjs', 'tools/product-contract.json', 'tools/site-requirements.txt',
+  'tools/site_chrome.py', 'tools/make_og.py',
   '.github/workflows',
 ];
 
@@ -171,6 +172,45 @@ test('a claim no rule can read is refused, so the contract cannot grow a dead on
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1);
   assert.match(output, /contract\.desktop_pro\.renewal_price is a claim no rule can contradict/);
+});
+
+test('a site generator that hardcodes the package is refused', () => {
+  // Måling A som test: de tre npm-links i generatoren pegede på en pakke der
+  // ikke findes, og alle 178 checks var grønne, fordi reglerna læser de
+  // genererede sider og ikke den der skriver dem.
+
+  const dir = repo();
+  const file = join(dir, 'tools', 'site_chrome.py');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('NPM_URL = f"https://www.npmjs.com/package/{package()[\'name\']}"',
+      'NPM_URL = "https://www.npmjs.com/package/@mahope/transmute-fork"'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /tools\/site_chrome\.py installs @mahope\/transmute-fork, but npm serves this repository as @mahope\/transmute/);
+});
+
+test('a site generator that hardcodes the repository is refused', () => {
+  const dir = repo();
+  const file = join(dir, 'tools', 'site_chrome.py');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('REPO = repo_url()', 'REPO = "https://github.com/mahope/somewhere-else"'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /tools\/site_chrome\.py points at github\.com\/mahope\/somewhere-else/);
+});
+
+test('deleting the derivation is refused, so the rule is not satisfied by absence', () => {
+  // En regel der bare forbyder navnet kan passes ved at slette det hele. Derfor
+  // skal generatoren også læse package.json — ellers er der ingen kilde igjen.
+  const dir = repo();
+  const file = join(dir, 'tools', 'make_og.py');
+  const text = readFileSync(file, 'utf8')
+    .replace("json.loads((ROOT / 'package.json').read_text(encoding='utf-8'))['name']", "'transmute'")
+    .replace('import json\n', '');
+  writeFileSync(file, text);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /tools\/make_og\.py must read package\.json/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

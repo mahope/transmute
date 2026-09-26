@@ -47,6 +47,9 @@ const PUBLIC_DOWNLOAD_CLAIM = /github\.com\/mahope\/transmute\/releases/i;
 const DESKTOP_LABEL = /desktop[-\s]?app|desktopapp|macos,? windows/i;
 const PRIVATE_REPO = /github\.com\/mahope\/(?:transmute-desktop|paid-products)|mahope\/(?:transmute-desktop|paid-products)\b/i;
 
+/** The files that write the public pages, where a stale claim reaches everyone. */
+const GENERATORS = ['tools/site_chrome.py', 'tools/make_og.py'];
+
 const failures = [];
 let checks = 0;
 
@@ -274,6 +277,32 @@ check('every public file quotes the package npm actually publishes', () => {
       const name = raw.replace(/[._-]+$/, '');
       assert(name === published,
         `${label(file)} tells readers to install ${name}, but npm serves this repository as ${published}`);
+    }
+  }
+});
+
+check('the site generators take the package and the repository from package.json', () => {
+  // Measured 2026-09-26, on this repository, before this rule: pointing the
+  // generator's three npm links at a package that does not exist left all 178
+  // checks green. The rule above reads the *rendered* pages, and the generator is
+  // what writes them, so a stale template is invisible until somebody
+  // regenerates the site — and then one stale literal reaches every page, the
+  // nav, the footer and the JSON-LD at once. In make_og.py the same literal is
+  // drawn into a PNG, which no text rule can read at all.
+  const repository = String(packageJson.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  for (const file of GENERATORS) {
+    const path = join(root, file);
+    const source = readFileSync(path, 'utf8');
+    assert(/package\.json/.test(source),
+      `${label(path)} must read package.json, so the package name has one source and not two`);
+    for (const [, raw] of source.matchAll(/(@[a-z][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)/gi)) {
+      const name = raw.replace(/[._-]+$/, '');
+      assert(name === packageJson.name,
+        `${label(path)} installs ${name}, but npm serves this repository as ${packageJson.name}; derive it from package.json`);
+    }
+    for (const [raw] of source.matchAll(/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+/g)) {
+      assert(raw === repository,
+        `${label(path)} points at ${raw}, but package.json's repository is ${repository}`);
     }
   }
 });

@@ -29,6 +29,24 @@ ACCENT = "#0f7b6c"
 
 BUGBOTTLE_SRC = "https://cdn.jsdelivr.net/npm/bugbottle@0.5.0/dist/bugbottle.js"
 
+
+def package() -> dict:
+    return json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+
+
+def repo_url(path: str = "") -> str:
+    url = package()["repository"]["url"]
+    return url.removeprefix("git+").removesuffix(".git") + path
+
+
+# The package and the repository are claims, and package.json is the one place
+# they can be read from. Written out here, they become a second source that goes
+# stale silently: `npm run check:deploy` and the contract check read the rendered
+# pages, not this file, so a renamed package would reach every page at once with
+# a green gate.
+NPM_URL = f"https://www.npmjs.com/package/{package()['name']}"
+REPO = repo_url()
+
 # Order matters: it is the order on the front page and for previous/next links.
 GUIDES = [
     ("json-to-csv-pipeline", "JSON to CSV with filters", "Clean spreadsheets from API data: pick columns, filter rows, sort, dedupe.", "table"),
@@ -150,8 +168,8 @@ def header(lang: str, current: str, alt_url: str | None) -> str:
       <ul>
         <li><a href="{home}#guides"{cur("guides")}>{s["guides"]}</a></li>
         <li><a href="{home}#install"{cur("download")}>{s["download"]}</a></li>
-        <li><a href="https://www.npmjs.com/package/@mahope/transmute">npm</a></li>
-        <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
+        <li><a href="{NPM_URL}">npm</a></li>
+        <li><a href="{REPO}">GitHub</a></li>
       </ul>
     </nav>
     <div class="header-tools">
@@ -183,8 +201,8 @@ def footer(lang: str, alt_url: str | None) -> str:
           <li><a href="{home}#install">{s["f_install"]}</a></li>
           <li><a href="{home}#desktop">{s["f_desktop"]}</a></li>
           <li><a href="/cheatsheet/">{s["f_cheatsheet"]}</a></li>
-          <li><a href="https://github.com/mahope/transmute">GitHub</a></li>
-          <li><a href="https://github.com/mahope/transmute/releases">{s["f_releases"]}</a></li>
+          <li><a href="{REPO}">GitHub</a></li>
+          <li><a href="{REPO}/releases">{s["f_releases"]}</a></li>
         </ul>
       </div>
       <div class="footer-col">
@@ -199,7 +217,7 @@ def footer(lang: str, alt_url: str | None) -> str:
           <li><a href="/.well-known/security.txt">{s["f_security"]}</a></li>
           <li><a href="/llms.txt">llms.txt</a></li>
           <li><a href="/sitemap.xml">{s["f_sitemap"]}</a></li>
-          <li><a class="report-bug" href="https://github.com/mahope/transmute/issues">{icon("bug")}{s["f_report"]}</a></li>
+          <li><a class="report-bug" href="{REPO}/issues">{icon("bug")}{s["f_report"]}</a></li>
         </ul>
         <p class="bb-badge">{s["f_badge"]} <a href="https://bugbottle.dev">BugBottle</a></p>
       </div>
@@ -313,8 +331,8 @@ def front_jsonld(lang: str, body: str, title: str, desc: str) -> str:
         "url": BASE + "/", "description": desc, "inLanguage": lang,
         "applicationCategory": "DeveloperApplication", "applicationSubCategory": "Data conversion",
         "operatingSystem": "macOS, Windows, Linux", "softwareVersion": version(),
-        "downloadUrl": "https://www.npmjs.com/package/@mahope/transmute",
-        "installUrl": "https://www.npmjs.com/package/@mahope/transmute",
+        "downloadUrl": NPM_URL,
+        "installUrl": NPM_URL,
         "softwareHelp": {"@type": "CreativeWork", "url": BASE + "/#guides"},
         "license": "https://opensource.org/licenses/MIT",
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},

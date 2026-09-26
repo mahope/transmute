@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26 (T55)
+Opdateret: 2026-09-26 (T56)
 
 
 ## Mission
@@ -185,6 +185,8 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ## Prioriteret opgavekø
 
+- 2026-09-26 ca. 23:4x CEST: **T56 gennemført på `ceo/generator-claims` (branch fra `ceo/claims-bound-to-code`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **tresinds** gang i træk, live er `3d90812`, 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — bunken er **tresindes** commits på **tresindes** branch uden merge. Emnet var T55's tredje kandidat, og målingen før koden blev rørt fandt at de ni hårdkodede claims i de to generatorer var **usynlige for alle 178 checks**: en forkert npm-pakke i `tools/site_chrome.py` gav nul fejl, fordi reglerna læser de genererede sider og ikke den der skriver dem. Det værre sted er `make_og.py`, der tegner installationskommandoen ind i `site/og/*.png` — tekst ingen regel kan læse. Se punkt 56.
+
 - 2026-09-26 ca. 18:0x CEST: **T47 gennemført på `ceo/inherited-field-reads` (branch fra `ceo/xml-prototype-keys`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **tolvte** gang i træk, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — bunken er nu **niogtyve** commits på **enogtyve** branch uden merge. Emnet var den flade T46 skrev som sit mål: **de steder der læser et navn uden at skrive det** — `sort --by`, `unique --by`, `group --by`, `flatten --field`, `join --on` — altså samme spørgsmål, ét niveau længere inde. 14 varianter målt på den rigtige binary **før** koden blev rørt, plus én måling der blev til to fund undervejs. Se punkt 47.
 
 - 2026-09-26 ca. 18:3x–19:0x CEST: **T48 gennemført på `ceo/csv-duplicate-headers` (branch fra `ceo/inherited-field-reads`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **trettende** gang i træk, live er `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — bunken er nu **enogtyve** commits på **toogtyveen** branch uden merge. **Jeg afveg fra det mål T47 skrev som næste opgave** (foreningen af alle rækkers nøgler, dens fund 3): målingen fandt først et hul, der fjerner data i stilhed, og det var det stærkere fund. Emnet var derfor **den anden ende af den samme kollision T43 målte fra skriverens side**: et CSV-hoved, der navner to kolonner ens. 16 varianter målt på den rigtige binary før koden blev rørt. Se punkt 48.
@@ -196,6 +198,28 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - 2026-09-26 ca. 22:5x–23:0x CEST: **T55 gennemført på `ceo/claims-bound-to-code` (branch fra `ceo/release-path-guards`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **niogtyvende** gang i træk, live er `3d90812`, 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — tre nye batch-vinduer siden T54's måling, så bunken er **niogtyven** commits på **niogtyve** branch uden merge. Emnet var T54's tredje kandidat: **en påstand bundet til kommittet kode**. Målingen før koden blev rørt fandt at omdøbe pakkenavnet i både `package.json` og locken holdt alle 174 checks grønne mens 30 offentlige filer sagde det gamle navn, og at `contract.cli`'s tre claims blev læst af ingen regel. Se punkt 55.
 
 - 2026-09-26 ca. 21:2x–21:5x CEST: **T53 gennemført på `ceo/release-path-guards` (branch fra `ceo/published-version-lies`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **syvogtyvende** gang i træk, live er `3d90812`, 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Emnet var T52's første kandidat: **udgivelsens egen tjekliste**. Tre fund i `scripts/release.mjs`'s 18 linjer, alle tre målt på den rigtige script i en klon uden remote. Se punkt 53.
+
+### 56. [x] Bind de filer der genererer siderne til den kode de skriver om
+
+**Status:** FÆRDIG på `ceo/generator-claims` (fra `ceo/claims-bound-to-code`), ikke mergeret til `main` — `DEPLOY-MISSING` står, 30. gang i træk. Diffen rører **ingen `site/`-fil**, fordi de afledte værdier er tegn for tegn de committede sider.
+**Mislykkede forsøg:** 0/2
+**Opgaven:** T55's tredje kandidat, og dens egen ordlyd var hele fundet: "en regel der kun læser outputfilerne ser en generator hvis template er forældet, ikke en side der lyver."
+
+**Målt først, på den rigtige kode, med mutation.** Jeg pegede de tre npm-links i `tools/site_chrome.py` på `@mahope/transmute-fork`, en pakke der ikke findes: **178 checks, 0 fejl.** Reglen fra T55 læser de *genererede* sider, og generatoren er den der skriver dem, så et forældet template er usynligt indtil nogen regenererer sitet — og så rammer **ét** bogstaveligt tegn navigation, footer, JSON-LD og alle 20 sider på én gang. De ni hårdkodede steder var: 3 npm-URL, 3 repo-URL, 1 issues-link i `site_chrome.py` og 2 installationskommandoer i `make_og.py`.
+
+**Det værre sted er et, ingen tekstregel kan læse.** `make_og.py` tegner `npm i -g @mahope/transmute` **ind i PNG'en** `site/og/home.png` og `home-da.png`. Den tekst er pixels, så den overlever en rename og ingen diff, ingen grep og ingen CI kan se den. Den kan kun rettes derfra hvor den bliver lavet.
+
+**Rettelsen er de samme idiom to steder, fordi de to filer skriver hver sin slags offentlig flade.** `site_chrome.py` fik `package()`, `repo_url()` og `NPM_URL`/`REPO` oven på den `version()` der allerede læste `package.json`; `make_og.py` fik `install()`. **Ingen ny kilde, ingen ny sandhed** — kun to steder der læser den der allerede findes. Kontraktens `cli.repository` er præcis den samme streng, afledt på tredje måde, så de tre kan ikke komme i utakt.
+
+**Reglen der gør det permanent, i `tools/verify_contract.mjs`:** en generator må ikke hardcode pakkenavnet eller et `github.com`-repo, **og** skal læse `package.json`. Den anden halvdel er den der gør den første umulig at opfylde ved sletning — ellers er der ingen kilde tilbage og ingen regel siger det. Målt på de 28 rigtige filer lige som T55 gjorde, og fundet undervejs var min egen fejl: mit første regex havde ingen gruppe, så beskeden sagde `points at undefined`.
+
+**Testene er målingen som test.** `test/claims.test.mjs` blevet til 12: de tre nye mutationer er pakken hardkodet i `site_chrome.py`, repoet hardkodet, og **den afledning slettet** — den tredje beviser at reglen ikke kan passes ved fravær. `COPIED` fik de to generatorer, ellers ville de mutationer have rørt et temp-træ uden dem.
+
+**Gate:** `npm test` exit 0 med elleve trin (157 engine-, 155 CLI-, 89 konformitets-, 6 README-, 39 workflow-regressioner, 9 release-, 11 versions-, **12 claimtests**, 4 workflows, **179 kontratkontroller** og `release_check.mjs`). `npm pack --dry-run` exit 0, uændret på 5 filer.
+
+**Hvad jeg bevidst ikke har gjort:** ingen regenerering af `site/og/*.png` — navnet er uændret, så billederne er rigtige i dag, og en Pillow-kørsel ville have rørt 20 binærfiler uden at ændre en pixel tekst. Ingen ny nøgle i kontrakten, ingen merge til `main`, ingen publish.
+
+**Næste iteration:** mål før den skrives. Kandidater: (a) `❓ Til Mads` punkt 1, som stadig frigiver mest og intet i køen kan løse; (b) T47/T49's `unionKeys`-spørgsmål om felter på poster der ikke er records; (c) de **andre** genererende værktøjer — `tools/seo_check.py`, `tools/layout_check.py`, `tools/verify_live.py` og de fire workflows — som T56's måling viste samme klynge som `make_og.py`: claims i kildekode som ingen regel læser. Uden nyt valg: `npm run check:deploy` først.
 
 ### 55. [x] Bind hver påstand om os selv til den kode vi har committet
 
