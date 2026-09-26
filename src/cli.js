@@ -131,6 +131,12 @@ async function main() {
     console.error(`Error: ${result.error}`);
     process.exit(EXIT.transform);
   }
+  // Warnings go to stderr so stdout stays exactly the data, pipeable and
+  // redirectable. A CSV row with more fields than the header still succeeds —
+  // the values are kept, and the user is told which column they landed in.
+  for (const warning of result.warnings) {
+    console.error(`Warning: ${warning}`);
+  }
 
   if (outFile && outFile !== '-') {
     try {

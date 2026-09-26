@@ -246,5 +246,18 @@ export const CASES = [
     pipeline: [{ op: 'sort', by: 'antal', dir: 'desc' }],
     outputFormat: 'json',
     command: `transmute test/fixtures/european.csv --pipe '[{"op":"sort","by":"antal","dir":"desc"}]' --output json`
+  },
+  {
+    name: 'csv-extra-fields',
+    docOutput: '"column4": "follow-up"',
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'ragged.csv'),
+    pipeline: [],
+    outputFormat: 'json',
+    // The run succeeds and stdout is exactly the documented JSON; the parser
+    // also prints one warning on stderr, which is part of the contract.
+    warns: true,
+    command: `transmute test/fixtures/ragged.csv --output json`
   }
 ];

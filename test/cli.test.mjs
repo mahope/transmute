@@ -44,9 +44,14 @@ function sh(command, opts = {}) {
   });
 }
 
-function expectOk(result) {
+/**
+ * `sh` plus a successful exit. `allowStderr` is for runs that legitimately
+ * warn — a CSV row that is longer than its header still succeeds, and the
+ * warning is the whole point. stdout is pure data either way.
+ */
+function expectOk(result, { allowStderr = false } = {}) {
   assert.equal(result.status, 0, `exit ${result.status}: ${result.stderr}`);
-  assert.equal(result.stderr, '', `stderr not empty: ${result.stderr}`);
+  if (!allowStderr) assert.equal(result.stderr, '', `stderr not empty: ${result.stderr}`);
   return result.stdout;
 }
 
@@ -56,7 +61,7 @@ console.log('── documented commands run as written ──');
 
 for (const testCase of CASES) {
   test(`${testCase.name}: ${testCase.command.split(' | ')[0].slice(0, 48)}…`, () => {
-    const stdout = expectOk(sh(testCase.command));
+    const stdout = expectOk(sh(testCase.command), { allowStderr: testCase.warns });
     assert.equal(stdout, expected[testCase.name] + '\n', 'stdout does not match the documented output');
   });
 }
@@ -128,13 +133,64 @@ test('a tab-separated file is read as three columns', () => {
 });
 
 test('--delimiter overrides the detected one', () => {
-  const forced = expectOk(sh(`"${process.execPath}" "${cli}" test/fixtures/european.csv --delimiter , -o json`));
-  assert.deepEqual(Object.keys(JSON.parse(forced)[0]), ['navn;by;note;antal']);
+  // Forcing `,` on a semicolon file makes every row longer than the one-column
+  // header, which is exactly what the new warning is for.
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/european.csv --delimiter , -o json`);
+  const stdout = expectOk(r, { allowStderr: true });
+  const rows = JSON.parse(stdout);
+  // The override must win: the header stays one column instead of being
+  // detected as four again. Forcing the wrong delimiter splits the quoted
+  // fields too, which is what the warning now reports instead of hiding.
+  assert.ok(Object.keys(rows[0]).includes('navn;by;note;antal'), Object.keys(rows[0]).join(','));
+  assert.ok(r.stderr.includes('more fields than the header'), r.stderr);
 });
 
 test('--delimiter tab is accepted as a name, not a literal tab', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" -f csv -o json --delimiter tab`, { input: 'a\tb\n1\t2\n' }));
   assert.deepEqual(JSON.parse(out), [{ a: 1, b: 2 }]);
+});
+
+console.log('── real-world CSV: rows longer than the header ──');
+
+test('a row with more fields than the header keeps the extra values', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" test/fixtures/ragged.csv -o json`), { allowStderr: true });
+  const rows = JSON.parse(out);
+  assert.equal(rows.length, 3, 'the extra fields must not invent rows');
+  assert.equal(rows[1].column4, 'follow-up');
+  assert.deepEqual(Object.keys(rows[0]), ['id', 'name', 'note'], 'rows within the header width are untouched');
+});
+
+test('the extra values survive a round trip back to CSV', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" test/fixtures/ragged.csv -o csv`), { allowStderr: true });
+  assert.ok(out.includes('id,name,note,column4'), out);
+  assert.ok(out.includes('DK,follow-up'), out);
+});
+
+test('a long row warns once on stderr and still exits 0', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/ragged.csv -o json`);
+  assert.equal(r.status, 0, 'losing the values is worse than warning about them');
+  assert.equal(r.stderr.includes('Warning:'), true, `expected a warning, got: ${r.stderr}`);
+  assert.ok(r.stderr.includes('1 of 3 CSV rows has more fields than the header (row 3)'), r.stderr);
+  assert.ok(r.stderr.includes('kept in column4'), r.stderr);
+});
+
+test('stdout stays pure data when a warning is printed', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/ragged.csv -o json`);
+  assert.doesNotThrow(() => JSON.parse(r.stdout), 'a warning on stderr must not corrupt stdout');
+  assert.equal(r.stdout.includes('Warning'), false);
+});
+
+test('a well-formed CSV prints no warning at all', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/people.csv -o json`);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr, '', `stderr should stay empty, got: ${r.stderr}`);
+});
+
+test('records with different keys export every key to CSV', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o csv`, {
+    input: '[{"id":1,"name":"Alice"},{"id":2,"name":"Bob","email":"bob@x.dk"}]'
+  }));
+  assert.equal(out.trim(), 'id,name,email\n1,Alice,\n2,Bob,bob@x.dk');
 });
 
 console.log('── errors are machine-readable ──');

@@ -104,6 +104,59 @@ export:
   fields are still trimmed, so `  padded  ` becomes `padded`.
 - A UTF-8 byte-order mark and CRLF line endings are handled and do not end up in
   your field names.
+- A row with **more** fields than the header keeps the extra values in
+  `column4`, `column5`, … — named after their position, so a real column of that
+  name is never overwritten (it becomes `column4_2`). The run still succeeds
+  (exit 0) and one warning on stderr says which rows and which columns are
+  involved. A row with *fewer* fields is padded with `''`, as before.
+
+`test/fixtures/ragged.csv` is a file where someone appended a column to the
+data without touching the header. Row 3 is the proof, and it is part of the test
+suite:
+
+```bash
+transmute test/fixtures/ragged.csv --output json
+```
+
+```
+Warning: 1 of 3 CSV rows has more fields than the header (row 3); the extra values are kept in column4
+```
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Alice",
+    "note": "ok"
+  },
+  {
+    "id": 2,
+    "name": "Mette, Copenhagen",
+    "note": "DK",
+    "column4": "follow-up"
+  },
+  {
+    "id": 3,
+    "name": "Bob",
+    "note": "ok"
+  }
+]
+```
+
+The same applies in the other direction, and silently, when records do not all
+have the same keys. `csv`, `table` and `sql` output use every key any record
+has, in the order they first appear, so a field that only the second record
+carries is no longer dropped:
+
+```bash
+echo '[{"id":1,"name":"Alice"},{"id":2,"name":"Bob","email":"bob@example.com"}]' | transmute --output csv
+```
+
+```csv
+id,name,email
+1,Alice,
+2,Bob,bob@example.com
+```
 
 `test/fixtures/european.csv` is a semicolon file with a quoted comma and a
 quoted newline, and it is part of the test suite:

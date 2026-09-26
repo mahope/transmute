@@ -83,6 +83,78 @@ test('parse CSV with quoted fields', () => {
   assert.strictEqual(r.data[0].name, 'Smith, John');
 });
 
+test('CSV row with more fields than the header keeps the extra values', () => {
+  const r = run('id,name\n1,Alice\n2,Bob,extra,more', 'csv');
+  assert.strictEqual(r.data[1].column3, 'extra');
+  assert.strictEqual(r.data[1].column4, 'more');
+});
+
+test('extra CSV columns are named after their position, not a counter', () => {
+  // The value is in the 3rd field of the row, so the column says column3 even
+  // though it is the 1st column beyond the header. That is where the user looks.
+  const r = run('id\n1,a,b', 'csv');
+  assert.strictEqual(r.data[0].column2, 'a');
+  assert.strictEqual(r.data[0].column3, 'b');
+});
+
+test('extra CSV columns never overwrite a real column of the same name', () => {
+  const r = run('id,column3\n1,a\n2,b,overflow', 'csv');
+  assert.strictEqual(r.data[1].column3, 'b');       // the real column is intact
+  assert.strictEqual(r.data[1].column3_2, 'overflow');
+});
+
+test('extra CSV fields are coerced like every other field', () => {
+  const r = run('id\n1,42,true', 'csv');
+  assert.strictEqual(r.data[0].column2, 42);
+  assert.strictEqual(r.data[0].column3, true);
+});
+
+test('extra CSV fields produce one warning, not one per row', () => {
+  const r = run('id,name\n1,Alice\n2,Bob,c\n3,Carla,d', 'csv', [], 'json');
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('2 of 3 CSV rows have more fields'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('rows 3, 4'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('kept in column3'), r.warnings[0]);
+  // One column per field position, no matter how many rows are too long.
+  assert.deepStrictEqual(Object.keys(r.data[1]), ['id', 'name', 'column3']);
+  assert.deepStrictEqual(Object.keys(r.data[2]), ['id', 'name', 'column3']);
+});
+
+test('a well-formed CSV produces no warnings', () => {
+  const r = run('id,name\n1,Alice\n2,Bob', 'csv', [], 'json');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('rows with fewer fields than the header are still padded with empty strings', () => {
+  const r = run('a,b,c\n1,2,3\n4', 'csv');
+  assert.deepStrictEqual(r.data[1], { a: 4, b: '', c: '' });
+});
+
+test('csv output keeps keys that only later records carry', () => {
+  const r = run('[{"id":1,"name":"Alice"},{"id":2,"name":"Bob","email":"b@x.dk"}]', 'json', [], 'csv');
+  assert.strictEqual(r.text, 'id,name,email\n1,Alice,\n2,Bob,b@x.dk');
+});
+
+test('table output keeps keys that only later records carry', () => {
+  const r = run('[{"id":1},{"id":2,"email":"b@x.dk"}]', 'json', [], 'table');
+  assert.ok(r.text.includes('email'), r.text);
+  assert.ok(r.text.includes('(2 rows, 2 columns)'), r.text);
+  assert.ok(r.text.includes('| b@x.dk |'), r.text);
+});
+
+test('csv and table column order is the first-seen order of every key', () => {
+  const records = [{ b: 1 }, { a: 2, c: 3 }];
+  assert.strictEqual(serializers.csv(records), 'b,a,c\n1,,\n,2,3');
+  assert.strictEqual(serializers.sql(records).includes('"b", "a", "c"'), true);
+});
+
+test('csv output for records with identical keys is unchanged', () => {
+  assert.strictEqual(
+    serializers.csv([{ a: 1, b: 2 }, { a: 3, b: 4 }]),
+    'a,b\n1,2\n3,4'
+  );
+});
+
 test('parse YAML list', () => {
   const r = run('- name: Alice\n  age: 30\n- name: Bob\n  age: 25', 'yaml');
   assert.strictEqual(r.data.length, 2);

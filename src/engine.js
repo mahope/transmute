@@ -177,6 +177,25 @@ function sqlValue(val) {
   return `'${escapeSQLString(s)}'`;
 }
 
+/**
+ * Every key any record has, in first-seen order. `Object.keys(data[0])` alone
+ * silently drops keys that only later records carry, and that is the normal
+ * shape of JSON from an API or of a left join with no match. The SQL serializer
+ * already worked this way; CSV and table now agree with it instead of losing
+ * the columns.
+ */
+function unionKeys(data) {
+  const keys = Object.keys(data[0]);
+  const seen = new Set(keys);
+  for (const row of data) {
+    if (!row || typeof row !== 'object') continue;
+    for (const key of Object.keys(row)) {
+      if (!seen.has(key)) { seen.add(key); keys.push(key); }
+    }
+  }
+  return keys;
+}
+
 const serializers = {
   sql: (data, tableName = 'my_table') => {
     if (!Array.isArray(data)) data = [data];
@@ -193,7 +212,7 @@ const serializers = {
   json: (data, pretty = true) => pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data),
   csv: (data) => {
     if (data.length === 0) return '';
-    const headers = Object.keys(data[0]);
+    const headers = unionKeys(data);
     const lines = [headers.map(escapeCSV).join(',')];
     for (const row of data) {
       lines.push(headers.map(h => escapeCSV(String(row[h] ?? ''))).join(','));
@@ -230,7 +249,7 @@ const serializers = {
   },
   table: (data) => {
     if (data.length === 0) return '(empty)';
-    const headers = Object.keys(data[0]);
+    const headers = unionKeys(data);
     const cell = (v) => {
       if (v === null || v === undefined) return '';
       if (typeof v === 'object') return JSON.stringify(v);
@@ -459,9 +478,43 @@ function detectDelimiter(text) {
 }
 
 /**
+ * Name for a value that arrived without a header of its own. The position is
+ * 1-based, so `column4` is the fourth field of the row, which is where the user
+ * has to look. A counter is added when the file already uses that name, so a
+ * real column is never overwritten.
+ */
+function extraColumnName(index, taken) {
+  const base = `column${index + 1}`;
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
+
+/**
+ * One warning per parse, not one per row: a 10,000-row file must not print
+ * 10,000 lines to stderr. Row numbers and column names are both capped so a
+ * broken export stays readable, and the message says where the values went
+ * rather than only that something was wrong.
+ */
+function extraFieldsWarning(rowCount, lines, columns) {
+  const names = [...columns];
+  const shown = [...lines].slice(0, 3).join(', ');
+  const where = lines.size > 3 ? `rows ${shown} and ${lines.size - 3} more` : `row${lines.size > 1 ? 's' : ''} ${shown}`;
+  const cols = names.slice(0, 5);
+  const rest = names.length > cols.length ? `, and ${names.length - cols.length} more` : '';
+  const verb = lines.size === 1 ? 'has' : 'have';
+  return `${lines.size} of ${rowCount} CSV rows ${verb} more fields than the header (${where}); the extra values are kept in ${cols.join(', ')}${rest}`;
+}
+
+/**
  * RFC 4180 reader: a quoted field may contain the delimiter, escaped quotes
  * (`""`) and line breaks, and whitespace inside quotes is data. Unquoted fields
  * are still trimmed, which is what every spreadsheet export expects.
+ *
+ * A row with more fields than the header keeps its extra values in a `columnN`
+ * field instead of dropping them. Appending a column to a file without
+ * touching the header is the normal cause, and the values are usually wanted.
  */
 function parseCSV(text, opts = {}) {
   const delimiter = opts.delimiter || detectDelimiter(text);
@@ -506,11 +559,26 @@ function parseCSV(text, opts = {}) {
   const headers = recordsWithIndex[0].map((h, i) => (i === 0 ? h.replace(/^﻿/, '') : h));
 
   const rows = [];
+  const headerNames = new Set(headers);
+  const extraNames = new Map();
+  const extraLines = new Set();
   for (let r = 1; r < recordsWithIndex.length; r++) {
     const values = recordsWithIndex[r];
     const row = {};
     headers.forEach((h, idx) => { row[h] = idx < values.length ? coerceCSVValue(values[idx]) : ''; });
+    if (values.length > headers.length) {
+      extraLines.add(r + 1);
+      for (let idx = headers.length; idx < values.length; idx++) {
+        // One name per field position, not per value: a file where 900 rows
+        // are too long must not produce 1800 columns.
+        if (!extraNames.has(idx)) extraNames.set(idx, extraColumnName(idx, headerNames));
+        row[extraNames.get(idx)] = coerceCSVValue(values[idx]);
+      }
+    }
     rows.push(row);
+  }
+  if (extraLines.size > 0 && Array.isArray(opts.warnings)) {
+    opts.warnings.push(extraFieldsWarning(rows.length, extraLines, extraNames.values()));
   }
   return rows;
 }
@@ -574,10 +642,14 @@ function compileExpression(expr) {
  * @returns {object} { data, text, error }
  */
 function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts = {}) {
+  // Collected here so a parse can report what it had to work around, and the
+  // caller decides whether that is a line on stderr or nothing at all. The
+  // browser build ignores them; the extra columns are visible in its output.
+  const warnings = [];
   try {
     // Parse
     if (!parsers[inputFormat]) return { error: `Unknown input format: ${inputFormat}` };
-    let data = parsers[inputFormat](inputText, opts);
+    let data = parsers[inputFormat](inputText, { ...opts, warnings });
 
     // Transform
     for (const step of pipeline) {
@@ -590,9 +662,9 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
     if (!serializers[outputFormat]) return { error: `Unknown output format: ${outputFormat}` };
     const text = serializers[outputFormat](data, outputFormat === 'sql' ? opts.tableName : undefined);
 
-    return { data, text };
+    return { data, text, warnings };
   } catch (err) {
-    return { error: err.message };
+    return { error: err.message, warnings };
   }
 }
 

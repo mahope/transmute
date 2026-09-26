@@ -20,5 +20,6 @@
   "json-to-xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<data>\n  <item>\n    <id>1</id>\n    <status>paid</status>\n  </item>\n  <item>\n    <id>2</id>\n    <status>open</status>\n  </item>\n  <item>\n    <id>3</id>\n    <status>paid</status>\n  </item>\n</data>",
   "json-to-yaml": "- name: Carla\n  age: 41\n- name: Alice\n  age: 30\n- name: Bob\n  age: 25",
   "stdin-json": "id,total\n1,120\n3,250",
-  "csv-semicolon": "[\n  {\n    \"navn\": \"Hans\",\n    \"by\": \"Aarhus\",\n    \"note\": \"Linje 1\\nLinje 2\",\n    \"antal\": 7\n  },\n  {\n    \"navn\": \"Mette\",\n    \"by\": \"Copenhagen\",\n    \"note\": \"Salg, mellem\",\n    \"antal\": 3\n  }\n]"
+  "csv-semicolon": "[\n  {\n    \"navn\": \"Hans\",\n    \"by\": \"Aarhus\",\n    \"note\": \"Linje 1\\nLinje 2\",\n    \"antal\": 7\n  },\n  {\n    \"navn\": \"Mette\",\n    \"by\": \"Copenhagen\",\n    \"note\": \"Salg, mellem\",\n    \"antal\": 3\n  }\n]",
+  "csv-extra-fields": "[\n  {\n    \"id\": 1,\n    \"name\": \"Alice\",\n    \"note\": \"ok\"\n  },\n  {\n    \"id\": 2,\n    \"name\": \"Mette, Copenhagen\",\n    \"note\": \"DK\",\n    \"column4\": \"follow-up\"\n  },\n  {\n    \"id\": 3,\n    \"name\": \"Bob\",\n    \"note\": \"ok\"\n  }\n]"
 }
