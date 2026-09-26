@@ -371,6 +371,62 @@ test('an expression that throws at runtime → exit 1', () => {
   expectFail(`transmute test/fixtures/people.csv -p '[{"op":"map","expr":"item.nope.deep"}]' -o csv`, 1, "reading 'deep'");
 });
 
+test('a step that cannot do its job without a parameter → exit 2, nothing on stdout', () => {
+  // Every one of these ran and answered with something else, with exit 0 and an
+  // empty stderr: `filter` kept every row, `pick` wrote an empty object per
+  // row — the whole file's content gone — and a `join` with an empty `with`
+  // dropped every row. The one thing a user cannot do is see that.
+  for (const [pipe, needle] of [
+    ['[{"op":"filter"}]', '"expr" is required'],
+    ['[{"op":"map"}]', '"expr" is required'],
+    ['[{"op":"pick"}]', '"fields" is required'],
+    ['[{"op":"omit"}]', '"fields" is required'],
+    ['[{"op":"sort"}]', '"by" is required'],
+    ['[{"op":"group"}]', '"by" is required'],
+    ['[{"op":"rename"}]', '"mapping" is required'],
+    ['[{"op":"flatten"}]', '"field" is required'],
+    ['[{"op":"add"}]', '"fields" is required'],
+    ['[{"op":"join","on":"city","with":[]}]', 'non-empty array of records'],
+    ['[{"op":"join","with":[{"city":"Aarhus"}]}]', '"on" is required'],
+    ['[{"op":"head","n":"2"}]', '"n" must be'],
+    ['[{"op":"tail","n":-1}]', '"n" must be'],
+    ['[{"op":"sort","by":42}]', '"by" must be']
+  ]) {
+    expectFail(`transmute test/fixtures/people.csv -p '${pipe}' -o csv`, 2, needle);
+  }
+});
+
+test('a bad step is reported before the input is read', () => {
+  // The step is the user's own typo; the file is a separate question. Order
+  // them the other way and a mistyped pipeline is reported as a file problem.
+  expectFail(`transmute test/fixtures/people.csv -f json -p '[{"op":"pick"}]' -o csv`, 2, '"fields" is required');
+});
+
+test('the message names the step that is wrong, not the first one', () => {
+  expectFail(`transmute test/fixtures/people.csv -p '[{"op":"count"},{"op":"head","n":1},{"op":"group"}]' -o csv`, 2, 'step 3 (group)');
+});
+
+test('an inherited method is not an operation → exit 2', () => {
+  // `operations.toString` exists on every object, so the old lookup found it and
+  // ran `Object.prototype.toString` as a transformation: the whole file came
+  // back as one row reading "[object Object]", with exit 0.
+  expectFail(`transmute test/fixtures/people.csv -p '[{"op":"toString"}]' -o csv`, 2, 'Unknown operation: toString');
+});
+
+test('tail 0 is no rows, not every row', () => {
+  const out = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"tail","n":0}]' -o json`));
+  assert.equal(out.trim(), '[]');
+});
+
+test('the documented defaults still work: unique without by, head and tail without n', () => {
+  const unique = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"unique"}]' -o csv`));
+  assert.equal(unique.trim().split('\n').length - 1, 4);
+  const head = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"head"}]' -o csv`));
+  assert.equal(head.trim().split('\n').length - 1, 4);
+  const tail = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"tail"}]' -o csv`));
+  assert.equal(tail.trim().split('\n').length - 1, 4);
+});
+
 test('add still turns a per-record failure into null', () => {
   const out = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"add","fields":{"x":"item.nope.deep"}}]' -o csv`));
   assert.equal(out.includes(','), true, 'the null field must be in the output');

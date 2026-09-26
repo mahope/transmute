@@ -875,5 +875,152 @@ t('group keeps grouping the ordinary values the same way', () => {
   assert.deepStrictEqual(r.data.map(g => [g.key, g.count]), [['admin', 2], ['(null)', 1], ['user', 1]]);
 });
 
+
+
+// ─── Pipeline validation ───────────────────────────────────────────────
+const { validatePipeline } = require('../src/engine.js');
+
+/** Run and insist on the refusal, with the op and the parameter named. */
+function refuse(pipeline, op, param) {
+  const r = runSQL('[{"id":1,"name":"Alice","age":30},{"id":2,"name":"Bob","age":25}]', 'json', pipeline, 'json');
+  if (!r.error) throw new Error(`no error: ${JSON.stringify(r.text)}`);
+  if (r.usage !== true) throw new Error('not flagged as a usage error');
+  if (!r.error.includes(op)) throw new Error(`${r.error} does not name ${op}`);
+  if (param && !r.error.includes(param)) throw new Error(`${r.error} does not name ${param}`);
+}
+
+t('an operation that cannot do its job without a parameter says so', () => {
+  // Each of these used to run and answer with something else: `filter` with no
+  // `expr` kept every row, `pick` with no `fields` returned `{}` for every
+  // record, `join` with an empty `with` dropped every row. All of it with exit
+  // 0, an empty stderr, and a file on disk the user did not ask for.
+  for (const [op, param] of [
+    ['filter', 'expr'], ['map', 'expr'], ['pick', 'fields'], ['omit', 'fields'],
+    ['sort', 'by'], ['group', 'by'], ['rename', 'mapping'], ['flatten', 'field'],
+    ['add', 'fields'], ['join', 'with'], ['join', 'on']
+  ]) {
+    refuse([{ op }], op, param);
+  }
+});
+
+t('pick with no fields no longer deletes every field in the file', () => {
+  // The worst of them: `pick` reads its field list as `[undefined]`, matches
+  // nothing, and writes an empty object per row. The whole file, gone.
+  const r = runSQL('[{"id":1,"name":"Alice"}]', 'json', [{ op: 'pick' }], 'csv');
+  if (!r.error) throw new Error('no error, and the record was emptied');
+  if (r.text !== undefined) throw new Error('text was produced anyway');
+});
+
+t('a parameter of the wrong type is refused and the value is quoted back', () => {
+  for (const [pipeline, op, param, got] of [
+    [[{ op: 'head', n: '5' }], 'head', 'n', '"5"'],
+    [[{ op: 'tail', n: -1 }], 'tail', 'n', '-1'],
+    [[{ op: 'sort', by: 42 }], 'sort', 'by', '42'],
+    [[{ op: 'pick', fields: 'a', }, { op: 'omit', fields: { a: 1 } }], 'omit', 'fields', '{"a":1}'],
+    [[{ op: 'join', with: 'nope', on: 'id' }], 'join', 'with', '"nope"']
+  ]) {
+    refuse(pipeline, op, param);
+    const r = runSQL('[{"id":1}]', 'json', pipeline, 'json');
+    if (!r.error.includes(got)) throw new Error(`${r.error} does not show the value it got (${got})`);
+  }
+});
+
+t('an expression that is empty is a mistake, not an identity', () => {
+  // An unset shell variable lands here: `--pipe '[{"op":"filter","expr":"'"$X"'"}]'`
+  // with X empty used to keep every row and exit 0.
+  refuse([{ op: 'filter', expr: '' }], 'filter', 'expr');
+  refuse([{ op: 'map', expr: '   ' }], 'map', 'expr');
+});
+
+t('an inherited method is not an operation', () => {
+  // `operations.toString` exists on every object. The lookup used to find it and
+  // run `Object.prototype.toString` as a transformation, which answered
+  // "[object Object]" for the whole file.
+  refuse([{ op: 'toString' }], 'toString');
+  refuse([{ op: 'constructor' }], 'constructor');
+});
+
+t('the message points at the step that is wrong, not the first one', () => {
+  const r = runSQL('[{"id":1,"name":"Alice"}]', 'json', [
+    { op: 'pick', fields: 'id' },
+    { op: 'head', n: 1 },
+    { op: 'group' }
+  ], 'json');
+  if (!r.error.includes('step 3')) throw new Error(r.error);
+  if (!r.error.includes('group')) throw new Error(r.error);
+});
+
+t('a bad pipeline is refused before the input is even read', () => {
+  // The order matters: a step the user mistyped should not be reported as a
+  // file problem, and it should not read the file at all.
+  const r = runSQL('this is not json at all', 'json', [{ op: 'filter' }], 'json');
+  if (!r.error.includes('filter')) throw new Error(r.error);
+});
+
+t('optional parameters keep their documented defaults', () => {
+  // `unique` without `by` drops fully identical records; `head` and `tail`
+  // without `n` take 10. A validator that demanded every key would break all
+  // three, so they are checked only when they are given.
+  const rows = Array.from({ length: 12 }, (_, i) => `{"i":${i}}`).join(',');
+  assert.strictEqual(runSQL(`[${rows}]`, 'json', [{ op: 'head' }], 'json').data.length, 10);
+  assert.strictEqual(runSQL(`[${rows}]`, 'json', [{ op: 'tail' }], 'json').data.length, 10);
+  assert.strictEqual(runSQL(`[${rows}]`, 'json', [{ op: 'tail', n: 2 }], 'json').data[0].i, 10);
+  const dupes = runSQL('[{"a":1},{"a":1},{"a":2}]', 'json', [{ op: 'unique' }], 'json');
+  if (dupes.error) throw new Error(dupes.error);
+  assert.strictEqual(dupes.data.length, 2);
+});
+
+t('an empty field list or mapping is a deliberate no-op and stays legal', () => {
+  // `pick` with `[]` yields empty objects and `rename` with `{}` changes
+  // nothing. Neither can do damage the user did not ask for, so neither is
+  // refused — only a *missing* key is a mistake.
+  for (const step of [{ op: 'pick', fields: [] }, { op: 'rename', mapping: {} }, { op: 'add', fields: {} }]) {
+    const r = runSQL('[{"id":1}]', 'json', [step], 'json');
+    if (r.error) throw new Error(`${step.op}: ${r.error}`);
+  }
+});
+
+t('an explicit identity expression is still legal', () => {
+  const r = runSQL('[{"a":1}]', 'json', [{ op: 'filter', expr: 'item' }], 'json');
+  if (r.error) throw new Error(r.error);
+  assert.strictEqual(r.data.length, 1);
+});
+
+t('validatePipeline hands back the pipeline it was given', () => {
+  const pipeline = [{ op: 'filter', expr: 'item.a' }, { op: 'sort', by: 'a' }];
+  assert.strictEqual(validatePipeline(pipeline), pipeline);
+});
+
+t('a pipeline that is not an array is refused, not run', () => {
+  for (const bad of [{ op: 'head' }, 'head', null, 42]) {
+    try {
+      validatePipeline(bad);
+      throw new Error(`accepted ${JSON.stringify(bad)}`);
+    } catch (err) {
+      if (err.usage !== true) throw new Error(`${JSON.stringify(bad)}: not a usage error`);
+    }
+  }
+  for (const bad of [[null], ['head'], [['op', 'head']], [{ n: 1 }]]) {
+    try {
+      validatePipeline(bad);
+      throw new Error(`accepted ${JSON.stringify(bad)}`);
+    } catch (err) {
+      if (err.usage !== true) throw new Error(`${JSON.stringify(bad)}: not a usage error`);
+    }
+  }
+});
+
+t('tail of zero rows is zero rows', () => {
+  // `data.slice(-0)` is `data.slice(0)`, so the last zero rows came back as all
+  // of them. A file with twelve rows and `tail 0` produced a twelve row export.
+  const rows = Array.from({ length: 12 }, (_, i) => `{"i":${i}}`).join(',');
+  for (const op of ['head', 'tail']) {
+    const r = runSQL(`[${rows}]`, 'json', [{ op, n: 0 }], 'json');
+    if (r.error) throw new Error(r.error);
+    if (r.data.length !== 0) throw new Error(`${op} 0 gave ${r.data.length} rows`);
+    if (r.text.trim() !== '[]') throw new Error(`${op} 0 wrote: ${r.text}`);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -62,7 +62,7 @@ already told it how to read.
 |---|---|---|
 | `0` | Success | — |
 | `1` | The transformation failed | The engine threw while transforming |
-| `2` | Usage error | Unknown option, bad option value, `--pipe` that is not a valid pipeline, an expression that is not valid JavaScript |
+| `2` | Usage error | Unknown option, bad option value, `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, or unparseable as the input format |
 
 Errors always go to stderr, prefixed with `Error:`, and stdout stays empty on
@@ -316,6 +316,41 @@ cat config.yaml | transmute --format yaml
 
 A pipeline is a JSON array. Steps run left to right, each one seeing the output
 of the previous one.
+
+### What a step must bring with it
+
+Every operation needs one parameter to do its job, and a step that leaves it out
+is a usage error (exit 2) naming the step and the parameter. Each of them used
+to run anyway and answer with something else, with exit 0 and an empty stderr:
+`filter` without `expr` kept every row, `pick` without `fields` wrote an empty
+object per row, and a `join` with an empty `with` dropped every row. A mistyped
+key, or a shell variable that expanded to nothing, looked like a run that
+worked.
+
+```bash
+transmute test/fixtures/people.csv --pipe '[{"op":"pick"}]' --output csv
+```
+
+```
+Error: Pipeline step 1 (pick): "fields" is required, a field name or an array of field names
+```
+
+| Operation | Required | Also accepted |
+|---|---|---|
+| `filter`, `map` | `expr` | a JavaScript expression, tested as written |
+| `pick`, `omit` | `fields` | a field name, or an array of them |
+| `sort`, `group` | `by` | a field name |
+| `unique` | — | `by` is optional: without it, fully identical records are dropped |
+| `rename` | `mapping` | an object of `{oldField: newField}` |
+| `flatten` | `field` | a field name holding the arrays |
+| `add` | `fields` | an object of `{newField: expression}` |
+| `join` | `with`, `on` | a non-empty array of records, and the field to join on |
+| `head`, `tail` | — | `n` is optional and defaults to 10 |
+| `count` | — | takes no parameters |
+
+An empty `expr` is a mistake, not an identity — it is what a shell variable that
+was never set leaves behind. `head` and `tail` take a number of rows, so `n: 0`
+is no rows: the last zero rows used to come back as all of them.
 
 ### filter
 

@@ -10,7 +10,7 @@
  */
 
 const fs = require('fs');
-const { run, parsers, operations, detectFormat } = require('./engine');
+const { run, parsers, validatePipeline, detectFormat } = require('./engine');
 const { version } = require('../package.json');
 
 const INPUT_FORMATS = ['json', 'csv', 'yaml', 'xml'];
@@ -165,18 +165,15 @@ function parsePipeline(raw) {
   } catch (err) {
     throw new UsageError(`--pipe is not valid JSON: ${err.message}`);
   }
-  if (!Array.isArray(parsed)) {
-    throw new UsageError('--pipe must be a JSON array of steps, e.g. \'[{"op":"head","n":5}]\'');
+  // The rules for what a step needs live in the engine, so the browser
+  // playground refuses the same pipelines this does. Here they run before the
+  // input is even read: a step that cannot do its job is the user's own typo,
+  // and it should not wait behind an unreadable file.
+  try {
+    return validatePipeline(parsed);
+  } catch (err) {
+    throw new UsageError(err.message);
   }
-  for (const step of parsed) {
-    if (!step || typeof step !== 'object' || Array.isArray(step)) {
-      throw new UsageError('--pipe steps must be objects with an "op" key');
-    }
-    if (!operations[step.op]) {
-      throw new UsageError(`Unknown operation: ${step.op} (see \`transmute --help\`)`);
-    }
-  }
-  return parsed;
 }
 
 function showPreview(text, format, delimiter) {

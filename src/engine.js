@@ -382,7 +382,9 @@ const operations = {
   },
   tail: (data, params) => {
     const n = params.n ?? 10;
-    return data.slice(-n);
+    // `slice(-0)` is `slice(0)`, so the last zero rows came back as all of
+    // them. A tail of nothing is nothing, whatever the sign of the zero.
+    return n === 0 ? [] : data.slice(-n);
   },
   rename: (data, params) => {
     const mapping = params.mapping ?? {};
@@ -1273,6 +1275,107 @@ function compileExpression(expr) {
   return fn;
 }
 
+// ─── Pipeline validation ─────────────────────────────────────────────────
+
+/**
+ * What a step must bring with it, as `{ op: { param: [kind, hint] } }`.
+ *
+ * Every operation here was reachable with its parameter missing, and every one
+ * of them answered with something else rather than saying so: `filter` with no
+ * `expr` kept every row, and `pick` with no `fields` returned `{}` for every
+ * record — the whole file's content deleted, written to disk with exit 0. A
+ * misspelled key, or a shell variable that expanded to nothing, produced a
+ * result the user did not ask for and could not see. `join` with an empty
+ * `with` was the same story: it dropped every row.
+ */
+const STEP_PARAMS = {
+  filter:  { expr: ['expr', 'a JavaScript expression, e.g. "item.age > 26"'] },
+  map:     { expr: ['expr', 'a JavaScript expression, e.g. "({...item, n: 1})"'] },
+  pick:    { fields: ['fieldlist', 'a field name or an array of field names'] },
+  omit:    { fields: ['fieldlist', 'a field name or an array of field names'] },
+  sort:    { by: ['field', 'a field name to sort on'] },
+  group:   { by: ['field', 'a field name to group by'] },
+  unique:  { by: ['field', 'a field name'] },
+  rename:  { mapping: ['object', 'an object of {oldField: newField}'] },
+  flatten: { field: ['field', 'a field name holding the arrays'] },
+  add:     { fields: ['object', 'an object of {newField: expression}'] },
+  join:    { with: ['records', 'a non-empty array of records'], on: ['field', 'a field name to join on'] },
+  head:    { n: ['rows', 'a number of rows'] },
+  tail:    { n: ['rows', 'a number of rows'] }
+};
+
+/**
+ * Parameters an operation has a documented default for: `unique` without `by`
+ * drops fully identical records, `head` and `tail` without `n` take 10. They
+ * are still checked when they are given — a `n` of `"5"` reached `slice`, where
+ * a string is coerced, and `tail` with `0` returned every row.
+ */
+const OPTIONAL_PARAMS = new Set(['unique.by', 'head.n', 'tail.n']);
+
+function isFieldName(val) {
+  return typeof val === 'string' && val !== '';
+}
+
+function isPlainObject(val) {
+  return typeof val === 'object' && val !== null && !Array.isArray(val);
+}
+
+const PARAM_CHECKS = {
+  expr: (val) => typeof val === 'string' && val.trim() !== '',
+  field: isFieldName,
+  fieldlist: (val) => isFieldName(val) || (Array.isArray(val) && val.every(isFieldName)),
+  object: isPlainObject,
+  records: (val) => Array.isArray(val) && val.length > 0,
+  rows: (val) => typeof val === 'number' && Number.isFinite(val) && val >= 0
+};
+
+/** A bad pipeline is what the user typed, so it carries `usage` like a bad expression does. */
+function pipelineError(message) {
+  const error = new Error(message);
+  error.usage = true;
+  return error;
+}
+
+/**
+ * Check a pipeline before it runs, so a step that cannot do its job says so
+ * instead of quietly doing another one.
+ *
+ * The CLI calls this while it parses `--pipe`, and `run` calls it for everyone
+ * else — the browser playground included. One rule, two callers, so a pipeline
+ * is never judged twice and never differently.
+ *
+ * @param {Array} pipeline - Array of { op, ...params }
+ * @returns {Array} the same pipeline, unchanged
+ * @throws {Error} with `usage` set, when a step is not a step the tool can run
+ */
+function validatePipeline(pipeline) {
+  if (!Array.isArray(pipeline)) {
+    throw pipelineError('Pipeline must be a JSON array of steps, e.g. \'[{"op":"head","n":5}]\'');
+  }
+  pipeline.forEach((step, index) => {
+    const at = `Pipeline step ${index + 1}`;
+    if (!isPlainObject(step)) {
+      throw pipelineError(`${at} must be an object with an "op" key`);
+    }
+    if (typeof step.op !== 'string' || !Object.prototype.hasOwnProperty.call(operations, step.op)) {
+      throw pipelineError(`Unknown operation: ${step.op} (${at}; see \`transmute --help\`)`);
+    }
+    for (const [param, [kind, hint]] of Object.entries(STEP_PARAMS[step.op] || {})) {
+      const val = step[param];
+      if (val === undefined || val === null) {
+        if (OPTIONAL_PARAMS.has(`${step.op}.${param}`)) continue;
+        throw pipelineError(`${at} (${step.op}): "${param}" is required, ${hint}`);
+      }
+      if (!PARAM_CHECKS[kind](val)) {
+        throw pipelineError(
+          `${at} (${step.op}): "${param}" must be ${hint}, got ${JSON.stringify(val)}`
+        );
+      }
+    }
+  });
+  return pipeline;
+}
+
 // ─── Main pipeline function ──────────────────────────────────────────────
 
 /**
@@ -1293,13 +1396,16 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
   // browser build ignores them; the extra columns are visible in its output.
   const warnings = [];
   try {
+    // Before the parse, not after: a step that cannot do its job is the user's
+    // own input, and it is the same whether the data happens to be readable.
+    validatePipeline(pipeline);
+
     // Parse
     if (!parsers[inputFormat]) return { error: `Unknown input format: ${inputFormat}` };
     let data = parsers[inputFormat](inputText, { ...opts, warnings });
 
     // Transform
     for (const step of pipeline) {
-      if (!operations[step.op]) return { error: `Unknown operation: ${step.op}` };
       data = operations[step.op](data, step);
       if (!Array.isArray(data)) data = [data];
     }
@@ -1314,7 +1420,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
   }
 }
 
-module.exports = { run, parsers, serializers, operations, detectFormat };
+module.exports = { run, parsers, serializers, operations, detectFormat, validatePipeline };
 
 /**
  * Detect format from filename or content.
