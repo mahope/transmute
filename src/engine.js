@@ -128,7 +128,7 @@ const parsers = {
           pos = next;
         }
       } else {
-        value = content;
+        value = decodeXML(content);
       }
       return [{ tag, value }, closeIdx + closeTag.length];
     };
@@ -583,8 +583,18 @@ function parseCSV(text, opts = {}) {
   return rows;
 }
 
+/**
+ * Quote a CSV field whenever it holds a character a reader can mistake for
+ * structure. The obvious ones are the comma, the quote and the line break, but
+ * the reader in this file also auto-detects `;`, tab and `|`, and it treats a
+ * bare CR as the end of a record. Writing those raw produced files this tool
+ * itself read back as two columns or two records — a `;` in a free-text field
+ * survives one hop and destroys the row on the next. Quoting for every
+ * delimiter we recognise costs nothing on well-formed data and makes the
+ * output safe for whichever delimiter the next reader settles on.
+ */
 function escapeCSV(val) {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+  if (/[",;\t|\r\n]/.test(val)) {
     return '"' + val.replace(/"/g, '""') + '"';
   }
   return val;
@@ -612,6 +622,28 @@ function escapeXML(val) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/**
+ * The five predefined entities plus numeric character references. The writer
+ * above escapes on the way out, so a reader that does not decode on the way in
+ * hands back `Tom &amp; Jerry` and grows it to `&amp;amp;` on every round
+ * trip — the escape compounds until the text is unreadable. Unknown entities
+ * are passed through unchanged: guessing what `&nbsp;` was meant to be is
+ * worse than letting the user see it.
+ */
+function decodeXML(val) {
+  if (!val.includes('&')) return val;
+  const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+  return val.replace(
+    /&(?:#([0-9]+)|#[xX]([0-9a-fA-F]+)|(amp|lt|gt|quot|apos));/g,
+    (match, dec, hex, name) => {
+      if (name) return named[name];
+      const code = dec !== undefined ? Number(dec) : parseInt(hex, 16);
+      if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return match;
+      try { return String.fromCodePoint(code); } catch { return match; }
+    }
+  );
 }
 
 /**

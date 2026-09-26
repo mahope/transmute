@@ -143,6 +143,37 @@ Warning: 1 of 3 CSV rows has more fields than the header (row 3); the extra valu
 ]
 ```
 
+#### Writing: quote anything a reader could mistake for structure
+
+Reading is only half of it — a CSV you write has to survive being read back. A
+value is quoted when it contains `"`, a line break, **or any of the delimiters
+this tool recognises** (`,` `;` tab `|`). That includes the CR in a CRLF file,
+which the reader treats as the end of a record. `test/fixtures/tricky.csv` has a
+semicolon, a pipe and an escaped quote in its free-text column:
+
+```bash
+transmute test/fixtures/tricky.csv --output csv
+```
+
+```csv
+code,note
+a-1,"semi; colon"
+a-2,"pipe| bar"
+a-3,"say ""hi"" now"
+```
+
+Piping that output straight back in gives the original rows, byte for byte:
+
+```bash
+transmute test/fixtures/tricky.csv --output csv | transmute --output json
+```
+
+Without the quoting, `semi; colon` was written bare. This tool read it back
+correctly, but a reader that auto-detects the delimiter — Danish Excel, most
+tools in this category — split the column and lost the row's meaning one hop
+later. Free text is the field most likely to contain a semicolon, which is
+exactly why the export quotes it.
+
 The same applies in the other direction, and silently, when records do not all
 have the same keys. `csv`, `table` and `sql` output use every key any record
 has, in the order they first appear, so a field that only the second record
@@ -554,6 +585,31 @@ transmute test/fixtures/users.xml --output json
   }
 ]
 ```
+
+#### XML entities are decoded on the way in
+
+The writer escapes `&`, `<`, `>`, `"` and `'`, so the reader decodes them. Without
+that, `xml → xml` is not a round trip but a ratchet: `Tom &amp; Jerry` comes back
+as `Tom &amp;amp; Jerry`, and the next pass grows it again. `&#65;` and `&#x42;`
+become `A` and `B`, so numeric character references work too:
+
+```bash
+transmute test/fixtures/entities.xml --output json
+```
+
+```json
+[
+  {
+    "name": "Tom & Jerry",
+    "tag": "a <b> &amp; c",
+    "code": "AB"
+  }
+]
+```
+
+`&amp;amp;` in that `tag` is a literal `&amp;` in the file — an escaped ampersand,
+decoded exactly one level, which is what the file said. An entity this tool does
+not know, such as `&nbsp;`, is passed through unchanged rather than guessed at.
 
 JSON to SQL, with `--table` choosing the table name:
 

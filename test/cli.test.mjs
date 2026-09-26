@@ -193,6 +193,23 @@ test('records with different keys export every key to CSV', () => {
   assert.equal(out.trim(), 'id,name,email\n1,Alice,\n2,Bob,bob@x.dk');
 });
 
+test('a semicolon in a free-text field survives csv → csv → json', () => {
+  const written = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o csv`, {
+    input: '[{"id":1,"note":"Copenhagen; Aarhus"}]'
+  }));
+  assert.equal(written.trim(), 'id,note\n1,"Copenhagen; Aarhus"');
+  const back = expectOk(sh(`"${process.execPath}" "${cli}" -f csv -o json`, { input: written }));
+  assert.deepEqual(JSON.parse(back), [{ id: 1, note: 'Copenhagen; Aarhus' }]);
+});
+
+test('xml → xml does not compound its own escaping', () => {
+  const source = '<users><user><name>Tom &amp; Jerry</name><tag>a &lt;b&gt;</tag></user></users>';
+  const once = expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o xml`, { input: source }));
+  const twice = expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o xml`, { input: once }));
+  assert.equal(twice, once);
+  assert.equal(once.includes('&amp;amp;'), false, `escape grew: ${once}`);
+});
+
 console.log('── errors are machine-readable ──');
 
 function expectFail(command, code, needle, opts = {}) {

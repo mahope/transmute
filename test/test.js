@@ -155,6 +155,51 @@ test('csv output for records with identical keys is unchanged', () => {
   );
 });
 
+test('csv output quotes every delimiter the reader can detect, not just the comma', () => {
+  // Free text is the field most likely to hold a semicolon, and Danish Excel
+  // reads `;` by default. Writing it bare loses the column on the next hop.
+  assert.strictEqual(serializers.csv([{ a: 'x;y', b: 1 }]), 'a,b\n"x;y",1');
+  assert.strictEqual(serializers.csv([{ a: 'x|y', b: 1 }]), 'a,b\n"x|y",1');
+  assert.strictEqual(serializers.csv([{ a: 'x\ty', b: 1 }]), 'a,b\n"x\ty",1');
+  // A bare CR ends a record for the reader, so it must be inside the quotes.
+  assert.strictEqual(serializers.csv([{ a: 'x\ry', b: 1 }]), 'a,b\n"x\ry",1');
+});
+
+test('a CSV round trip returns the values it started with', () => {
+  const source = 'code,note\na-1,"semi; colon"\na-2,"pipe| bar"\na-3,"say ""hi"" now"';
+  const written = run(source, 'csv', [], 'csv').text;
+  const reread = run(written, 'csv', [], 'json');
+  assert.deepStrictEqual(reread.data, run(source, 'csv', [], 'json').data);
+  // A CR in a value survives the same way.
+  const crlf = run('a,b\n"x\ry",z', 'csv', [], 'csv');
+  assert.deepStrictEqual(run(crlf.text, 'csv').data, run('a,b\n"x\ry",z', 'csv').data);
+});
+
+test('XML entities are decoded on the way in', () => {
+  const r = run('<users><user><n>Tom &amp; Jerry</n><t>a &lt;b&gt; &quot;q&quot; &apos;s&apos;</t></user></users>', 'xml');
+  assert.strictEqual(r.data[0].n, 'Tom & Jerry');
+  assert.strictEqual(r.data[0].t, 'a <b> "q" \'s\'');
+});
+
+test('numeric XML character references are decoded, decimal and hex', () => {
+  const r = run('<users><user><a>&#65;</a><b>&#x42;</b><c>&#8364;</c></user></users>', 'xml');
+  assert.strictEqual(r.data[0].a, 'A');
+  assert.strictEqual(r.data[0].b, 'B');
+  assert.strictEqual(r.data[0].c, '€');
+});
+
+test('an unknown XML entity is passed through, not guessed', () => {
+  const r = run('<users><user><n>a &nbsp; b &bogus; c</n></user></users>', 'xml');
+  assert.strictEqual(r.data[0].n, 'a &nbsp; b &bogus; c');
+});
+
+test('xml → xml is a round trip, not an escaping ratchet', () => {
+  const once = run('<u><n>Tom &amp; Jerry</n></u>', 'xml', [], 'xml').text;
+  const twice = run(once, 'xml', [], 'xml').text;
+  assert.strictEqual(twice, once);
+  assert.ok(!once.includes('&amp;amp;'), once);
+});
+
 test('parse YAML list', () => {
   const r = run('- name: Alice\n  age: 30\n- name: Bob\n  age: 25', 'yaml');
   assert.strictEqual(r.data.length, 2);

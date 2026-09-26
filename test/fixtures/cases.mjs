@@ -259,5 +259,29 @@ export const CASES = [
     // also prints one warning on stderr, which is part of the contract.
     warns: true,
     command: `transmute test/fixtures/ragged.csv --output json`
+  },
+  {
+    name: 'csv-quoting',
+    docOutput: 'a-1,"semi; colon"',
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'tricky.csv'),
+    pipeline: [],
+    outputFormat: 'csv',
+    // A value holding any delimiter the reader recognises, plus escaped quotes,
+    // is written quoted — so the output survives being read back.
+    command: `transmute test/fixtures/tricky.csv --output csv`
+  },
+  {
+    name: 'xml-entities',
+    docOutput: '"name": "Tom & Jerry"',
+    op: null,
+    fixture: 'xml',
+    file: join(here, 'entities.xml'),
+    pipeline: [],
+    outputFormat: 'json',
+    // The five predefined entities and numeric references are decoded on the
+    // way in, so the escape never compounds across a round trip.
+    command: `transmute test/fixtures/entities.xml --output json`
   }
 ];

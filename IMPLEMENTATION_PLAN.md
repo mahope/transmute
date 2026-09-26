@@ -11,9 +11,9 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
 
-**Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 02:4x CEST med `npm run check:deploy`):** uændret. Live er `3d90812`, 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
+**Deploy-status ⚠️ (genverificert 2026-09-26 ca. 03:5x CEST med `npm run check:deploy`):** uændret. Live er `3d90812`, 5 site-commit og 25 filer i drift, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
-**Næste iteration:** køen for ikke-site-arbejde er tom. T11 er `BLOCKED` (ingen adgang til det private repo), T12 er parkeret af `DEPLOY-MISSING` fordi den rører `site/`, og T13/T14/T15 er færdige på `ceo/deploy-freshness-check`. Først at gøre: kør `npm run check:deploy` — hvis `DEPLOY-MISSING` er væk, merges de tre commits til `main` og `VERIFICÉR DEPLOY`-noterne lukkes. Hvis det stadig står, lav en research-iteration (kontrakten §2) med fokus på gratisvareens **rige** frem for dens fejl: hvilke filformater, transformsationsretninger og CLI-arbejdsgange mangler i den frie vare, sammenlignet med jq, Miller, csvkit og de guides sitet allerede har. Skriv en prioriteret plan med acceptkriterier; skriv ikke sitearbejde, det parkeres igen.
+**Næste iteration:** T17 — ret tabet af nested YAML på input (`IMPLEMENTATION_PLAN.md`, opgave 17). Det er den største manglende evne i den frie vare: `parsers.yaml` forstår kun ét niveau, så en helt almindelig config-fil mister sin nestede del **helt** med exit 0. Fundet under T16, bevidst ikke bygget i samme iteration. T16 (CSV-quoting for alle delimiteres + XML-entity-afkodning) er færdig på `ceo/lossless-roundtrip` og ligger på branch, ligesom T13/T14/T15, fordi `DEPLOY-MISSING` står. Først at gøre hver iteration: `npm run check:deploy` — hvis `DEPLOY-MISSING` er væk, merges de fire commits til `main` og `VERIFICÉR DEPLOY`-noterne lukkes.
 
 ## Kvalitetsgate
 
@@ -640,7 +640,74 @@ En række med flere felter end overskriften tabte de ekstra værdier helt. `id,n
 - `npm test` 166 checks, `check:site` 0 fund / 0 afvigelser, `npm pack --dry-run` 5 filer. ✓
 
 
+### 16. [x] Gør de tabsfrie formater virkelig tabsfri i begge retninger
+
+**Status:** FÆRDIG på `ceo/lossless-roundtrip` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** Research-iterationen (kontrakt §2) efter T15 fandt ikke bare *mangler*, men to steder hvor læser og skriver i den **samme** fil er uenige. Det er værre end en manglende funktion: brugeren beder ikke om noget, værktøjet svarer alligevel forkert med exit 0.
+
+**Fundene, reproduceret på den gamle kode med rigtige filer:**
+
+| # | Fejl | Før | Efter |
+|---|---|---|---|
+| 1 | CSV-udgiveren quoter kun `,` `"` og `\n` | `Copenhagen; Aarhus` skrevet **uquotet**; et CR i et felt skrev en rå `\r`, som læseren læser som recordskift | alle fire delimiteres (`;` tab `\|`) og CR/LF quoteres |
+| 2 | XML-læseren afkodede ingen entities | `xml → json` gav `Tom &amp; Jerry`; `xml → xml` gav `Tom &amp;amp; Jerry` og **voksede for hver tur** | `&amp; &lt; &gt; &quot; &apos;` samt `&#NN;`/`&#xHH;` afkodes én gang |
+
+**Fund 1 er en ratchet på linjeskift.** `escapeCSV` kendte `\n` men ikke `\r`, og `parseCSV` afslutter en record på et blot `\r`. Et felt med CR blev derfor skrevet uquotet og læst som **to records** — samme fejlform som T13, men i skriveren.
+
+**Fund 2 er, at værktøjets egen writer og reader modsiger hinanden.** `escapeXML` skriver `&amp;`, og parseren læste den streng bogstaveligt, så `xml → xml` var ikke en round trip men en forstærker. Det er usynligt i én kørsel og ødelagt i den tredje.
+
+**Valget for ukendte entities er bevidst:** `&nbsp;` og `&bogus;` passerer uændret igennem. At gætte på, hvad de betød, ville være værre end at vise dem.
+
+**Resultat:**
+
+- `escapeCSV` quoter på `/[",;\t|\r\n]/` — altså alt, læseren kan tage for struktur, ikke kun kommaet. Velformet data er bit-identisk; de 23 eksisterende snapshots ændrede sig **ikke**.
+- `decodeXML(val)` i begge engine-kopier, kaldt i parserens tekstgren. Den afkoder de fem prædefinerede entities og numeriske referencer og lader ukendte være i fred.
+- Nye fixtures `test/fixtures/tricky.csv` (semikolon, pipe, escaped quote i fritekstfeltet) og `test/fixtures/entities.xml`, begge lagt som `CASES`, så conformance-testen dækker dem i **begge** engines, og `docs/cli.md` rummer deres kommando og præcise output.
+- Seks nye engine-tests (alle delimiteres, en fuld `csv → csv → json`-round trip inkl. CR, entities, numeriske referencer, ukendt entity, xml-idempotens) og to nye CLI-tests. Testtællene stiger 49 → 55, 59 → 63, 59 → 63.
+
+**Verifikation:** `npm test` grøn med 55 engine-, 63 CLI-, 63 conformance-, 6 README-tests, 39 workflow-regressioner, 4 workflow-kontrakter og 166 kontratkontroller. `npm pack --dry-run` uændret på 5 filer. `npm run check:site` grøn med `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px og fire grønne selvtesttrin.
+
+**En fejl undervejs, værd at huske:** min første CLI-test hævede `!once.includes('&amp;amp;')` på `entities.xml`. Den fejlede korrekt — men **testens påstand var falsk, ikke koden**: fixture'en indeholder med vilje `&amp;amp;`, fordi filen siger `&amp;` (et escaped ampersand), som efter ét afkodningsniveau er en *bogstavelig* `&amp;`, som writeren så korrekt quoter tilbage til `&amp;amp;`. Egenskaben der holder er idempotens (`twice === once`), ikke strengt fravær. Samme fejl som i T14 slice 1: en skarp påstand på en testfil man selv har lavet, fanger implementationen i stedet for at beskrive den.
+
+### 17. [ ] Ret tabet af nested YAML på input
+
+**Status:** TODO — fundet under T16, bevidst ikke bygget i samme iteration
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** Det er den største *manglende evne* i den frie vare, fundet ved at køre en reel fil gennem CLI'en. Den er tavs og total, og den er derfor mere skadelig end de to T16-rettelser.
+
+**Fundet:** `parsers.yaml` forstår kun én niveau. En helt almindelig config-fil mister den nestede del **helt**:
+
+```yaml
+server:
+  host: db.local
+  port: 5432
+list:
+  - a
+  - b
+```
+
+giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**, ingen advarsel, ingen fejlkode. Det er præcis den fejlform T13 og T14 blev lavet for at fjerne, bare en hel fil i stedet for ét felt.
+
+**Scope:**
+
+- Erstat den linje-for-linje-læser med en indrykningsdrevet parser: stacks af mappings og sekvenser, `key:` med indrykket underblok, `- ` med indrykket inline-mapping, blokskalarer (`|`, `>`), enkelt- og dobbeltcitate, `#`-kommentarer og `---`-dokumentseparator.
+- Bevar den nuværende `parseYAMLValue`-coercion (tal, `true`/`false`, `null`/`~`) og den eksisterende adfærd for flade lister, så `test/fixtures/people.yaml` og alle eksisterende snapshots er uændrede.
+- Uden en tredjepartsafhængighed: roden har nul runtime-afhængigheder, og det er en kilde til den frie vares værdi. Skal en rigtig YAML-parser bruges, er det en afhængighedsbeslutning for Mads.
+- `serializers.yaml` skal kunne skrive den samme struktur tilbage, ellers er rettelsen kun halv.
+
+**Acceptkriterier:**
+
+- `test/fixtures/nested.yaml` med mindst tre niveauer, mappings og sekvenser blandet, læses til de præcise forventede strukturer — ikke til `[].`
+- En fil med kun topniveau-nøgler og ingen liste (`a: 1 / b: hello`) giver **uændret** `[{a:1,b:"hello"}]`, så den nuværende, dokumenterede adfærd ikke brydes.
+- `yaml → yaml` på den nye fixture er idempotent.
+- Blokskalarer og citerede strenge med `:`, `#` og `;` i sig overlever.
+- Alle 23 nuværende snapshots er uændrede, medmindre en ændring af parserens adfærd kan dokumenteres som en fejlrettelse — så med en note i planen.
+- Konformance-testen dækker den nye fixture i begge engines, `docs/cli.md` har kommando og output, og `npm test` + `check:site` er grønne.
+
+
 ## Beslutninger og fund
+
 - **Målefejlen bag fem iterationers deploy-dom.** `sitemap.xml`'s `lastmod` er ikke en deploy-dato; den skrives, når `site_chrome.py` regenererer sitemap'en (`tools/site_chrome.py:629`). Commit `3d90812`, som faktisk *er* live, har selv `lastmod 2026-09-08`. Læst som deploy-dato fik et levende site til at se dødt ud. Derfor er reglen nu et værktøj, ikke en sætning: `npm run check:deploy`.
 - Processregel fra T15: deploy-alder må aldrig fastslås ved at læse et felt i det publicerede output. Beviset skal være en sammenligning mod git. Det er den forskel, der skilte en falsk `DEPLOY-MISSING` med fem ganske gode, men u mergerede commits fra en rigtig.
 - T5 fjernede `deploy-site.yml` og dermed det eneste deployapparat i repoet. Det var korrekt — kontrakten forbyder push-triggeret auto-deploy — men intet noterede, at det efterlod repoet **uden** deployvej, fordi den eksterne batchdeployer antagelig forventede en bestemt mekanisme. At slette en integrations eneste implementering skal efterlade en note om, hvad der erstatter den.
@@ -710,6 +777,11 @@ En række med flere felter end overskriften tabte de ekstra værdier helt. `id,n
 - Fund under T14: `serializers.sql` brugte allerede nøgle-foreningen på tværs af alle records, mens `csv` og `table` brugte `Object.keys(data[0])`. Den samme fejlform lå altså to steder i den samme fil, og den eksisterende korrekte implementering var det interne argument for at rettelse den følger. Rækkefølgen på nye felter er i forvejen defineret af `sql`-udgiveren, så de to andre lavede bare en viljeafhængig udgave af den.
 - Fund under T14: den første implementering genererede de nye kolonnenavne med et `taken`-sæt, der voksede række for række, så samme position fik et nyt navn per række. Den sås kun af en test, der krævede at to på hinanden følgende for lange rækker har *identiske* nøgler. Et navn skal følge posen, ikke optrædelserne — ellers er det antallet af rækker, der afgør antallet af kolonner.
 - Fund under T14: `--delimiter ,` på en semikolonfil med citerede kommaer og et citeret linjeskift splitter også de citerede felter, så rækkerne bliver længere end den énkolonne-header. Før var det tavst; nu siger advarslen det. Den gamle test hævdede kun at overskriften forblev én kolonne, hvilket stadig er sandt — den blev gjort skarpere i stedet for slettet, fordi den nu kan sige hvorfor.
+- **Læser og skriver i den samme fil skal have samme regel.** T16's to fund var præcis det: `escapeCSV` kendte `\n` men ikke `\r`, selv om `parseCSV` afslutter en record på et blot `\r`; `escapeXML` skrev `&amp;`, som parseren læste bogstaveligt. En værktøjsfejl der kræver to kørseler for at vise sig, er den dyreste slags, fordi den ligner som en fungerende konvertering. Spørg altid: hvad skriver den her fil, og kan min egen læser læse den?
+- Ny regel fra T16: et format der er **tabsfrrit** skal være tabsfrit i begge retninger. T13 gjorde CSV-læsningen RFC 4180-korrekt, menlod skriverens quoting stå på RFC'ens minimaleSubset — så den ene rettelse afslørede den anden. En runde-tur-test (skriv, læs, sammenlign) fangede begge.
+- Beslutning under T16: ukendte XML-entities (`&nbsp;`) passerer uændret igennem. At gætte på betydningen ville indsætte data, brugeren aldrig skrev; at vise dem navngiver præcis det problem, værktøjet ikke kan løse.
+- Beslutning under T16: quoter for **alle** delimiteres læseren genkender, ikke kun den aktive. Det koster ingenting på velformet data (de 23 snapshots ændrede sig ikke) og gør output sikkert uanset hvilken delimiter den næste læser vælger — dansk Excel, ikke kun dette værktøj.
+- Fund under T16: den største *manglende evne* i den frie vare er ikke en operation, men at `parsers.yaml` læser ét niveau. En reel config-fil bliver `[ "a", "b" ]` med exit 0, fordi den nestede blok hverken parses eller advares om. Læst som T13 og T14, bare større: en hel fil i stedet for ét felt. Lagt som T17 med krav om at den eksisterende flade lister-adfærd overlever uændret.
 
 ## Navneforslag
 
@@ -727,6 +799,8 @@ En række med flere felter end overskriften tabte de ekstra værdier helt. `id,n
 6. **Desktopappens download og gratisniveau (fra T9):** Loopet kunne ikke finde nogen offentlig download-URL for appen. Den gamle knap pegede på dette repos `releases`, som ikke indeholder appen, fordi den bygges fra det private repo, så den peger nu på `/support/#buying-pro`. To ting skal bekræftes: (a) hvor en bruger faktisk henter den gratis app, så den kan linkes direkte, og (b) om gratisniveauet stadig er "tre transformationer pr. start". Sidstnævnte står ens på `/`, `/da/` og `/support/` og er nu frosset som `free_tier_transformations_per_launch: 3` i `tools/product-contract.json`; hvis appen har en anden grænse, skal værdien rettes dér og siderne regenereres, så kontrollen fanger forskellen.
 
 ## Iterationlog
+
+- 2026-09-26 ca. 03:4x–04:0x CEST: T16 gennemført på `ceo/lossless-roundtrip`. Research-iterationen efter T15 (kontrakten §2, gratisvareens **rige** frem for dens fejl) fandt to steder hvor læser og skriver i den **samme** fil er uenige — værre end en manglende funktion, fordi brugeren ikke beder om noget og alligevel får et forkert svar med exit 0. (1) `escapeCSV` quoter kun `,` `"` `\n`, mens læseren genkender `;` tab `|` og afslutter en record på et blot `\r`: `Copenhagen; Aarhus` blev skrevet uquotet, og et CR i et felt blev læst som **to records**. (2) `escapeXML` skriver `&amp;`, som parseren læste bogstaveligt, så `xml → json` gav `Tom &amp; Jerry` og `xml → xml` gav `Tom &amp;amp; Jerry` — en forstærker, ikke en round trip. Rettelse: `escapeCSV` quoter på `/[",;\t|\r\n]/`, og `decodeXML` afkoder de fem prædefinerede entities plus `&#NN;`/`&#xHH;` i parserens tekstgren; ukendte entities passerer uændret igennem. Nye fixtures `tricky.csv` og `entities.xml` som `CASES`, så conformance dækker dem i begge engines, plus afsnit i `docs/cli.md` med kommandoer og præcise output. 6 nye engine-tests (55), 2 nye CLI-tests (63). Snapshots regenereret til 25 entries **uden at ét eksisterende snapshot ændrede sig** — beviset på at rettelsen er en no-op for velformet data. Procesfejl undervejs: min første CLI-test hævede `!once.includes('&amp;amp;')` på `entities.xml` og fejlede korrekt, men påstanden var falsk, ikke koden — fixture'en indeholder med vilje `&amp;amp;`, fordi filen siger `&amp;`, som efter ét niveau er en bogstavelig `&amp;`. Egenskaben er idempotens, ikke strengt fravær; samme fælde som i T14 slice 1. Lokalt grøn: `npm test` 55+63+63+6+39+4+166, `npm pack --dry-run` 5 filer, `npm run check:site` `0 finding(s) across 19 pages`, `deviations: 0` ved 360/768/1280 px, grøn selftest. Deploy genverificeret før commit med `npm run check:deploy`: live `3d90812`, 5 site-commit / 25 filer u deployede, `/support/index.html` utilgængelig — uændret, så `DEPLOY-MISSING` står. **Committen er bevidst ikke mergeret til `main`**, fordi diffen rører `site/engine.js`; den ligger på `ceo/lossless-roundtrip` sammen med T13/T14/T15. Fund undervejs lagt som T17 (nested YAML læses som ét niveau og taber en hel fil med exit 0) — bevidst ikke bygget i samme iteration.
 
 - 2026-09-25: Research-iteration gennemført på `ceo/transmute-roadmap` med plan-commit `b46b1e2`; planen er oprettet ud fra repo, mission, Stripe-kontrakt og afhængighedsstatus.
 - 2026-09-25 03:11 UTC: T2 gennemført på `ceo/desktop-opener`; rustls advisory-fix isoleret i `4d1a828`, opener-plugin, ACL, frontend-handler, fire headless checks og debug `.app`-build gennemført. Implementationscommit: `2c3b6c2`. GUI-smoke afventer Orca/computer-use.
