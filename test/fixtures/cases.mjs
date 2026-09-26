@@ -171,6 +171,10 @@ export const CASES = [
       ]
     }],
     outputFormat: 'table',
+    // `keep: "left"` is the documented way to keep a row with no match, and
+    // the row that has no match has no `tier` field. A flat format writes that
+    // as an empty cell, so the run says which column and in how many rows.
+    warns: true,
     command: `transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","keep":"left","with":[{"customer":"alice","tier":"gold"},{"customer":"bob","tier":"silver"}]}]' --output table`
   },
   {

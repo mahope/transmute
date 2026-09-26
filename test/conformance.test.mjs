@@ -358,7 +358,7 @@ test('docs/cli.md shows the warning and the file for a row that is not a record'
   // page prints, and the exit code is locked at 0: a warning, not a refusal.
   const section = (() => {
     const from = docs.indexOf('### A row that is not a record: `csv`, `table` and `sql`');
-    const to = docs.indexOf('## Operations');
+    const to = docs.indexOf('### A field a row does not have: `csv` and `table`');
     assert.ok(from !== -1 && to > from, 'docs/cli.md has lost the section on a row that is not a record');
     return docs.slice(from, to);
   })();
@@ -687,6 +687,67 @@ for (const testCase of CASES) {
     assert.equal(docs.includes(testCase.docOutput), true, `output not found in docs for ${testCase.name}`);
   });
 }
+
+test('docs/cli.md shows the warning and the file for a field a row does not have', () => {
+  // An empty cell in a flat format is an empty *string* on the way back in, and
+  // a `null` is written the same way, so the loss is invisible in the file. The
+  // docs therefore quote the message verbatim and the counts in it come from the
+  // run below, not from the prose — and the round trip is checked here too,
+  // because a message that overstates what the file loses is as wrong as one
+  // that understates it.
+  const section = (() => {
+    const from = docs.indexOf('### A field a row does not have: `csv` and `table`');
+    const to = docs.indexOf('## Operations');
+    assert.ok(from !== -1 && to > from, 'docs/cli.md has lost the section on a field a row does not have');
+    return docs.slice(from, to);
+  })();
+
+  const blocks = [...section.matchAll(/^```(\w*)\n([\s\S]*?)^```/gm)]
+    .map(m => ({ lang: m[1], body: m[2] }));
+  assert.equal(blocks.length, 2, `the section should show one runnable example, found ${blocks.length - 1}`);
+  const [command, output] = blocks;
+
+  const result = spawnSync('sh', ['-c', command.body.trim().replace(/(^|\s)transmute /g, '$1' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(join(root, 'src', 'cli.js')) + ' ')], {
+    cwd: root,
+    encoding: 'utf-8',
+  });
+  assert.equal(result.status, 0, `a missing field is a warning, not a failure: ${result.stderr}`);
+  const warning = output.body.slice(0, output.body.indexOf('\n'));
+  assert.ok(warning.startsWith('Warning: '), `the docs must show the warning first: ${warning}`);
+  assert.equal(result.stderr.trim(), warning, `docs/cli.md does not show what this warns:\n$ ${command.body.trim()}`);
+  assert.equal(result.stdout, output.body.slice(output.body.indexOf('\n') + 1), `docs/cli.md does not show what this writes:\n$ ${command.body.trim()}`);
+
+  // The claim, checked on the file the run produced: the cell is `""` now.
+  const back = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'csv', '-o', 'json'], {
+    cwd: root,
+    encoding: 'utf-8',
+    input: result.stdout,
+  });
+  assert.equal(back.status, 0, back.stderr);
+  // A CSV has a header that holds for every row, so the gap is filled in on the
+  // way back — as an empty string, in every row that had nothing. That is the
+  // loss the warning is about, stated as a fact about the file rather than as a
+  // claim about one row.
+  const rows = JSON.parse(back.stdout);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].email, '', 'the null should be an empty string after the round trip');
+  assert.equal(rows[1].email, '', 'the row without the field should come back as an empty string too');
+  assert.equal(rows[1].navn, 'Bo');
+  assert.equal(rows[2].navn, '', 'the row missing navn should come back as an empty string');
+  assert.equal(rows[2].email, 'c@x.dk', 'the value that was there must survive');
+
+  // The escape route the message names has to exist, or the advice is a lie.
+  for (const out of ['json', 'yaml', 'sql']) {
+    const kept = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'json', '-o', out], {
+      cwd: root,
+      encoding: 'utf-8',
+      input: '[{"a":1,"b":null},{"a":2}]',
+    });
+    assert.equal(kept.status, 0, `${out} should be able to say it: ${kept.stderr}`);
+    assert.equal(kept.stderr, '', `${out} must not warn about a difference it keeps: ${kept.stderr}`);
+    assert.ok(kept.stdout.includes(out === 'sql' ? 'NULL' : 'null'), `${out} lost the null: ${kept.stdout}`);
+  }
+});
 
 test('docs/cli.md quotes the real warning for a CSV column that loses its type', () => {
   // The warning is the whole answer to a loss RFC 4180 cannot prevent: quoting

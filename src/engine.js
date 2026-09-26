@@ -734,6 +734,7 @@ const serializers = {
       lines.push(headers.map(h => csvCell(readField(row, h), oneColumn)).join(','));
     }
     reportCSVTypeLoss(data, headers, opts.warnings);
+    reportAbsentFields(data, headers, 'csv', opts.warnings);
     reportNonRecordRows(data, 'csv', opts.warnings);
     return lines.join('\n');
   },
@@ -807,6 +808,7 @@ const serializers = {
       output.push(`... ${data.length - maxRows} more rows`);
     }
     output.push(`(${data.length} rows, ${headers.length} columns)`);
+    reportAbsentFields(data, headers, 'table', opts.warnings);
     reportNonRecordRows(data, 'table', opts.warnings);
     return output.join('\n');
   }
@@ -1077,6 +1079,77 @@ function reportCSVTypeLoss(data, headers, warnings) {
  * and reads back as `{"0":1,"1":2}` — `reportXMLListShape`'s rule for a list of
  * one, in the same words: the members are kept and the list around them is not.
  */
+/**
+ * A field that is not in a row, and a field that is `null`, counted per column
+ * and named on stderr by the two formats that write a flat row of cells.
+ *
+ * The union of keys is what makes the table and the file square, and the price
+ * is a cell with nothing in it. RFC 4180 has no way to say *this cell holds no
+ * value*: the cell is empty, and the reader — this one and every other — reads
+ * an empty cell as an empty **string**. So `[{"a":1,"qty":3},{"a":4}]` wrote
+ * `qty` as a blank that came back as `""`, exit 0, empty stderr. An explicit
+ * `null` took the same road, which is the worse half: the value *was* there and
+ * a different value came back, so an import that trusts the file writes `''`
+ * into a column the user meant to leave empty.
+ *
+ * `sql` is not in this list, and that is the point of the word "flat": it
+ * writes `NULL`, which is SQL's own name for a value that is not there, and the
+ * file says it out loud. `json`, `yaml` and `xml` keep the difference because
+ * they can: an absent key is absent and a null is a key holding null. Only the
+ * two formats that cannot say it are named here.
+ *
+ * A row that is not a record is skipped, because `reportNonRecordRows` counts
+ * it already and has the better sentence for it.
+ */
+function reportAbsentFields(data, headers, format, warnings) {
+  if (!Array.isArray(warnings)) return;
+  const records = [];
+  // A column that only a row which is not a record put there — the positions of
+  // a list, which `Object.keys` spells `0`, `1` — is not a field of the records
+  // that lack it, and `reportNonRecordRows` already says the list became those
+  // columns. Counting them here would name the same loss twice, in two
+  // sentences, and the second one would blame a record for not having a field
+  // it was never going to have.
+  const recordKeys = new Set();
+  for (const row of data) {
+    if (!isYAMLPlainObject(row)) continue;
+    records.push(row);
+    for (const key of Object.keys(row)) recordKeys.add(key);
+  }
+  if (records.length === 0) return;
+  const missing = [];
+  const nulls = [];
+  for (const h of headers) {
+    if (!recordKeys.has(h)) continue;
+    let absent = 0;
+    let nullCount = 0;
+    for (const row of records) {
+      if (!hasField(row, h)) absent++;
+      else if (row[h] === null) nullCount++;
+    }
+    if (absent > 0) missing.push(`"${h}" (${absent} of ${records.length})`);
+    if (nullCount > 0) nulls.push(`"${h}" (${nullCount} of ${records.length})`);
+  }
+  if (missing.length === 0 && nulls.length === 0) return;
+  const readBack = format === 'csv'
+    ? 'Those cells are written empty and read back as an empty string, which is a value and not an absence.'
+    : 'Those cells are shown empty, and nothing on the screen says which of the two it was.';
+  const facts = [];
+  if (missing.length > 0) {
+    facts.push(
+      `${missing.length} of ${headers.length} columns ${missing.length === 1 ? 'is' : 'are'} not in every row: ${missing.join(', ')}`
+    );
+  }
+  if (nulls.length > 0) {
+    facts.push(
+      `${nulls.length} of ${headers.length} columns ${nulls.length === 1 ? 'holds' : 'hold'} an explicit null: ${nulls.join(', ')}`
+    );
+  }
+  warnings.push(
+    `${format}: ${facts.join('; ')}. ${readBack} sql writes NULL instead; json, yaml and xml keep the difference.`
+  );
+}
+
 function reportNonRecordRows(data, format, warnings) {
   if (!Array.isArray(warnings)) return;
   const shown = [];

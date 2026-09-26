@@ -2629,11 +2629,84 @@ test('the six-row file names three rows and says how many more there are', () =>
   assert.ok(r.warnings[0].includes('and 2 more'), r.warnings[0]);
 });
 
-test('a file of records is not warned about, in any format', () => {
+test('a file of records with the same fields is not warned about, in any format', () => {
   for (const format of ['csv', 'table', 'sql', 'json', 'yaml', 'xml']) {
-    const r = run('[{"a":1},{"a":2,"b":3}]', 'json', [], format);
+    const r = run('[{"a":1,"b":"x"},{"a":2,"b":"y"}]', 'json', [], format);
     assert.deepStrictEqual(r.warnings, [], `${format}: ${JSON.stringify(r.warnings)}`);
   }
+});
+
+test('a value that is there is not an absence: "", 0, false and null are told apart', () => {
+  // Only the two that are *not* a value in the cell may be named. `""` is the
+  // value, `0` and `false` are values that are easy to lose to a truthiness
+  // test, and `null` is a value the file cannot hold.
+  for (const value of ['""', '0', 'false', '[]', '{}']) {
+    const r = run(`[{"a":1,"b":${value}},{"a":2,"b":${value}}]`, 'json', [], 'csv');
+    assert.deepStrictEqual(r.warnings, [], `b=${value}: ${JSON.stringify(r.warnings)}`);
+  }
+  const nulled = run('[{"a":1,"b":null},{"a":2,"b":null}]', 'json', [], 'csv');
+  assert.strictEqual(nulled.warnings.length, 1, JSON.stringify(nulled.warnings));
+  assert.ok(/columns holds an explicit null/.test(nulled.warnings[0]), nulled.warnings[0]);
+});
+
+test('a field no row has is named, with the rows that lack it counted', () => {
+  const r = run('[{"a":1,"b":1},{"a":2,"b":2},{"a":3}]', 'json', [], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(r.warnings[0].includes('1 of 2 columns is not in every row'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('"b" (1 of 3)'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('read back as an empty string'), r.warnings[0]);
+  // The fact the user needs: the empty cell is a *value* on the way back in.
+  const back = run(r.text, 'csv', [], 'json');
+  assert.strictEqual(JSON.parse(back.text)[2].b, '');
+});
+
+test('a column a row is missing and a column holding null are both named', () => {
+  // `b` is null in one row and absent in the other, `c` is absent in one row.
+  // The two counts are separate facts and the message has to keep them apart:
+  // a column that is null everywhere is a different problem from one that is
+  // missing somewhere.
+  const r = run('[{"a":1,"b":null},{"a":2,"c":3}]', 'json', [], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(/are not in every row: "b" \(1 of 2\), "c" \(1 of 2\)/.test(r.warnings[0]), r.warnings[0]);
+  assert.ok(/columns holds an explicit null: "b" \(1 of 2\)/.test(r.warnings[0]), r.warnings[0]);
+});
+
+test('sql is not named, because the file says NULL out loud', () => {
+  const r = run('[{"a":1,"b":null},{"a":2}]', 'json', [], 'sql');
+  assert.deepStrictEqual(r.warnings, [], JSON.stringify(r.warnings));
+  assert.match(r.text, /\(1, NULL\),\n  \(2, NULL\);/);
+});
+
+test('json, yaml and xml keep the difference and are not warned about either', () => {
+  for (const format of ['json', 'yaml', 'xml']) {
+    const r = run('[{"a":1,"b":null},{"a":2}]', 'json', [], format);
+    assert.deepStrictEqual(r.warnings, [], `${format}: ${JSON.stringify(r.warnings)}`);
+  }
+  // Proof that the warning is not claiming a loss that did not happen: yaml
+  // writes the null and leaves the absent key out, and reading that back gives
+  // one row with `b` and one row without.
+  const yaml = run('[{"a":1,"b":null},{"a":2}]', 'json', [], 'yaml');
+  const back = run(yaml.text, 'yaml', [], 'json');
+  const rows = JSON.parse(back.text);
+  assert.ok('b' in rows[0], JSON.stringify(rows));
+  assert.ok(!('b' in rows[1]), JSON.stringify(rows));
+});
+
+test('the table names what the screen cannot show either', () => {
+  const r = run('[{"a":1,"b":null},{"a":2}]', 'json', [], 'table');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(r.warnings[0].startsWith('table:'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('shown empty'), r.warnings[0]);
+});
+
+test('a column only a list row contributed is not blamed on the records', () => {
+  // `Object.keys` on a list is its positions, so `0` and `1` are columns of the
+  // whole file. The records do not have them and never did; the list warning
+  // already says what they are, and a second sentence here would name the same
+  // loss as if a record had lost a field.
+  const r = run('[[1,2],{"a":9}]', 'json', [], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(r.warnings[0].includes('a list of 2 members'), r.warnings[0]);
 });
 
 test('a null row is named like every other row that is not a record', () => {

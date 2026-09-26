@@ -318,11 +318,19 @@ test('a row that is not a record is written, not thrown at', () => {
   }
 });
 
-test('records with different keys export every key to CSV', () => {
-  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o csv`, {
+test('records with different keys export every key to CSV, and the gap is named', () => {
+  // The column is written and the value is not there. The file is right and the
+  // cell comes back as `""`, so the run says which column and how many rows,
+  // because that is the one fact the file cannot carry.
+  const r = sh(`"${process.execPath}" "${cli}" -f json -o csv`, {
     input: '[{"id":1,"name":"Alice"},{"id":2,"name":"Bob","email":"bob@x.dk"}]'
-  }));
+  });
+  const out = expectOk(r, { allowStderr: true });
   assert.equal(out.trim(), 'id,name,email\n1,Alice,\n2,Bob,bob@x.dk');
+  assert.ok(/is not in every row: "email" \(1 of 2\)/.test(r.stderr), r.stderr);
+  // And the claim the warning makes is true: the cell is an empty string now.
+  const back = expectOk(sh(`"${process.execPath}" "${cli}" -f csv -o json`, { input: out }));
+  assert.equal(JSON.parse(back)[0].email, '');
 });
 
 test('a semicolon in a free-text field survives csv → csv → json', () => {
@@ -580,9 +588,13 @@ test('the documented defaults still work: unique without by, head and tail witho
   assert.equal(tail.trim().split('\n').length - 1, 4);
 });
 
-test('add still turns a per-record failure into null', () => {
-  const out = expectOk(sh(`transmute test/fixtures/people.csv -p '[{"op":"add","fields":{"x":"item.nope.deep"}}]' -o csv`));
+test('add still turns a per-record failure into null, and csv says so', () => {
+  // `item.nope.deep` is undefined, so every row gets a null. A null is a value
+  // csv cannot write, and the file would say `""` instead without a word.
+  const r = sh(`transmute test/fixtures/people.csv -p '[{"op":"add","fields":{"x":"item.nope.deep"}}]' -o csv`);
+  const out = expectOk(r, { allowStderr: true });
   assert.equal(out.includes(','), true, 'the null field must be in the output');
+  assert.ok(/columns holds an explicit null: "x"/.test(r.stderr), r.stderr);
 });
 
 console.log('── each option is given once ──');

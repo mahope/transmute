@@ -1123,6 +1123,37 @@ INSERT INTO "my_table" ("name") VALUES
 flat three refuse, and `json` is the route out of everything this tool refuses to
 write.
 
+### A field a row does not have: `csv` and `table`
+
+The header is the union of every row's fields, so a record that lacks one gets a
+cell — and RFC 4180 has no way to say *this cell holds no value*. The cell is
+empty, and a reader, this one included, reads an empty cell as an empty
+**string**. An explicit `null` takes the same road, which is the worse half of
+it: the value was there and a different value comes back, so an import that
+trusts the file stores `''` in a column you meant to leave empty.
+
+`sql` is not named, and that is the difference between the two answers: it
+writes `NULL`, which is SQL's own word for a value that is not there, so the
+file says it out loud. `json`, `yaml` and `xml` keep the difference too — an
+absent key is absent and a null is a key holding null.
+
+```bash
+printf '[{"id":1,"navn":"Ada","email":null},{"id":2,"navn":"Bo"},{"id":3,"email":"c@x.dk"}]' | transmute --output csv
+```
+
+```text
+Warning: csv: 2 of 3 columns are not in every row: "navn" (1 of 3), "email" (1 of 3); 1 of 3 columns holds an explicit null: "email" (1 of 3). Those cells are written empty and read back as an empty string, which is a value and not an absence. sql writes NULL instead; json, yaml and xml keep the difference.
+id,navn,email
+1,Ada,
+2,Bo,
+3,,c@x.dk
+```
+
+A value that *is* there is never named: `""`, `0`, `false` and `{}` are values,
+and only a missing key and a `null` are the two the file cannot hold. A column
+only a list row contributed — `Object.keys` on a list is its positions — is not
+missing from the records either, and is named by the warning above instead.
+
 ## Operations
 
 A pipeline is a JSON array. Steps run left to right, each one seeing the output
@@ -1608,6 +1639,7 @@ transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","keep"
 ```
 
 ```text
+Warning: table: 1 of 6 columns is not in every row: "tier" (1 of 3). Those cells are shown empty, and nothing on the screen says which of the two it was. sql writes NULL instead; json, yaml and xml keep the difference.
 +----+----------+--------+---------------------------------+-------+--------+
 | id | customer | status | items                           | total | tier   |
 +----+----------+--------+---------------------------------+-------+--------+
