@@ -1638,5 +1638,25 @@ test('the preview says what the other writers have said since the warning existe
   }
 });
 
+test('a list position that is a record field is named on the real binary', () => {
+  // The engine test says the sentence; this says the sentence reaches a user.
+  // The old one claimed the list became "columns named after its positions",
+  // which is not what the file below is: `0` is a field the record has, and the
+  // list's member lands in it beside the record's own value.
+  const dir = mkdtempSync(join(tmpdir(), 't57-'));
+  try {
+    const path = join(dir, 'collide.json');
+    writeFileSync(path, '[{"0":"rec","a":1},["list"]]');
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, '0,a\nrec,1\nlist,\n');
+    assert.match(r.stderr, /row 2 is a list of 1 member/, r.stderr);
+    assert.match(r.stderr, /Column "0" is a record's own field and a position in a list/, r.stderr);
+    assert.doesNotMatch(r.stderr, /columns named after its positions/, r.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

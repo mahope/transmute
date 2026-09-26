@@ -1072,6 +1072,7 @@ be written in, and each format did the only thing it could:
 | `["Alice",{"a":1}]` | an empty cell | `NULL` | kept as it is |
 | `["Alice","Bob"]` | no header, so no rows | no columns, so no statement | kept as it is |
 | `[[1,2],{"a":9}]` | columns `0` and `1` | columns `0` and `1` | kept as a list |
+| `[{"0":"rec"},["list"]]` | column `0`, holding both values | column `0`, holding both values | kept as it is |
 
 All of it exit 0. The last row is the only one that keeps its values, because a
 list's positions *are* field names — so it reads back as `{"0":1,"1":2}`, the
@@ -1100,6 +1101,24 @@ and a few rows that are not must not cost the other 10 000. It is not an invente
 column either: a row with no fields has no name to hang a column on, and a
 `value` column is a convention every other reader would have to know to see the
 data at all.
+
+The last row of the table is the one case where that reasoning runs into a
+record. A record's field names are strings, so a file can hold `{"0":"rec"}`
+*and* a list — and then column `0` is not named after a position, it is a field
+the record has, and the list's first member is written into it next to the
+record's own value. Two rows in one cell, one value on the way back, so the
+warning names the column and says the values meet there:
+
+```bash
+printf '[{"0":"rec","a":1},["list"]]' | transmute --output csv
+```
+
+```
+Warning: csv: 1 of 2 rows is not a record (row 2 is a list of 1 member); it was written as an empty cell, so a value that is not a record is not in the file. Column "0" is a record's own field and a position in a list, so the two values are written into the same column and read back as one. json, yaml and xml keep it.
+0,a
+rec,1
+list,
+```
 
 `sql` had a second answer to the same question, and it was the worst of the lot.
 It asked whether the **first** row was an object, so a file that began with a

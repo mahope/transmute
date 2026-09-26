@@ -375,7 +375,7 @@ test('docs/cli.md shows the warning and the file for a row that is not a record'
     const warning = output.body.startsWith('Warning: ');
     examples.push({ command: blocks[i].body, output: warning ? output.body.slice(output.body.indexOf('\n') + 1) : output.body, warning: warning ? output.body.slice(0, output.body.indexOf('\n')) : '' });
   }
-  assert.equal(examples.length, 2, `the section should show two runnable examples, found ${examples.length}`);
+  assert.equal(examples.length, 3, `the section should show three runnable examples, found ${examples.length}`);
 
   for (const { command, output, warning } of examples) {
     const result = spawnSync('sh', ['-c', command.trim().replace(/(^|\s)transmute /g, '$1' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(join(root, 'src', 'cli.js')) + ' ')], {

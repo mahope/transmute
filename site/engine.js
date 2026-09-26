@@ -1175,9 +1175,7 @@ function reportNonRecordRows(data, format, warnings) {
     : (noColumns
       ? 'there are no records to make a header from, so the file holds no rows and every value in it is gone'
       : `${one ? 'it was written as an empty cell' : 'they were written as empty cells'}`);
-  const listNote = data.some(row => Array.isArray(row))
-    ? ' A list was written as columns named after its positions, so it reads back as an object.'
-    : '';
+  const listNote = describeListColumns(data);
   const lost = noColumns ? '' : ', so a value that is not a record is not in the file';
   warnings.push(
     `${format}: ${count} of ${data.length} rows ${one ? 'is not a record' : 'are not records'} ` +
@@ -1192,6 +1190,47 @@ function describeRowKind(row) {
   if (row === undefined) return 'is undefined';
   if (typeof row === 'string') return `is a string (${JSON.stringify(row.length > 24 ? row.slice(0, 24) + '…' : row)})`;
   return `is a ${typeof row} (${String(row)})`;
+}
+
+/**
+ * What a list row's positions did to the header, which is not always the same
+ * thing.
+ *
+ * `Object.keys` on a list is its positions, so `[1,2]` named the columns `0` and
+ * `1` for the whole file: the members are kept, the list around them is gone,
+ * and that is the sentence below — T45's rule for a list of one, in the same
+ * words, because the file did exactly that.
+ *
+ * It stops being true the moment a record has a field of the same name, and a
+ * JSON array can hold records whose keys are strings, so `{"0":"rec"}` beside
+ * `["list"]` is a file a user can have. The column then was *not* named after a
+ * position: it is a field the record has, and the list's first member is written
+ * into it next to the record's own value. Two rows' values in one cell, and one
+ * value on the way back — so the sentence names the columns and says the values
+ * meet there. The old sentence did not, and it was the same mistake T50 found in
+ * a warning about its own output: a line that describes a file the writer did not
+ * write.
+ */
+function describeListColumns(data) {
+  const recordKeys = new Set();
+  const listPositions = new Set();
+  for (const row of data) {
+    if (Array.isArray(row)) {
+      for (let i = 0; i < row.length; i++) listPositions.add(String(i));
+    } else if (isYAMLPlainObject(row)) {
+      for (const key of Object.keys(row)) recordKeys.add(key);
+    }
+  }
+  if (listPositions.size === 0) return '';
+  const shared = [...listPositions].filter(position => recordKeys.has(position));
+  if (shared.length === 0) {
+    return ' A list was written as columns named after its positions, so it reads back as an object.';
+  }
+  const one = shared.length === 1;
+  const names = shared.map(position => `"${position}"`).join(one ? '' : ' and ');
+  return ` Column${one ? '' : 's'} ${names} ${one ? 'is' : 'are'} a record's own field ` +
+    'and a position in a list, so the two values are written into the same column ' +
+    'and read back as one.';
 }
 
 /**

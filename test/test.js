@@ -2612,6 +2612,38 @@ test('a list row says it became columns, because its members do survive', () => 
   assert.ok(r.warnings[0].includes('columns named after its positions'), r.warnings[0]);
 });
 
+test('a list position that is a record field says the two are one column', () => {
+  // The old sentence was a claim about the file, and in this shape it is false:
+  // column `0` is not *named after a position*, it is a field a record has, and
+  // the list's first member is written into it. Two rows' values in one cell,
+  // read back as one — so the warning has to name the column and say that.
+  const r = run('[{"0":"rec","a":1},["list"]]', 'json', [], 'csv');
+  assert.strictEqual(r.text, '0,a\nrec,1\nlist,', r.text);
+  const w = r.warnings[0];
+  assert.ok(w.includes('row 2 is a list of 1 member'), w);
+  assert.ok(w.includes('"0"'), `the warning does not name the column: ${w}`);
+  assert.ok(w.includes('written into the same column'), `the warning does not say they are one column: ${w}`);
+  assert.ok(!w.includes('columns named after its positions'),
+    `the warning still claims the list became columns named after its positions: ${w}`);
+  // Every flat writer is named, because all three make the same one column.
+  for (const format of ['table', 'sql']) {
+    const other = run('[{"0":"rec","a":1},["list"]]', 'json', [], format);
+    assert.ok(other.warnings[0].includes('written into the same column'), `${format}: ${other.warnings[0]}`);
+  }
+  // A record with no numeric field is the case the old sentence was written for,
+  // and it must not pick up the new one.
+  const clean = run('[{"a":1},["x","y"]]', 'json', [], 'csv');
+  assert.ok(clean.warnings[0].includes('columns named after its positions'), clean.warnings[0]);
+  assert.ok(!clean.warnings[0].includes('written into the same column'), clean.warnings[0]);
+});
+
+test('a list position shared with two records names the column once', () => {
+  const r = run('[{"0":"a","1":"b"},["x","y"],{"0":"c","1":"d"}]', 'json', [], 'csv');
+  const w = r.warnings[0];
+  assert.ok(w.includes('"0" and "1"'), `the warning does not name both columns: ${w}`);
+  assert.strictEqual((w.match(/written into the same column/g) || []).length, 1, w);
+});
+
 test('records and scalars mixed say which rows, once, and never more', () => {
   const r = run('[1,{"a":1},{"a":2},"x",{"a":3}]', 'json', [], 'csv');
   assert.strictEqual(r.warnings.length, 1);
