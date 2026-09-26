@@ -367,6 +367,32 @@ function escapeSQLString(val) {
 }
 
 /**
+ * A SQL identifier — a column name or a table name — is quoted with `"`, and a
+ * `"` inside it is escaped by *doubling* it, the same way `''` doubles inside a
+ * string literal. The value side already did this (`escapeSQLString`), and the
+ * identifier side did not: it wrapped the name in quotes and hoped.
+ *
+ * Measured against sqlite3, which is the reader these files are written for:
+ * a column named `a"b` produced `("a"b")` and `Parse error near "b": syntax
+ * error`; `--table 'my"table'` produced the same for the table name. Transmute
+ * exited 0 with empty stderr both times, so the user got a file that cannot be
+ * imported and no word about it. `--table` is a flag the user types, so this is
+ * one stray quote away from an ordinary command.
+ *
+ * The `;` and `--` around it are *not* a hole, and were measured rather than
+ * assumed: inside a quoted identifier they are ordinary characters, and a value
+ * containing `'; DROP TABLE secret; --` is already doubled to `''` and imports
+ * with both tables intact. A `"` also cannot be used to inject — it closes the
+ * identifier early, but then the column list's `(` is never closed, so the
+ * statement stops parsing and the rest of the line is rejected. It is not
+ * injection, it is a file that does not import. That is the smaller claim, so
+ * this is the smaller fix.
+ */
+function sqlIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
+/**
  * A value written into a flat cell — one CSV field, one SQL literal, one
  * column of the `table` preview. All three need the same answer, and they
  * disagreed: `table` and `docs/cli.md` wrote an object as compact JSON while
@@ -434,6 +460,69 @@ function padDisplay(str, width) {
   return w >= width ? str : str + ' '.repeat(width - w);
 }
 
+/**
+ * A table cell is a fixed-width box drawn with `|`, `+` and `-`, and read by a
+ * terminal — so it is the one cell in this tool where the *spelling* of a
+ * character decides what the reader sees. Measured on the real binary, four
+ * ordinary characters in ordinary data each broke that box at exit 0 with empty
+ * stderr:
+ *
+ *   "line1\nline2"  the row became two physical lines and the frame lost a
+ *                   border, so one record read as two rows
+ *   "a\rb"          a carriage return returns the cursor to column 0, so `b`
+ *                   overwrote the row's own left border and the value before it
+ *   "a\tb"          `displayWidth` counts a tab as one column, but a terminal
+ *                   advances to the next tab stop — up to eight — so the right
+ *                   border sat where the text did not end
+ *   "x|y"           a bare `|` reads as the box's own column separator, so the
+ *                   cell looked like two columns
+ *
+ * and one more that is not about geometry: a cell whose whole content is `+---+`
+ * poses as a border line, which is the only way *data* in this format can
+ * impersonate the frame around it.
+ *
+ * The three that move the cursor or break the line have no literal spelling —
+ * a terminal cannot show a newline inside a line — so they are written as the
+ * escape the reader already knows (`\n`, `\r`, `\t`, and `\xNN` for any other
+ * C0 control character or DEL, which are invisible rather than merely wide). A
+ * `|` is escaped as `\|`, which is what a Markdown table does with the same
+ * character for the same reason. `+` and `-` are *not* escaped per character,
+ * because that would turn every date into `2026\-09\-26`; only a cell made
+ * entirely of them has its first character escaped, which is the one shape that
+ * can be mistaken for a border.
+ *
+ * The cost is deliberate and worth naming: a nested value is written as compact
+ * JSON by `cellValue`, so `["x|y"]` becomes `["x\|y"]`, which is no longer
+ * parseable JSON. That trade is right here and wrong everywhere else, because a
+ * table cell is never read by a machine — there is no `table` reader — while the
+ * frame it sits in is the one thing the reader relies on. `json` is the format
+ * for a value a program has to read back, and it escapes nothing by choice.
+ *
+ * Both the header and the rows go through this one function, and the width is
+ * measured on its *output*, so the padding cannot disagree with what is
+ * printed — the same reason `displayWidth` and `cellValue` exist at all.
+ */
+const TABLE_CONTROL_ESCAPES = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+
+function tableCell(val) {
+  const text = cellValue(val);
+  let out = '';
+  for (const ch of text) {
+    const named = TABLE_CONTROL_ESCAPES[ch];
+    if (named !== undefined) { out += named; continue; }
+    const cp = ch.codePointAt(0);
+    out += (cp < 0x20 || cp === 0x7f)
+      ? '\\x' + cp.toString(16).padStart(2, '0')
+      : ch;
+  }
+  out = out.replace(/\|/g, '\\|');
+  // A cell that is nothing but the frame's own characters is the one value that
+  // can be read as a border line, and a leading `\` is something no line of the
+  // frame can start with.
+  if (/^[-+]{3,}$/.test(text.trim())) out = '\\' + out;
+  return out;
+}
+
 function sqlValue(val) {
   // `null` and `undefined` are the absence of a value, so they become NULL.
   // An empty string is a value: it becomes ''. Writing it as NULL silently
@@ -496,8 +585,8 @@ const serializers = {
     assertWritable(data, 'sql');
     if (data.length === 0 || typeof data[0] !== 'object') return '';
     const cols = [...new Set(data.flatMap(r => Object.keys(r)))];
-    const colList = cols.map(c => `"${c}"`).join(', ');
-    const lines = [`-- Generated by Transmute`, `INSERT INTO "${tableName}" (${colList}) VALUES`];
+    const colList = cols.map(c => sqlIdentifier(c)).join(', ');
+    const lines = [`-- Generated by Transmute`, `INSERT INTO ${sqlIdentifier(tableName)} (${colList}) VALUES`];
     const rows = data.map(row =>
       `  (${cols.map(c => sqlValue(row[c])).join(', ')})`
     );
@@ -576,11 +665,17 @@ const serializers = {
     // widest cell in a file the table never shows.
     const maxRows = 20;
     const shown = data.length > maxRows ? data.slice(0, maxRows) : data;
+    // The cells are escaped first, so a column is as wide as what is *printed*.
+    // Measuring the raw value and printing the escaped one pads by the length
+    // of the escape instead of the width of the cell, which is the bug this
+    // same loop already had once, for CJK width.
+    const cells = shown.map(row => headers.map(h => tableCell(row[h])));
+    const headCells = headers.map(tableCell);
     // Calculate column widths
-    const colWidths = headers.map(h => {
-      let width = displayWidth(h);
-      for (const row of shown) {
-        const w = displayWidth(cellValue(row[h]));
+    const colWidths = headers.map((h, i) => {
+      let width = displayWidth(headCells[i]);
+      for (const row of cells) {
+        const w = displayWidth(row[i]);
         if (w > width) width = w;
       }
       return width;
@@ -588,11 +683,11 @@ const serializers = {
     // Build separator
     const sep = '+-' + colWidths.map(w => '-'.repeat(w)).join('-+-') + '-+';
     // Header
-    const header = '| ' + headers.map((h, i) => padDisplay(h, colWidths[i])).join(' | ') + ' |';
+    const header = '| ' + headCells.map((c, i) => padDisplay(c, colWidths[i])).join(' | ') + ' |';
     const headerSep = '+-' + colWidths.map(w => '-'.repeat(w)).join('-+-') + '-+';
     // Rows (first 20)
-    const rows = shown.map(row =>
-      '| ' + headers.map((h, i) => padDisplay(cellValue(row[h]), colWidths[i])).join(' | ') + ' |'
+    const rows = cells.map(row =>
+      '| ' + row.map((c, i) => padDisplay(c, colWidths[i])).join(' | ') + ' |'
     );
     let output = [headerSep, header, headerSep, ...rows, headerSep];
     if (data.length > maxRows) {

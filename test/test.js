@@ -246,8 +246,149 @@ test('a table of 150,000 records is a table, not a stack overflow', () => {
   assert.equal(r.includes('... 149980 more rows'), true, r.slice(-200));
 });
 
-test('csv and table column order is the first-seen order of every key', () => {
-  const records = [{ b: 1 }, { a: 2, c: 3 }];
+test('a table cell that cannot be shown in a box is written as an escape', () => {
+  // Every one of these broke the frame at exit 0 with empty stderr. A newline
+  // made one record print as two rows; a carriage return sent the cursor back
+  // to column 0 and overwrote the row's own left border; a tab is one column to
+  // `displayWidth` but up to eight to a terminal, so the right border sat where
+  // the text did not end; and a bare `|` reads as the box's own separator.
+  // Each input paired with the cell it must be written as. Pairing them keeps a
+  // passing assertion tied to the value that produced it.
+  const hostile = [
+    ['line1\nline2', 'line1\\nline2'],
+    ['a\rb', 'a\\rb'],
+    ['a\tb', 'a\\tb'],
+    ['x|y', 'x\\|y'],
+    ['a|b\nc|d', 'a\\|b\\nc\\|d'],
+    ['b\x07c', 'b\\x07c'],
+    ['\r\n', '\\r\\n'],
+    ['Møller\n日本', 'Møller\\n日本']
+  ];
+  for (const [input, expected] of hostile) {
+    const r = serializers.table([{ a: input }]);
+    const widths = r.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'));
+    // The frame survives: every rule and every row is the same width.
+    assert.equal(new Set(widths.map(displayWidthOfLine)).size, 1, `${JSON.stringify(input)}\n${r}`);
+    // Three rules, a header, one row: the value stayed on the line it started on.
+    assert.equal(widths.length, 5, `${JSON.stringify(input)}\n${r}`);
+    // And the cell carries the value, spelled so a reader can see what happened.
+    assert.ok(r.includes(`| ${expected} `), `${JSON.stringify(input)} -> ${expected}\n${r}`);
+  }
+  // A NUL is a stronger case than an escape: it is refused outright, because
+  // `assertWritable` has no way to keep it at all. It never reaches the cell,
+  // so the escape rule is not the last line of defence here — it is the first.
+  assert.throws(() => serializers.table([{ a: 'sl\0et' }]), /cannot write U\+0000/);
+});
+
+test('a table writes the escape it means, not a different character', () => {
+  // The point of an escape is that it can be read back. Assert the spelling,
+  // because `\n` and a literal newline look identical in a diff and are not.
+  assert.match(serializers.table([{ a: 'x\ny' }]), /\| x\\ny +\|/);
+  assert.match(serializers.table([{ a: 'x\ry' }]), /\| x\\ry +\|/);
+  assert.match(serializers.table([{ a: 'x\ty' }]), /\| x\\ty +\|/);
+  assert.match(serializers.table([{ a: 'x|y' }]), /\| x\\\|y +\|/);
+  // A control character with no short name is spelled by its byte value.
+  assert.match(serializers.table([{ a: 'x\x07y' }]), /\| x\\x07y +\|/);
+  // Ordinary text is untouched, including the characters the box is drawn with.
+  assert.match(serializers.table([{ a: 'Møller' }]), /\| Møller +\|/);
+  assert.match(serializers.table([{ a: '2026-09-26' }]), /\| 2026-09-26 +\|/);
+  assert.match(serializers.table([{ a: 'a-b' }]), /\| a-b +\|/);
+});
+
+test('a table cell made only of frame characters cannot pose as a border', () => {
+  // The one way data in this format can impersonate the frame around it.
+  const r = serializers.table([{ a: '+---+' }]);
+  // The cell is the row line without its `| ` and ` |`, and it no longer opens
+  // with the character a border line opens with.
+  const cell = r.split('\n')[3].slice(2, -2);
+  assert.equal(cell.length, 6, r);
+  assert.ok(!'+-|'.includes(cell[0]), `cellen begynder med ${JSON.stringify(cell[0])}: ${r}`);
+  // Escaping the first character is enough, and it is a character no line of
+  // the frame can start with: every line that opens with a `+` is made of the
+  // frame's characters and nothing else.
+  for (const line of r.split('\n')) {
+    if (line.startsWith('+')) assert.match(line, /^[+-]+$/, line);
+  }
+  // The frame is still a frame: five lines, all the same width.
+  const widths = r.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'));
+  assert.equal(new Set(widths.map(displayWidthOfLine)).size, 1, r);
+  assert.equal(widths.length, 5, r);
+  // It takes the whole cell being frame-shaped. A date is not, and neither is
+  // a `+` in the middle of a value, and neither is a run too short to read as
+  // a border.
+  for (const ordinary of ['2026-09-26', 'a + b', '++', '-', 'a-b', 'x - y', 'a-+-b']) {
+    assert.doesNotMatch(serializers.table([{ a: ordinary }]), /\\/, ordinary);
+  }
+});
+
+test('a table measures a column after escaping it, not before', () => {
+  // The bug this loop already had once, for CJK width: measure the raw value,
+  // print the escaped one, and the padding counts the length of the escape
+  // instead of the width of the cell. `p\nq` is two characters wide and four
+  // characters printed, so measuring the raw value leaves every line below the
+  // frame two columns short of the rule above it.
+  const r = serializers.table([{ a: 'p\nq' }, { a: 'x' }]);
+  const widths = r.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'));
+  assert.equal(new Set(widths.map(displayWidthOfLine)).size, 1, r);
+  // The escaped cell decides the width, so the column is exactly as wide as the
+  // four characters that are printed.
+  assert.equal(r.split('\n')[0], '+------+', r);
+  // The other direction too: a value that only gets shorter cannot leave the
+  // column padded to the width of something that is no longer printed.
+  const narrow = serializers.table([{ a: 'x|y' }, { a: '12345678' }]);
+  assert.equal(
+    new Set(narrow.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'))
+      .map(displayWidthOfLine)).size, 1, narrow
+  );
+});
+
+test('a table column name is escaped and measured like a value', () => {
+  // A newline in a column name split the header across two lines, so every row
+  // below it was misaligned — the header is the worst cell in the table,
+  // because everything else lines up to it.
+  for (const name of ['a\nb', 'a|b', 'a\tb', 'a\rb', '+---+']) {
+    const r = serializers.table([{ [name]: 1 }]);
+    const widths = r.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'));
+    assert.equal(new Set(widths.map(displayWidthOfLine)).size, 1, `${JSON.stringify(name)}\n${r}`);
+    assert.equal(widths.length, 5, `${JSON.stringify(name)}\n${r}`);
+  }
+});
+
+test('a sql identifier is escaped, not only quoted', () => {
+  // A `"` inside a double-quoted identifier is escaped by doubling it, the same
+  // way `''` doubles inside a string literal. Measured against sqlite3: a
+  // column named `a"b` gave `("a"b")` and `Parse error near "b"`, and Transmute
+  // exited 0 with empty stderr, so the user got a file that cannot be imported.
+  assert.strictEqual(
+    serializers.sql([{ 'a"b': 1 }]),
+    '-- Generated by Transmute\nINSERT INTO "my_table" ("a""b") VALUES\n  (1);'
+  );
+  // The table name goes through the same helper — and `--table` is a flag the
+  // user types, so this one is a single stray quote away from a normal command.
+  assert.strictEqual(
+    serializers.sql([{ a: 1 }], 'my"table'),
+    '-- Generated by Transmute\nINSERT INTO "my""table" ("a") VALUES\n  (1);'
+  );
+  // An ordinary name is unchanged, and `;` and `--` were already safe inside a
+  // quoted identifier: they are ordinary characters there, not a statement end.
+  assert.match(serializers.sql([{ a: 1 }]), /INSERT INTO "my_table" \("a"\) VALUES/);
+  assert.match(serializers.sql([{ 'a;DROP TABLE t;--': 1 }]), /\("a;DROP TABLE t;--"\)/);
+  assert.match(serializers.sql([{ 'a--b': 1 }]), /\("a--b"\)/);
+});
+
+test('a sql value keeps a newline, because sql literals may hold one', () => {
+  // Measured, and deliberately not changed. SQL has no `\n` escape inside a
+  // string literal — it would store a literal backslash and an n — so
+  // "fixing" the line break would replace the value with a different one. The
+  // file is valid: sqlite3 imports it and the value comes back with its
+  // newline, which is the whole point of the measurement.
+  const sql = serializers.sql([{ a: 1, b: 'line1\nline2' }]);
+  assert.match(sql, /\(1, 'line1\nline2'\);/);
+  // The value side's own doubling is untouched by the identifier change.
+  assert.match(serializers.sql([{ a: "x'; DROP TABLE secret; --" }]), /'x''; DROP TABLE secret; --'/);
+});
+
+test('csv and table column order is the first-seen order of every key', () => {  const records = [{ b: 1 }, { a: 2, c: 3 }];
   assert.strictEqual(serializers.csv(records), 'b,a,c\n1,,\n,2,3');
   assert.strictEqual(serializers.sql(records).includes('"b", "a", "c"'), true);
 });

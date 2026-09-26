@@ -274,6 +274,43 @@ test('docs/cli.md quotes the real error for input that is not UTF-8', () => {
   assert.ok(row.includes('not UTF-8'), 'the exit 3 row in docs/cli.md does not mention it');
 });
 
+test('docs/cli.md shows the real table cell and sql identifier output', () => {
+  // The same lock as the silences above, for a silence of the other kind: these
+  // values *can* be written, they were just written in a way that misrepresented
+  // them. A paragraph and a table of claims are worth nothing if the four
+  // commands above them do not print what the page says, so the page is run.
+  // The blocks are taken from the page itself, which is also what stops the
+  // examples and the engine from drifting apart.
+  const section = (() => {
+    const from = docs.indexOf('### A cell that cannot be shown');
+    const to = docs.indexOf('### XML output: the characters XML itself cannot hold');
+    assert.ok(from !== -1 && to > from, 'docs/cli.md has lost the section on a cell that cannot be shown');
+    return docs.slice(from, to);
+  })();
+
+  // Every `bash` block in the section, and the plain output block that follows
+  // it. The page spells an escape as `\\n` inside a shell command and as `\n`
+  // inside the output, so the comparison is on the printed text, not on source.
+  const runs = [...section.matchAll(/```bash\n([\s\S]*?)```\n\n```(?:sql)?\n([\s\S]*?)```/g)];
+  assert.equal(runs.length, 4, `the section should show four runnable examples, found ${runs.length}`);
+
+  for (const [, command, expected] of runs) {
+    const result = spawnSync('sh', ['-c', command.replace(/(^|\s)transmute /g, '$1' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(join(root, 'src', 'cli.js')) + ' ')], {
+      cwd: root,
+      encoding: 'utf-8',
+    });
+    assert.equal(result.status, 0, `the documented command failed: ${command.trim()}\n${result.stderr}`);
+    assert.equal(result.stdout, expected, `docs/cli.md does not show what this prints:\n$ ${command.trim()}`);
+  }
+
+  // The one claim that is a measurement rather than an example: a newline in a
+  // SQL value is left alone, because a SQL literal may hold one. The example
+  // above shows the value across two lines, which is the whole claim — so the
+  // page would have to change if someone "fixed" it into an escape.
+  assert.ok(section.includes("is left alone"), 'docs/cli.md must say the SQL newline is deliberate');
+  assert.ok(section.includes("imports the file"), 'docs/cli.md must say the SQL value still imports');
+});
+
 test('docs/cli.md quotes the real error for a value XML 1.0 cannot write', () => {
   // The eleventh silence, and the same shape as the tenth: a control character
   // in a value was written into the file raw, so the file declared XML 1.0 and

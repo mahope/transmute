@@ -625,6 +625,62 @@ test('the three options are only refused where they cannot apply', () => {
   }
 });
 
+test('a value that cannot be shown in a table cell does not break the frame', () => {
+  // The preview is the first thing every user sees, and `table` is the format
+  // that draws a box. Measured on the real binary before the fix: a newline in
+  // a value printed one record as two rows, a carriage return overwrote the
+  // row's own left border, a tab put the right border where the text did not
+  // end, and a `|` read as an extra column — all at exit 0 with empty stderr.
+  const out = expectOk(sh(`transmute -o table`, {
+    input: JSON.stringify([
+      { a: 'line1\nline2', b: 'x|y' },
+      { a: 'a\rb', b: 'p\tq' }
+    ])
+  }));
+  const lines = out.split('\n');
+  // Three rules, a header, two rows: each record stayed one line, so the table
+  // still has the shape of a table.
+  const frame = lines.filter(l => l.startsWith('|') || l.startsWith('+-'));
+  assert.equal(frame.length, 6, out);
+  // Every one of them is the same width, counted in screen columns.
+  const width = s => [...s].reduce(
+    (n, ch) => n + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/.test(ch) ? 2 : 1), 0);
+  assert.equal(new Set(frame.map(width)).size, 1, out);
+  // The values are still there, spelled so a reader can see what happened.
+  assert.ok(out.includes('line1\\nline2'), out);
+  assert.ok(out.includes('a\\rb'), out);
+  assert.ok(out.includes('p\\tq'), out);
+  assert.ok(out.includes('x\\|y'), out);
+  // And a column name is a cell too — the worst one, because every row lines up
+  // to the header.
+  const headed = expectOk(sh(`transmute -o table`, {
+    input: JSON.stringify([{ 'a\nb': 1, 'c|d': 2 }])
+  }));
+  const headedFrame = headed.split('\n').filter(l => l.startsWith('|') || l.startsWith('+-'));
+  assert.equal(new Set(headedFrame.map(width)).size, 1, headed);
+  assert.equal(headedFrame.length, 5, headed);
+  assert.ok(headed.includes('a\\nb'), headed);
+  assert.ok(headed.includes('c\\|d'), headed);
+});
+
+test('a sql identifier with a quote in it still imports', () => {
+  // `--table` is a flag the user types, so one stray quote is an ordinary
+  // mistake. It used to produce a file sqlite3 refuses to parse, and Transmute
+  // exited 0 with empty stderr, so nothing said the import would fail. The
+  // doubling is the same one the value side already did for `'`.
+  const out = expectOk(sh(`transmute -o sql --table 'ta"bel'`, {
+    input: JSON.stringify([{ 'c"1': 'x' }])
+  }));
+  assert.ok(out.includes('INSERT INTO "ta""bel" ("c""1")'), out);
+  // A plain name is untouched.
+  const plain = expectOk(sh(`transmute test/fixtures/people.csv -o sql --table people`));
+  assert.ok(plain.includes('INSERT INTO "people"'), plain);
+  // A newline in a value is left alone on purpose: SQL literals may hold one,
+  // and the file that has it imports with the value intact.
+  const kept = expectOk(sh(`transmute -o sql`, { input: JSON.stringify([{ a: 'l1\nl2' }]) }));
+  assert.ok(kept.includes("'l1\nl2'"), kept);
+});
+
 test('an option that cannot apply is refused before the input is read', () => {
   // The two relations that need no data are answered from the flags alone, so a
   // typo is a usage error even when the file is missing. The delimiter needs the
