@@ -14,6 +14,7 @@
  * Mads' decision and not the loop's.
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +93,29 @@ function collect(dir, extensions) {
 
 function label(text) {
   return relative(root, text).split('\\').join('/');
+}
+
+/**
+ * The files that are both committed and covered by a .gitignore rule, which is
+ * the one state neither tool wants: ignored files are meant to stay out of the
+ * index, and indexed files are meant to be readable. `git ls-files -c -i` asks
+ * git for the intersection directly rather than asking this script to reimplement
+ * gitignore. Returns null outside a repository, where there is no index to read.
+ */
+function committedAndIgnored() {
+  try {
+    return execFileSync('git', ['-C', root, 'ls-files', '-c', '-i', '--exclude-standard'], {
+      encoding: 'utf8',
+      // git writes its own complaint to stderr when there is no repository, and
+      // `npm test` runs this script in a temporary directory that has none.
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return null;
+  }
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -402,6 +426,32 @@ check('the desktop app is not built or published from this repository', () => {
     assert(!entry.includes('desktop') && !entry.includes('tauri'), `package.json would ship ${entry}; paid code does not belong in the public package`);
   }
   assert(published.includes('src'), 'the CLI is the published package');
+});
+
+check('no committed file is one the repository ignores', () => {
+  // The measurement that wrote this rule, on this repository on 2026-09-27
+  // before it existed: seven tools/__pycache__/*.cpython-314.pyc files had been
+  // committed on 8/9, a month before .gitignore learned to ignore __pycache__/.
+  // A .gitignore rule only governs files git is not already tracking, so adding
+  // it changed nothing for them and they stayed. Nothing can load them — the
+  // magic number in all seven is 3627 (CPython 3.14), while the interpreter this
+  // repository installs is 3571 (3.13) — and four of the seven are two days
+  // older than the .py file they were compiled from, so they are not even a
+  // stale copy of the code next to them.
+  const committed = committedAndIgnored();
+  if (committed !== null) {
+    assert(
+      committed.length === 0,
+      `${committed.length} file(s) are committed although .gitignore excludes them: ${committed.join(', ')}. ` +
+        'gitignore does not untrack a file that is already in the index, and an unreadable build artefact that follows every diff of its directory is worse than no file — run `git rm --cached` on them.',
+    );
+  }
+  const gitignore = existsSync(join(root, '.gitignore')) ? readFileSync(join(root, '.gitignore'), 'utf8') : null;
+  assert(gitignore !== null, '.gitignore is missing, so build output and Python bytecode can be committed by the next `git add -A`');
+  assert(
+    /^__pycache__\/$/m.test(gitignore),
+    '.gitignore does not ignore __pycache__/, so every run of the Python site tools leaves bytecode behind that the next `git add -A` can pick up',
+  );
 });
 
 check('the checked-in lockfile is present, honest and reproducible', () => {

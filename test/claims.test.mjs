@@ -20,7 +20,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Everything tools/verify_contract.mjs reads, and nothing it does not. */
 const COPIED = [
-  'package.json', 'package-lock.json', 'README.md', 'LICENSE', '.nvmrc',
+  'package.json', 'package-lock.json', 'README.md', 'LICENSE', '.nvmrc', '.gitignore',
   'src', 'docs', 'site', 'scripts',
   'tools/verify_contract.mjs', 'tools/product-contract.json', 'tools/site-requirements.txt',
   'tools/site_chrome.py', 'tools/make_og.py',
@@ -211,6 +211,56 @@ test('deleting the derivation is refused, so the rule is not satisfied by absenc
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1);
   assert.match(output, /tools\/make_og\.py must read package\.json/);
+});
+
+test('dropping the bytecode rule from .gitignore is refused', () => {
+  // The other half of the rule. Without this line, untracking the seven committed
+  // .pyc files would be a one-time cleanup that the next `git add -A` undoes —
+  // which is exactly how those seven got committed in the first place: they were
+  // added on 8/9, and .gitignore only learned to ignore __pycache__/ a month later.
+  const dir = repo();
+  const file = join(dir, '.gitignore');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('__pycache__/\n', ''));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /\.gitignore does not ignore __pycache__\//);
+});
+
+test('a committed bytecode file the repository ignores is named and refused', () => {
+  // Measured on this repository on 2026-09-27, before the rule existed: seven
+  // tools/__pycache__/*.cpython-314.pyc were committed, carried a magic number no
+  // interpreter here can load, and four of them were older than the .py beside
+  // them. A working-tree walk cannot see this — the files are on disk either way
+  // — so the check has to read the index, which means a real repository here.
+  const git = (dir, ...args) =>
+    execFileSync('git', ['-C', dir, ...args], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid',
+        GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid',
+      },
+    }).trim();
+
+  const dir = repo();
+  git(dir, 'init', '--quiet', '--initial-branch=main');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '--quiet', '-m', 'Udgiv v0.3.0');
+
+  // The positive control: the same repository, before anything is forced in.
+  assert.equal(contractCheck(dir).code, 0, 'a repository with nothing ignored in the index must pass');
+
+  mkdirSync(join(dir, 'tools', '__pycache__'), { recursive: true });
+  const pyc = join(dir, 'tools', '__pycache__', 'seo_check.cpython-314.pyc');
+  writeFileSync(pyc, Buffer.from([0xcb, 0x0e, 0x0d, 0x0a, 0, 0, 0, 0]));
+  // -f, because that is how the seven arrived: added before the ignore rule existed.
+  git(dir, 'add', '-f', 'tools/__pycache__/seo_check.cpython-314.pyc');
+  git(dir, 'commit', '--quiet', '-m', 'Tilføj bytecode');
+
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a committed .pyc the .gitignore excludes must not pass');
+  assert.match(output, /1 file\(s\) are committed although \.gitignore excludes them: tools\/__pycache__\/seo_check\.cpython-314\.pyc/);
+  assert.match(output, /git rm --cached/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
