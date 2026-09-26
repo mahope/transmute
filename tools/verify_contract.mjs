@@ -361,6 +361,61 @@ check('no workflow pins an action major GitHub has deprecated', () => {
   }
 });
 
+check('every workflow runs on one pinned, non-deprecated runner image', () => {
+  // ubuntu-latest is a floating label. GitHub moves it to Ubuntu 26.04 in a
+  // rollout starting 19 October 2026 and finishing 19 November 2026
+  // (actions/runner-images#14748), and the Ubuntu 22.04 images are already in
+  // deprecation with brownouts scheduled from March 2027 (#14254). A workflow
+  // on the floating label therefore changes operating system with no commit in
+  // this repository and no rollback point, so every job pins its image here.
+  const newest = 'ubuntu-26.04';
+
+  // Playwright carries a hardcoded apt-package list per Ubuntu major in
+  // packages/playwright-core/src/server/registry/nativeDeps.ts. Version
+  // 1.60.0 lists 18.04, 20.04, 22.04 and 24.04 only. hostPlatform.ts maps
+  // Ubuntu 26.04 to "ubuntu26.04-x64" with isOfficiallySupportedPlatform
+  // false, and installDependenciesLinux then prints "Cannot install
+  // dependencies for ubuntu26.04-x64" and returns without failing. So
+  // TRANSMUTE_PLAYWRIGHT_DEPS=1 would quietly install nothing and the site
+  // gate would run Chromium against unverified system libraries. A workflow
+  // that installs Playwright must therefore stay on an image the locked
+  // Playwright knows. Add a version's Ubuntu list only after that gate has
+  // actually run green on the image.
+  const playwrightUbuntu = {
+    '1.60.0': ['20.04', '22.04', '24.04'],
+  };
+
+  const requirements = readFileSync(join(root, 'tools', 'site-requirements.txt'), 'utf8');
+  const locked = requirements.match(/^playwright==([^\s\\]+)/m);
+  assert(locked, 'tools/site-requirements.txt does not pin playwright, so the site gate has no known runner requirement');
+  const supported = playwrightUbuntu[locked[1]];
+  assert(supported, `playwright is pinned to ${locked[1]}, which has no entry in the ubuntu list this check knows. Verify the site gate on a newer image, then add ${locked[1]}'s supported Ubuntu versions here.`);
+
+  const workflows = join(root, '.github', 'workflows');
+  let jobs = 0;
+  for (const entry of readdirSync(workflows, { withFileTypes: true })) {
+    if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) {
+      continue;
+    }
+    const source = readFileSync(join(workflows, entry.name), 'utf8');
+    const usesPlaywright = /\bcheck:site\b/.test(source);
+    for (const [, image] of source.matchAll(/^[ \t]*runs-on:[ \t]*['"]?([\w.-]+)/gm)) {
+      jobs += 1;
+      const version = image.match(/^ubuntu-(\d+\.\d+)$/);
+      assert(version, `${entry.name} runs on "${image}"; pin an explicit image (${newest}) so an image migration shows up as a commit instead of appearing overnight`);
+      if (usesPlaywright) {
+        assert(
+          supported.includes(version[1]),
+          `${entry.name} runs ${source.includes('check:site') ? 'the site gate' : 'Playwright'} on ${image}, but playwright ${locked[1]} has no dependency list for Ubuntu ${version[1]} — it would install no system libraries at all and fail later inside Chromium. Use one of ubuntu-${supported.join(', ubuntu-')}.`,
+        );
+      } else {
+        assert(image === newest, `${entry.name} runs on ${image}; it does not install Playwright, so pin the newest image (${newest}) and move to a new one on purpose.`);
+      }
+    }
+  }
+  assert(jobs > 0, 'no workflow declares runs-on, so the runner pin is asserted against nothing');
+});
+
 check('no workflow inherits implicit dependency caching from setup-node', () => {
   // setup-node v5 started caching on its own as soon as package.json declared a
   // package manager, and v6 widened the trigger: either devEngines.packageManager

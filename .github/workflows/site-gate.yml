@@ -36,7 +36,16 @@ permissions:
 
 jobs:
   site:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04, not the newest image and not ubuntu-latest, on purpose.
+    # Playwright 1.60.0 ships a hardcoded apt-package list per Ubuntu major and
+    # has no entry for 26.04; on 26.04 `playwright install-deps` prints "Cannot
+    # install dependencies for ubuntu26.04-x64" and exits 0, so the
+    # TRANSMUTE_PLAYWRIGHT_DEPS step below would install nothing and this gate
+    # would run Chromium against unverified system libraries. Move this to
+    # ubuntu-26.04 in the same commit that bumps Playwright far enough and
+    # shows this gate green there; tools/verify_contract.mjs enforces both
+    # halves of that rule.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
