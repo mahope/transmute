@@ -692,5 +692,113 @@ t('join prefix only helps when the prefixed name is itself taken', () => {
   if (r.data[0].tier !== 'basic') throw new Error(JSON.stringify(r.data));
 });
 
+// ─── Keys that are not legal XML names, and keys that lie to the reader ───
+
+t('a key that is not a legal XML name travels in a name attribute', () => {
+  const r = runSQL('[{"first name":"Ada","2fa":true,"a-b":1,"normal":"ok"}]', 'json', [], 'xml');
+  if (r.error) throw new Error(r.error);
+  // `first name` and `2fa` may not be tag names, so they must not be written as
+  // one: the file used to be rejected by every XML parser, this one included.
+  if (/<first name>|<2fa>/.test(r.text)) throw new Error('wrote a key as a tag name: ' + r.text);
+  if (!r.text.includes('<field name="first name">Ada</field>')) throw new Error(r.text);
+  if (!r.text.includes('<a-b>1</a-b>')) throw new Error('a legal name must stay a tag: ' + r.text);
+});
+
+t('JSON → XML → JSON keeps keys that are not legal XML names', () => {
+  const input = '[{"first name":"Ada","2fa":true,"a/b":"x","":"empty","deep":{"3rd place":"podium"}}]';
+  const out = runSQL(input, 'json', [], 'xml');
+  if (out.error) throw new Error(out.error);
+  const back = runSQL(out.text, 'xml', [], 'json');
+  if (back.error) throw new Error('the tool cannot read its own output: ' + back.error);
+  // The round trip is the whole claim. It used to come back as `[{}]`: every
+  // field gone, exit 0, no warning. `2fa` reads back as a string because XML
+  // carries no types — the same thing `<age>30</age>` has always done.
+  assert.deepStrictEqual(back.data, [{
+    'first name': 'Ada', '2fa': 'true', 'a/b': 'x', '': 'empty',
+    deep: { '3rd place': 'podium' }
+  }]);
+});
+
+t('an attribute name is a name too, so `@2fa` is not written as an attribute', () => {
+  const input = '[{"@2fa":"x","@":"y","@id":"ok"}]';
+  const out = runSQL(input, 'json', [], 'xml');
+  if (out.error) throw new Error(out.error);
+  if (/="[xy]"/.test(out.text.replace(/ name="[^"]*"/g, ''))) throw new Error('empty or illegal attribute name: ' + out.text);
+  if (!out.text.includes('<item id="ok">')) throw new Error('a legal attribute must stay an attribute: ' + out.text);
+  const back = runSQL(out.text, 'xml', [], 'json');
+  assert.deepStrictEqual(back.data, JSON.parse(input));
+});
+
+t('XML output is well-formed for a whole fixture of awkward keys', () => {
+  const input = JSON.stringify([
+    { 'first name': 'Ada', '2fa': 'yes', '@': 'x', 'a-b': '1', 'a.b': '2', 'ns:ok': '3', 'ünïcode': '4' },
+    { 'first name': 'Bob', '2fa': 'no', '@': 'y', 'a-b': '5', 'a.b': '6', 'ns:ok': '7', 'ünïcode': '8' }
+  ]);
+  const out = runSQL(input, 'json', [], 'xml');
+  if (out.error) throw new Error(out.error);
+  // No tag or attribute name outside the XML Name production. `<?xml` and
+  // `<!--` are declarations and comments, not names.
+  const tags = [...out.text.matchAll(/<\/?([^\s/>!?][^\s/>]*)/g)].map(m => m[1]);
+  for (const tag of tags) {
+    if (!/^[A-Za-z_][A-Za-z0-9._-]*(?::[A-Za-z_][A-Za-z0-9._-]*)?$/.test(tag)) {
+      throw new Error(`not a legal XML name: ${tag} in\n${out.text}`);
+    }
+  }
+  assert.deepStrictEqual(runSQL(out.text, 'xml', [], 'json').data, JSON.parse(input));
+});
+
+t('an unreadable XML document fails instead of parsing to nothing', () => {
+  // Half a document used to be `[]` or `[{}]` with exit 0, so a file the reader
+  // did not understand looked like a file with no records.
+  for (const [doc, why] of [
+    ['<data><item><a>1</a>', 'root is never closed'],
+    ['not xml at all', 'no root element'],
+    ['<data><item><a>1</a></b></data>', 'closing tag does not match']
+  ]) {
+    const r = runSQL(doc, 'xml', [], 'json');
+    if (!r.error) throw new Error(`${why}: parsed silently to ${JSON.stringify(r.data)}`);
+  }
+});
+
+t('a legal XML document still parses', () => {
+  const r = runSQL(readFileSync(join(here, 'users.xml'), 'utf-8'), 'xml', [], 'json');
+  if (r.error) throw new Error(r.error);
+  if (r.data.length !== 3) throw new Error(JSON.stringify(r.data));
+});
+
+t('unique without `by` compares records, not key order', () => {
+  const input = '[{"a":1,"b":2},{"b":2,"a":1},{"a":1,"b":2},{"a":2,"b":1}]';
+  const r = runSQL(input, 'json', [{ op: 'unique' }], 'json');
+  // The second record is the first one with its keys in another order. Both
+  // were kept before, so the deduplication did nothing on input that did not
+  // come out of this tool.
+  assert.strictEqual(r.data.length, 2);
+  assert.deepStrictEqual(Object.keys(r.data[0]), ['a', 'b']);
+});
+
+t('unique without `by` compares nested records by content', () => {
+  const input = '[{"id":1,"tags":{"x":1,"y":2}},{"id":1,"tags":{"y":2,"x":1}},{"id":2,"tags":{}}]';
+  const r = runSQL(input, 'json', [{ op: 'unique' }], 'json');
+  assert.strictEqual(r.data.length, 2);
+});
+
+t('group survives a group key that is also an Object property', () => {
+  // `__proto__` and `constructor` are strings any JSON file may hold. As object
+  // property names they reached `Object.prototype`, and the run died with
+  // "groups[key].push is not a function".
+  for (const key of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+    const r = runSQL(`[{"k":"${key}","n":1},{"k":"${key}","n":2},{"k":"other","n":3}]`, 'json', [{ op: 'group', by: 'k' }], 'json');
+    if (r.error) throw new Error(`${key}: ${r.error}`);
+    assert.strictEqual(r.data.length, 2, key);
+    assert.strictEqual(r.data.find(g => g.key === key).count, 2, key);
+  }
+});
+
+t('group keeps grouping the ordinary values the same way', () => {
+  const r = runSQL('[{"role":"admin"},{"role":"admin"},{"role":null},{"role":"user"}]', 'json', [{ op: 'group', by: 'role' }], 'json');
+  assert.strictEqual(r.data.length, 3);
+  assert.deepStrictEqual(r.data.map(g => [g.key, g.count]), [['admin', 2], ['(null)', 1], ['user', 1]]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-26
+Opdateret: 2026-09-26 (T21)
 
 
 ## Mission
@@ -9,7 +9,7 @@ Dette offentlige repo leverer den gratis, lokale og open source CLI til at trans
 
 ## Iterationsstatus
 
-Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
+Desktopkoden blev flyttet til `mahope/transmute-desktop` i commit `16cb82a`. T1's RustSec-afhængigheder findes derfor ikke længere i dette offentlige repo, og den uafsluttede `ceo/rustsec-baseline` skal ikke merges hertil. T1 er lukket som overført uden en ny audit af en afhængighedsgraf, der ikke længere findes. T5 er færdig med commit `28a06dd`, T6 med `d555f65`, T7 med `0534cb8`, T8 med `86a236d` (slice 1 i `414eb8b`) og T9 med `f2956f5`. T13 er færdig med commit `4d7fc35`, T14 med `5f64894` og T15 med `2fb9631`, alle tre på `ceo/deploy-freshness-check` og **ingen af dem mergeret**, fordi `DEPLOY-MISSING` står. T8 og T9 er lukket. T12 er færdig med `6516fdb` (dansk support-side), T13 med `4d7fc35`, T14 med `5f64894`, T15 med `296f40e`/`bf61cce`-bunken, T16 med `bf61cce`, T17 med `8be3643`, T18 med `a31aba8` og T19 med `538aa2e` — de ni ligger u mergerede på `ceo/xml-attributes` og dens afkom, fordi diffene rører `site/engine.js` og `DEPLOY-MISSING` står. T20 er færdig med commit `dbeae3c` på `ceo/nested-cells` og har samme grund. T21 er færdig på `ceo/xml-safe-keys` og har samme grund. Se Deploy og `❓ Til Mads` punkt 1. T10 er færdig med ni slices: 1 i `14dce0b`, 2 i `599ca4f`, 3 i `a4114ca`, 4 i `8a161fb`, 5 in `bb19768`, 6 i `c446d37`, 7 i `c1bee9f`, 8 i `9b7ddf5` og 9 i `427b113` + `fda739c` (runner-images). Dependabot-PR #4 er lukket med vilje.
 
 **Deploy-status ⚠️ (genverificeret 2026-09-26 ca. 04:0x CEST med `npm run check:deploy`):** uændret. Live er `3d90812`, 5 site-commit i drift, `/support/index.html` utilgængelig. Se `❓ Til Mads` punkt 1.
 
@@ -516,6 +516,32 @@ Dependabot-PR #4 ("Bump actions/checkout from 4 to 7") er **lukket, ikke merged*
 - `.nvmrc`, `engines` og CI-matrix peger på dokumenterede, testede versioner.
 - Hver major-version har én selvstændig commit, så præcis rollback kan ske.
 
+### 21. [x] Skriv nøglenavn, der ikke er lovlige XML-navne, så bruger ikke slår sig ihjel
+
+**Status:** FÆRDIG på `ceo/xml-safe-keys` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
+**Mislykkede forsøg:** 0/2
+**Metode:** T20-metoden fortsat, nu på den sidste flade den efterlod: XML-outputtet, `unique` uden `by` og `group`. Alle fund er reproduceret på den gamle kode.
+
+**Fund 1 — XML-udgangen var ikke gyldig XML, og runde turen ødelagde data.** `writeXMLElement` skrev JSON-nøglen som tag-navn uden at tjekke det. En nøgle er fri tekst, et tag-navn er ikke: `first name`, `2fa`, `a/b` og den tomme nøgle er alle ting et CSV-header eller et API-svar indeholder. Resultatet var `<first name>Ada</first name>`, som **ingen** XML-parser læser — heller ikke Transmute selv, som læste sin egen output tilbage som `[{}]`: alle felter væk, exit 0, ingen advarsel. Det er den værste fundklasse i heleMigrationen, fordi den både skriver en ubrugelig fil og sletter indholdet.
+
+Samme fejlklasse lå i attributterne: `@`-præfikset launder ikke navnereglen, så `@2fa` skrev `<item 2fa="x">` og en nøgle på blot `@` skrev `<item ="x">`.
+
+**Fund 2 — `unique` uden `by` deduplikerede ikke.** Nøglen var `JSON.stringify(item)`, som er afhængig af rækkefølgen: `{"a":1,"b":2}` og `{"b":2,"a":1}` er samme record, men serialiserer forskelligt, så begge blev beholdt. Det var lige præcis det input, hvor rækkefølgen varierer — altså alt der ikke kommer ud af dette værktøj.
+
+**Fund 3 — `group` døde på en gyldig gruppenøgle.** `groups` var et almindeligt objekt, så værdien `__proto__` nåede `Object.prototype` og kørselen døde med `groups[key].push is not a function`. Samme for `constructor` og `toString`.
+
+**Rettelse:**
+
+- `writeXMLElement` tjekker nøglen mod den `XML_NAME`, læseren allerede bruger, så der er én definition af et navn. En ulovlig nøgle skrives som `<field name="nøglen">`, hvilket er lovligt overalt, og `readFieldName` læser den tilbage som nøgle igen. Runden turen er derfor tabsfri igen: `first name`, `2fa`, `a/b`, `""` og en nøgle med et dybt nøglenavn overlever alle, verificeret med `assert.deepStrictEqual` mod inputtet.
+- En `@`-nøgle, hvis navn er ulovligt, skrives som child-element gennem samme markør i stedet for som attribut, så `@2fa` og `@` ikke længere skriver en ulovlig attribut. T18's `@`-attribut holdes uændret for `@id`.
+- **Læseren taler nu.** En rod der ikke kan læses, et rod-element der aldrig lukkes og et element den ikke kan navngive kaster i stedet for at returnere `[]` eller `{}`. Det var den del, der gjorde fund 1 tavst: en fremtidig navnefejl kan ikke længere slette data stille. XML-filen `bevises` desuden af en regex over alle tag- og attributnavne i testen, ikke af et eksempel.
+- `stableKey(val)` sorterer nøglerne på vejen ned, så `unique` uden `by` sammenligner efter indhold. Arrays og tal, `null` og `undefined` er skilt ad.
+- `group` bruger en `Map`, der har ingen arvede nøgler, så enhver værdi er bare en værdi. Testen dækker `__proto__`, `constructor`, `toString` og `hasOwnProperty`.
+
+**Verifikation:** `npm test` grøn med 99 engine-, 76 CLI-, 69 conformance-, 6 README-tests, 39 workflow-regressioner, 4 workflow-kontrakter og 173 kontratkontroller. `npm pack --dry-run` uændret på 5 filer. `npm run check:site` grøn. **Tænder:** de otte nye tests er kørt mod den gamle `src/engine.js` og fejlede alle otte med det konkrete symptom; efter rettelsen er de grønne. Ingen snapshot ændrede sig, så rettelsen er en no-op for velformet data.
+
+**Bevidst ikke rettet:** `sort` på tal-strenge (`"10"`, `"100"`, `"9"` → `10, 100, 9`) er ikke en fejl her. Det er leksikografisk sortering, som er præcis hvad `jq`'s `sort_by` gør på strenge, og CSV-coercion gør tal til tal alligevel. Det er en *dokumenteret* afvejning, ikke en tavs korruption, så det skal ikke rettes uden at vide hvilken semantik brugerne vil have.
+
 ### 20. [x] Skriv nestede værdier som JSON i flade celler, og gør `join --prefix` brugbar
 
 **Status:** FÆRDIG som `dbeae3c` på `ceo/nested-cells` — **ligger på branch, ikke
@@ -881,7 +907,7 @@ En række med flere felter end overskriften tabte de ekstra værdier helt. `id,n
 
 **En fejl undervejs, værd at huske:** min første CLI-test hævede `!once.includes('&amp;amp;')` på `entities.xml`. Den fejlede korrekt — men **testens påstand var falsk, ikke koden**: fixture'en indeholder med vilje `&amp;amp;`, fordi filen siger `&amp;` (et escaped ampersand), som efter ét afkodningsniveau er en *bogstavelig* `&amp;`, som writeren så korrekt quoter tilbage til `&amp;amp;`. Egenskaben der holder er idempotens (`twice === once`), ikke strengt fravær. Samme fejl som i T14 slice 1: en skarp påstand på en testfil man selv har lavet, fanger implementationen i stedet for at beskrive den.
 
-### 17. [ ] Ret tabet af nested YAML på input
+### 17. [x] Ret tabet af nested YAML på input
 
 **Status:** FÆRDIG på `ceo/nested-yaml` — **ligger på branch, ikke mergeret**, fordi diffen rører `site/engine.js` og `DEPLOY-MISSING` står. Se Deploy.
 **Mislykkede forsøg:** 0/2

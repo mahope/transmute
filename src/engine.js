@@ -54,12 +54,16 @@ const parsers = {
       .trim();
 
     text = strip(text);
+    if (!text) return [];
     const rootMatch = text.match(new RegExp(`^<(${XML_NAME})((?:[^>"']|"[^"]*"|'[^']*')*)>`));
-    if (!rootMatch) return [];
+    // A document with content and no readable root is not an empty result set.
+    // Returning `[]` here made a file the reader did not understand look like a
+    // file with no records, and every transformation after it succeeded.
+    if (!rootMatch) throw new Error('No XML root element found');
     const rootTag = rootMatch[1];
     const openLen = rootMatch[0].length;
     const closeIdx = text.lastIndexOf('</' + rootTag + '>');
-    if (closeIdx === -1) return [];
+    if (closeIdx === -1) throw new Error(`XML root element <${rootTag}> is never closed`);
     const inner = text.slice(openLen, closeIdx);
 
     // Attributes are fields of their own, prefixed with `@` the way xmltodict,
@@ -99,13 +103,17 @@ const parsers = {
           if (!rest.trim()) break;
           const offset = pos + (rest.length - rest.trimStart().length);
           const child = parseElement(content, offset);
-          if (!child) break;
+          // Stopping here used to leave the element holding only its attributes,
+          // so one tag the reader could not name turned the whole record into
+          // `{}` — printed, exit 0, no warning. Half a document is not a result.
+          if (!child) throw new Error(`Could not read the XML element at "${content.slice(offset, offset + 40).trim()}"`);
           const [{ tag: childTag, value: childValue }, next] = child;
-          if (childTag in value) {
-            if (!Array.isArray(value[childTag])) value[childTag] = [value[childTag]];
-            value[childTag].push(childValue);
+          const [childKey, unwrapped] = readFieldName(childTag, childValue);
+          if (childKey in value) {
+            if (!Array.isArray(value[childKey])) value[childKey] = [value[childKey]];
+            value[childKey].push(unwrapped);
           } else {
-            value[childTag] = childValue;
+            value[childKey] = unwrapped;
           }
           pos = next;
         }
@@ -123,7 +131,7 @@ const parsers = {
       if (!rest.trim()) break;
       const offset = pos + (rest.length - rest.trimStart().length);
       const parsed = parseElement(inner, offset);
-      if (!parsed) break;
+      if (!parsed) throw new Error(`Could not read the XML element at "${inner.slice(offset, offset + 40).trim()}"`);
       const [{ tag, value }, next] = parsed;
       rows.push({ [tag]: value });
       pos = next;
@@ -188,6 +196,24 @@ function sqlValue(val) {
   // postal code 0074 is not 74 — so those are quoted.
   if (/^-?(0|[1-9]\d*)(\.\d+)?$/.test(s) && s.length < 16) return s;
   return `'${escapeSQLString(s)}'`;
+}
+
+/**
+ * `unique` without `by` compares whole records, and two records that hold the
+ * same data in a different key order are the same record. `JSON.stringify`
+ * does not agree: `{"a":1,"b":2}` and `{"b":2,"a":1}` serialise differently, so
+ * the deduplication kept both and the operation quietly did nothing on exactly
+ * the input where key order varies — anything that did not come out of this
+ * tool. Keys are sorted on the way down, so nested objects compare by content
+ * too, and a key's value is compared before the next key's.
+ */
+function stableKey(val) {
+  if (val === undefined) return 'undefined';
+  if (val === null || typeof val !== 'object') return JSON.stringify(val);
+  if (Array.isArray(val)) return '[' + val.map(stableKey).join(',') + ']';
+  return '{' + Object.keys(val).sort()
+    .map(k => JSON.stringify(k) + ':' + stableKey(val[k]))
+    .join(',') + '}';
 }
 
 /**
@@ -327,7 +353,7 @@ const operations = {
     const by = params.by;
     const seen = new Set();
     return data.filter(item => {
-      const key = by ? item[by] : JSON.stringify(item);
+      const key = by ? item[by] : stableKey(item);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -335,17 +361,17 @@ const operations = {
   },
   group: (data, params) => {
     const by = params.by;
-    const groups = {};
+    // The group key used to be a property on a plain object, so a value of
+    // `__proto__` — a string any JSON file may hold — reached `Object.prototype`
+    // and the run died with "push is not a function" instead of reporting the
+    // group. A Map has no inherited keys, so every value stays a value.
+    const groups = new Map();
     for (const item of data) {
       const key = item[by] ?? '(null)';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(item);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
     }
-    return Object.entries(groups).map(([key, items]) => ({
-      key,
-      count: items.length,
-      items
-    }));
+    return [...groups].map(([key, items]) => ({ key, count: items.length, items }));
   },
   count: (data) => {
     return [{ count: data.length }];
@@ -1139,17 +1165,49 @@ function writeYAMLEntry(prefix, key, value, indent) {
  * went through `xml → json → xml` keeps its attributes instead of having them
  * demoted to child elements.
  */
-function writeXMLElement(tag, value, depth) {
+/**
+ * The other half of the writer's key handling: `<field name="first name">`
+ * goes back to being the key `first name`, so a document that left as JSON
+ * reads back as the records it started as. A `<field>` without a `name`
+ * attribute is an ordinary element and is left alone.
+ */
+function readFieldName(tag, value) {
+  if (tag !== 'field') return [tag, value];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [tag, value];
+  const carried = value['@name'];
+  if (typeof carried !== 'string') return [tag, value];
+  const { '@name': _carried, ...rest } = value;
+  if (Object.keys(rest).length === 0) return [carried, ''];
+  if (Object.keys(rest).length === 1 && '#text' in rest) return [carried, rest['#text']];
+  return [carried, rest];
+}
+
+function writeXMLElement(tag, value, depth, key = null) {
   const pad = '  '.repeat(depth);
-  if (typeof value !== 'object' || value === null) return `${pad}<${tag}>${escapeXML(String(value))}</${tag}>`;
+  // A JSON key is free text; an XML tag name is not. `first name`, `2fa`,
+  // `a/b` and an empty key are all things a CSV header row or an API response
+  // contains, and writing one as a tag name produced a file that no XML parser
+  // accepts — this one included, which then read its own output back as a
+  // record with no fields at all. A key that is not a legal name travels in a
+  // `name` attribute on `<field>` instead, which is legal everywhere, and
+  // `readFieldName` puts it back on the way in.
+  const carried = key !== null && !new RegExp(`^${XML_NAME}$`).test(key);
+  const name = carried ? ` name="${escapeXML(key)}"` : '';
+  const safeTag = carried ? 'field' : tag;
+  if (typeof value !== 'object' || value === null) return `${pad}<${safeTag}${name}>${escapeXML(String(value))}</${safeTag}>`;
   const entries = Object.entries(value);
-  const attrs = entries.filter(([k]) => k.startsWith('@')).map(([k, v]) => ` ${k.slice(1)}="${escapeXML(String(v ?? ''))}"`).join('');
-  const rest = entries.filter(([k]) => !k.startsWith('@'));
-  if (rest.length === 0) return `${pad}<${tag}${attrs}/>`;
+  // An attribute name follows the same rules as a tag name, and the `@` prefix
+  // does not launder them: `@2fa` and a bare `@` wrote `<item 2fa="x">` and
+  // `<item ="x">`, which no parser reads. Those go out as child elements through
+  // the same `field` marker, so the record still comes back with the key it had.
+  const asAttribute = ([k]) => k.startsWith('@') && new RegExp(`^${XML_NAME}$`).test(k.slice(1));
+  const attrs = entries.filter(asAttribute).map(([k, v]) => ` ${k.slice(1)}="${escapeXML(String(v ?? ''))}"`).join('');
+  const rest = entries.filter(([k]) => !asAttribute([k]));
+  if (rest.length === 0) return `${pad}<${safeTag}${name}${attrs}/>`;
   const inner = rest.map(([k, v]) =>
-    k === '#text' ? `${pad}  ${escapeXML(String(v ?? ''))}` : writeXMLElement(k, v, depth + 1)
+    k === '#text' ? `${pad}  ${escapeXML(String(v ?? ''))}` : writeXMLElement(k, v, depth + 1, k)
   ).join('\n');
-  return `${pad}<${tag}${attrs}>\n${inner}\n${pad}</${tag}>`;
+  return `${pad}<${safeTag}${name}${attrs}>\n${inner}\n${pad}</${safeTag}>`;
 }
 
 function escapeXML(val) {
