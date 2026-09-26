@@ -568,5 +568,32 @@ for (const testCase of CASES) {
   });
 }
 
+test('docs/cli.md quotes the real warning for a CSV column that loses its type', () => {
+  // The warning is the whole answer to a loss RFC 4180 cannot prevent: quoting
+  // does not stop the reader typing a cell, so the only thing left is to say
+  // which columns. A message the docs paraphrase is a message nobody can match
+  // against a real run, so the docs quote this one verbatim — and the counts in
+  // it come from the run below, not from the prose.
+  const result = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'json', '-o', 'csv'], {
+    cwd: root,
+    encoding: 'utf-8',
+    input: '[{"id":"1","navn":"Ada","ok":"true"},{"id":"2","navn":"Bob","ok":"false"}]',
+  });
+  assert.equal(result.status, 0, `a type warning must not fail the run, got exit ${result.status}`);
+  const message = result.stderr.trim().replace(/^Warning: /, '');
+  assert.ok(message.includes('"id" (2)'), message);
+  assert.ok(!message.includes('"navn"'), `a column of plain text must not be named: ${message}`);
+  assert.equal(docs.includes(message), true, `docs/cli.md does not quote the warning verbatim: ${message}`);
+  // The escape route the message names has to exist, or the advice is a lie.
+  for (const out of ['json', 'yaml', 'xml']) {
+    const kept = spawnSync(process.execPath, [join(root, 'src', 'cli.js'), '-f', 'json', '-o', out], {
+      cwd: root, encoding: 'utf-8', input: '[{"id":"1"}]',
+    });
+    assert.equal(kept.status, 0, `${out} should carry the string: ${kept.stderr}`);
+    assert.equal(kept.stderr, '', `${out} must not warn about a column it keeps: ${kept.stderr}`);
+    assert.equal(kept.stdout.includes('1'), true, `${out} lost the value: ${kept.stdout}`);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

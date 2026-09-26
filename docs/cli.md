@@ -177,6 +177,54 @@ export:
   (exit 0) and one warning on stderr says which rows and which columns are
   involved. A row with *fewer* fields is padded with `''`, as before.
 
+Writing CSV is where quoting earns its keep, because the reader trims and
+types whatever it reads back. Three rules, all measured on the real binary:
+
+- A cell whose bare form would not read back the same is **quoted**. That is a
+  value with a space at either end, and — in a one-column export — an empty or
+  blank value:
+
+  ```bash
+  printf '[{"a":"  x  ","b":"y"}]' | transmute --output csv
+  ```
+
+  ```csv
+  a,b
+  "  x  ",y
+  ```
+
+- A **blank line between records is still skipped**, as RFC 4180 allows, but a
+  quoted empty field is a record and not a blank line. A one-column export
+  therefore keeps its empty rows: `[{"v":"a"},{"v":""},{"v":"c"}]` writes
+  `v` / `a` / `""` / `c` and reads back as three records. It used to write a
+  blank line, and the reader ate it — three records in, two out, exit 0 and
+  nothing on stderr.
+
+- A string that **looks like a number or a boolean** is written as text and
+  read back as a number or a boolean. Quoting cannot prevent this — the reader
+  takes the quotes off before it converts, so `"true"` comes back as `true` —
+  and RFC 4180 has no way to say *this cell is a string*. So the run says which
+  columns, and still writes the file (exit 0):
+
+  ```bash
+  printf '[{"id":"1","navn":"Ada","ok":"true"},{"id":"2","navn":"Bob","ok":"false"}]' | transmute --output csv
+  ```
+
+  ```csv
+  id,navn,ok
+  1,Ada,true
+  2,Bob,false
+  ```
+
+  ```
+  Warning: csv: 2 of 3 columns hold values that are written as text and read back as a number or a boolean: "id" (2), "ok" (2). Quoting does not prevent it; json, yaml and xml keep the strings.
+  ```
+
+  Only columns that actually held a string are named — `navn` is not, because a
+  name is a name to a reader too — and a value that keeps its type (`0074`,
+  `12:30`, `1e5`, `yes`) is never named. Use `--output json`, `yaml` or `xml`
+  when the strings have to survive as strings.
+
 Detection uses the same rule as the reader, so a file the reader can read is
 never refused for want of a `--format` flag. That matters most on **stdin**,
 where there is no file extension to go by — a Danish Excel export, a TSV and a
