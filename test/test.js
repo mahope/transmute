@@ -162,6 +162,69 @@ test('a well-formed CSV produces no warnings', () => {
   assert.deepStrictEqual(r.warnings, []);
 });
 
+test('a header that names a column twice says so, because one column is gone', () => {
+  const r = run('a,a,b\n1,2,3', 'csv', [], 'json');
+  // The last of the two wins, exactly as it always did — the point is that the
+  // value in the first one is gone and nothing said so.
+  assert.deepStrictEqual(r.data[0], { a: 2, b: 3 });
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('"a" twice'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('columns 1 and 2'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('only the last of them is kept'), r.warnings[0]);
+});
+
+test('a repeated header warns once, not once per row', () => {
+  const r = run('a,a\n1,2\n5,6\n9,9', 'csv', [], 'json');
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('2 of 3 rows'), r.warnings[0]);
+});
+
+test('a repeated header whose two columns always agree stays silent', () => {
+  // The rule JSON and YAML already use: an identical repeat says the same thing
+  // twice, and a warning for it would be noise on correct input. Nothing is
+  // lost here either — both columns hold the same value in every row.
+  assert.deepStrictEqual(run('a,a\n1,1\n2,2', 'csv', [], 'json').warnings, []);
+  // And the two are compared as the reader read them: `1` and `1.0` are the
+  // same number, so this says the same thing twice as well.
+  assert.deepStrictEqual(run('a,a\n1,1.0', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('a,a\ntrue,true', 'csv', [], 'json').warnings, []);
+});
+
+test('a repeated header is found after the reader read the names, not in the raw text', () => {
+  // `"a"` is the same name as `a`, and `,` twice is the same empty name twice.
+  assert.strictEqual(run('a,"a"\n1,2', 'csv', [], 'json').warnings.length, 1);
+  assert.strictEqual(run(',\n1,2', 'csv', [], 'json').warnings.length, 1);
+  // A name that trims to another one is the same name too, which is how a
+  // spreadsheet export loses a column.
+  assert.strictEqual(run('a, a\n1,2', 'csv', [], 'json').warnings.length, 1);
+});
+
+test('a short row in a pair of repeated columns warns, because its value is gone', () => {
+  const r = run('a,a\n1', 'csv', [], 'json');
+  assert.deepStrictEqual(r.data[0], { a: '' });
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('1 of 1 row'), r.warnings[0]);
+});
+
+test('a repeated header with no rows to compare stays silent', () => {
+  // There is nothing to lose without a row, so there is nothing to report.
+  assert.deepStrictEqual(run('a,a\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('a,a', 'csv', [], 'json').warnings, []);
+});
+
+test('three columns under one name are reported once, with every position', () => {
+  const r = run('a,a,a\n1,2,3', 'csv', [], 'json');
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('columns 1, 2 and 3'), r.warnings[0]);
+});
+
+test('two different repeated headers are reported separately', () => {
+  const r = run('a,a,b,b\n1,2,3,4', 'csv', [], 'json');
+  assert.strictEqual(r.warnings.length, 2);
+  assert.ok(r.warnings.some(w => w.includes('"a" twice')), r.warnings.join('\n'));
+  assert.ok(r.warnings.some(w => w.includes('"b" twice')), r.warnings.join('\n'));
+});
+
 test('rows with fewer fields than the header are still padded with empty strings', () => {
   const r = run('a,b,c\n1,2,3\n4', 'csv');
   assert.deepStrictEqual(r.data[1], { a: 4, b: '', c: '' });

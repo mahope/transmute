@@ -318,6 +318,41 @@ Warning: 1 of 3 CSV rows has more fields than the header (row 3); the extra valu
 ]
 ```
 
+### A header that names a column twice
+
+Two columns of one name are one field, so one of them cannot survive. The reader
+keeps the last of them — the same rule JSON and YAML duplicates follow — and says
+which values are gone. A spreadsheet export with `name` in column 2 and again in
+column 4 is the ordinary shape of it:
+
+```bash
+transmute test/fixtures/dup-header.csv --output json
+```
+
+```
+Warning: CSV: the header names "name" twice (columns 2 and 4); they hold different values in 2 of 2 rows, so only the last of them is kept and the values in the others are gone. One of those names is a mistake in the input.
+```
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Alice B",
+    "email": "a@x.dk"
+  },
+  {
+    "id": 2,
+    "name": "Bob C",
+    "email": "b@x.dk"
+  }
+]
+```
+
+Nothing is printed when the two columns hold the same value in every row: a file
+that says the same thing twice is not a mistake, and a warning for it would be
+noise on correct input. `1` and `1.0` are compared as the reader read them, so
+that pair stays silent too.
+
 ### Text encoding
 
 Text is UTF-8, on a file and on a pipe alike. That is not a preference: reading

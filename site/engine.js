@@ -1167,6 +1167,16 @@ function extraFieldsWarning(rowCount, lines, columns) {
   return `${lines.size} of ${rowCount} CSV rows ${verb} more fields than the header (${where}); the extra values are kept in ${cols.join(', ')}${rest}`;
 }
 
+function duplicateHeaderWarning(name, columns, differing, rowCount) {
+  const positions = columns.map(i => i + 1);
+  const shown = `${positions.slice(0, -1).join(', ')} and ${positions[positions.length - 1]}`;
+  const times = columns.length === 2 ? 'twice' : `${columns.length} times`;
+  const rows = `${differing} of ${rowCount} row${rowCount === 1 ? '' : 's'}`;
+  return `CSV: the header names "${name}" ${times} (columns ${shown}); ` +
+    `they hold different values in ${rows}, so only the last of them is kept and the ` +
+    `values in the others are gone. One of those names is a mistake in the input.`;
+}
+
 /**
  * RFC 4180 reader: a quoted field may contain the delimiter, escaped quotes
  * (`""`) and line breaks, and whitespace inside quotes is data. Unquoted fields
@@ -1230,10 +1240,39 @@ function parseCSV(text, opts = {}) {
   const headerNames = new Set(headers);
   const extraNames = new Map();
   const extraLines = new Set();
+  // A header that names two columns the same can only produce one field, and
+  // the reader has always kept the last of them. T43 quoted a header the writer
+  // would otherwise have trimmed into a collision, so this tool could no longer
+  // write that file — but every other tool still can, and a spreadsheet export
+  // with `order` in column 1 and column 3 is ordinary. The two are then compared
+  // the way JSON and YAML duplicates are: as the reader read them, so an
+  // identical repeat (`1` and `1.0`, `a` and ` a`) stays silent and only a real
+  // difference in the data is worth a line.
+  const repeated = new Map();
+  headers.forEach((h, idx) => {
+    if (!repeated.has(h)) repeated.set(h, []);
+    repeated.get(h).push(idx);
+  });
+  const differingRows = new Map();
   for (let r = 1; r < recordsWithIndex.length; r++) {
     const values = recordsWithIndex[r].values;
     const row = {};
-    headers.forEach((h, idx) => { setField(row, h, idx < values.length ? coerceCSVValue(values[idx]) : ''); });
+    const read = [];
+    headers.forEach((h, idx) => {
+      const value = idx < values.length ? coerceCSVValue(values[idx]) : '';
+      read.push(value);
+      setField(row, h, value);
+    });
+    for (const [name, columns] of repeated) {
+      if (columns.length < 2) continue;
+      // Compared at their own positions, not through the record: `row[name]`
+      // holds the last of the two by now, which is the very value that is in
+      // danger of being compared against itself.
+      const [first, ...rest] = columns.map(idx => read[idx]);
+      if (rest.some(value => value !== first)) {
+        differingRows.set(name, (differingRows.get(name) || 0) + 1);
+      }
+    }
     if (values.length > headers.length) {
       extraLines.add(r + 1);
       for (let idx = headers.length; idx < values.length; idx++) {
@@ -1247,6 +1286,16 @@ function parseCSV(text, opts = {}) {
   }
   if (extraLines.size > 0 && Array.isArray(opts.warnings)) {
     opts.warnings.push(extraFieldsWarning(rows.length, extraLines, extraNames.values()));
+  }
+  // One warning per repeated name, not one per row: a 10,000-row export must not
+  // print 10,000 lines, and the user can only act on the header anyway.
+  if (rows.length > 0 && Array.isArray(opts.warnings)) {
+    for (const [name, columns] of repeated) {
+      if (columns.length < 2) continue;
+      const differing = differingRows.get(name);
+      if (!differing) continue;
+      opts.warnings.push(duplicateHeaderWarning(name, columns, differing, rows.length));
+    }
   }
   return rows;
 }

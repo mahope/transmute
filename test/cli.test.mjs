@@ -263,6 +263,39 @@ test('a well-formed CSV prints no warning at all', () => {
   assert.equal(r.stderr, '', `stderr should stay empty, got: ${r.stderr}`);
 });
 
+console.log('── real-world CSV: a header that names a column twice ──');
+
+test('a repeated header keeps the last column and warns about the one it dropped', () => {
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" test/fixtures/dup-header.csv -o json`), { allowStderr: true });
+  const rows = JSON.parse(out);
+  assert.equal(rows.length, 2, 'the extra column must not invent or drop rows');
+  assert.deepEqual(Object.keys(rows[0]), ['id', 'name', 'email'], 'two columns of one name are one field');
+  // The last of the two wins, the same rule `JSON.parse` and the YAML reader
+  // already follow. The warning is what tells the user the first one is gone.
+  assert.equal(rows[0].name, 'Alice B');
+});
+
+test('a repeated header warns on stderr and still exits 0', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/dup-header.csv -o json`);
+  assert.equal(r.status, 0, 'losing the values is worse than warning about them');
+  assert.ok(r.stderr.includes('Warning:'), `expected a warning, got: ${r.stderr}`);
+  assert.ok(r.stderr.includes('the header names "name" twice'), r.stderr);
+  assert.ok(r.stderr.includes('columns 2 and 4'), r.stderr);
+  assert.ok(r.stderr.includes('they hold different values in 2 of 2 rows'), r.stderr);
+});
+
+test('stdout stays pure data when a repeated header is reported', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/dup-header.csv -o json`);
+  assert.doesNotThrow(() => JSON.parse(r.stdout), 'a warning on stderr must not corrupt stdout');
+  assert.equal(r.stdout.includes('Warning'), false);
+});
+
+test('the dropped column is visible in CSV output, not only in the warning', () => {
+  const r = sh(`"${process.execPath}" "${cli}" test/fixtures/dup-header.csv -o csv`);
+  // One column of output for one name, so the output cannot claim two of them.
+  assert.equal(r.stdout.split('\n')[0], 'id,name,email');
+});
+
 test('records with different keys export every key to CSV', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o csv`, {
     input: '[{"id":1,"name":"Alice"},{"id":2,"name":"Bob","email":"bob@x.dk"}]'
