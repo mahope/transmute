@@ -27,6 +27,9 @@ PUBLISHED = "2026-09-06"
 ACCENT = "#0f7b6c"
 
 BUGBOTTLE_SRC = "https://cdn.jsdelivr.net/npm/bugbottle@0.5.0/dist/bugbottle.js"
+# Cookieless visitor statistics on the self-hosted Plausible CE (EU). The CE script needs the
+# init stub next to it; it lives in /plausible-init.js because the CSP allows no inline script.
+PLAUSIBLE_SRC = "https://analytics.holstjensen.eu/js/pa-b3Jlz_0Cm_WuD2SdBC_4p.js"
 
 
 def package() -> dict:
@@ -115,7 +118,7 @@ STRINGS = {
                 f_family="Family", f_site="Site", f_privacy="Privacy", f_support="Support", f_security="Security", f_sitemap="Sitemap",
                f_report="Report a bug", f_badge="Feedback powered by",
                f_built='Built by Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — developer and technical partner for small businesses, Odense, Denmark.',
-               f_cookies="No cookies, no trackers — only an anonymous page-view counter we run ourselves.",
+               f_cookies="No cookies, no trackers — only cookieless visitor statistics (Plausible, hosted in the EU).",
                f_lic="CLI and engine under the MIT licence.",
                prev="Previous guide", next="Next guide", all="All guides", crumb_guides="Guides",
                toc="On this page", updated="Updated", read="min read", share="Copy link", shared="Link copied",
@@ -130,7 +133,7 @@ STRINGS = {
                 f_family="Familie", f_site="Site", f_privacy="Privatliv", f_support="Support", f_security="Sikkerhed", f_sitemap="Sitemap",
                f_report="Meld en fejl", f_badge="Feedback drevet af",
                f_built='Lavet af Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — udvikler og teknisk partner for små virksomheder, Odense.',
-               f_cookies="Ingen cookies, ingen trackere — kun en anonym sidevisningstæller, vi selv kører.",
+               f_cookies="Ingen cookies, ingen trackere — kun cookieløs besøgsstatistik (Plausible, hostet i EU).",
                f_lic="CLI og motor under MIT-licensen.",
                prev="Forrige guide", next="Næste guide", all="Alle guides", crumb_guides="Guides",
                toc="På denne side", updated="Opdateret", read="min. læsning", share="Kopiér link", shared="Link kopieret",
@@ -272,7 +275,9 @@ def head_common(url: str, lang: str, og_image: str, og_type: str, og_alt: str) -
 <link rel="preload" href="/fonts/plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{asset("/style.css")}">
 <script src="{asset("/theme.js")}"></script>
-<script src="{asset("/site.js")}" defer></script>'''
+<script src="{asset("/site.js")}" defer></script>
+<script src="{asset("/plausible-init.js")}"></script>
+<script async src="{PLAUSIBLE_SRC}"></script>'''
 
 
 def strip_head(head: str) -> str:
@@ -287,7 +292,8 @@ def strip_head(head: str) -> str:
         r'<link rel="preconnect"[^>]*>\n?',
         r'<link rel="preload"[^>]*>\n?',
         r'<link rel="stylesheet"[^>]*>\n?',
-        r'<script src="/(?:site|theme).js[^"]*"[^>]*></script>\n?',
+        r'<script src="/(?:site|theme|plausible-init).js[^"]*"[^>]*></script>\n?',
+        r'<script async src="https://analytics\.holstjensen\.eu/js/[^"]*"></script>\n?',
         r'<script type="application/ld\+json">.*?</script>\n?',
     ]
     for p in patterns:
