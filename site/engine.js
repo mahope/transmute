@@ -2301,23 +2301,58 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
     i++;
   }
 
-  // An explicit indentation indicator says where this block's own lines start,
-  // so the leading spaces the automatic detection would have eaten are content:
-  // `v: |2` with a line at four spaces is two spaces and then `a`. That is the
-  // whole reason the indicator exists — without it the *first* line's
-  // indentation is the indentation, so a block whose first line sits deeper
-  // than the rest cannot be written at all (PyYAML: `v: |2` / `    a` / `  b`
-  // is `'  a\nb'`, and a file that says `|2` and then indents less than two
-  // is an error, not a block).
+  // A block's own lines start at the block's indentation, and there are two ways
+  // to say where that is. A digit on the marker says it outright — `|2` is two
+  // spaces in from this line's own indentation — and a file that then indents
+  // less is an error here rather than a guess. Without a digit the *first* line
+  // says it, and the first line is the only line that can, because it is the one
+  // every line after it is measured against. That is the whole reason the
+  // indicator exists: a block whose first line sits deeper than the rest cannot
+  // be written without one, since the first line would open an indentation the
+  // rest of the block is under.
+  //
+  // "The first line" means the first line with text on it — with one thing on
+  // top. A line of nothing but spaces *above* that line claims the indentation
+  // too, and the deeper of the two wins: PyYAML reads `v: |`, six spaces, `  a`
+  // and `  b` as a file it refuses, because six spaces is deeper than the text
+  // and the text is under the block, and it reads `v: |`, six spaces, then `a`
+  // and `b` at eight as '\na\nb\n', because the text went deeper and the six
+  // spaces dedent to nothing. Below the first line with text the rule is the
+  // other way round, and this is T74's: a line of nothing but spaces down there
+  // is content (`a`, six spaces, `b` is 'a\n      \nb'). An empty line is empty
+  // at both ends — it is not the first line of anything, and it says nothing.
+  //
+  // Taking the *minimum* indentation instead — which is what this did, because
+  // the minimum is the only answer that keeps every line inside the block — is
+  // why `v: |` followed by six spaces and `    b` came back as `'  a\nb\n'`:
+  // a file no real parser accepts, read here as a value, exit 0, empty stderr.
   const declared = header.indent === null ? null : parentIndent + header.indent;
-  if (declared !== null) {
-    const under = collected.find(l => !l.blank && l.indent < declared);
-    if (under) {
-      throw new SyntaxError(
-        `YAML line ${under.no}: block scalar header says ${header.indent} spaces of ` +
-        `indentation, but this line is indented ${under.indent}`
-      );
+  let shared = Infinity;
+  if (declared !== null) shared = declared;
+  else {
+    const firstText = collected.findIndex(l => !l.blank);
+    if (firstText !== -1) {
+      shared = collected[firstText].indent;
+      for (let k = 0; k < firstText; k++) shared = Math.max(shared, collected[k].indent);
     }
+  }
+
+  // A line under the block's own indentation is not a line of the block: it is a
+  // sibling of the block's parent, and a block scalar is a single scalar, so a
+  // parser looking for the end of the block finds a mapping start or a scalar
+  // where the value should be. PyYAML answers "expected <block end>, but found"
+  // and refuses the file. So does this, naming the line that is under the block
+  // and the line that set its indentation.
+  const under = collected.find(l => !l.blank && l.indent < shared);
+  if (under) {
+    throw new SyntaxError(
+      declared !== null
+        ? `YAML line ${under.no}: block scalar header says ${header.indent} spaces of ` +
+          `indentation, but this line is indented ${under.indent}`
+        : `YAML line ${under.no}: the first line of this block is indented ${shared}, ` +
+          `but this line is indented ${under.indent} — the first line sets the block's ` +
+          `indentation, so this line is under it, not in it`
+    );
   }
 
   // The block is one piece of text first and a value second, because that is
@@ -2325,10 +2360,6 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
   // breaks of the text, and a line of nothing but spaces is *content* inside a
   // literal block (`a`, ` `, `b` is three lines) while it is still a line of
   // nothing but spaces here — so `raw` decides, and `content` never gets a vote.
-  const shared = declared !== null ? declared : collected.reduce(
-    (min, l) => (l.raw.trim() === '' ? min : Math.min(min, l.indent)),
-    Infinity
-  );
   const dedented = collected.map(l => {
     if (l.blank && l.indent <= shared) return '';
     return ' '.repeat(Math.max(0, l.indent - shared)) + l.raw;

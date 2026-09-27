@@ -1309,6 +1309,57 @@ printf '[{"v":" a\\nb"}]' | transmute --output yaml
 The `2` is what keeps that file openable. Written as a plain `|-`, PyYAML — the
 parser every other tool on your machine uses — raises a `ParserError` on it.
 
+#### A line under the block its first line opened is refused
+
+Without a digit, the *first* line says where the block starts, and every line
+after it is measured against that. A line indented less is therefore not a line
+of the block at all — it is a sibling of whatever holds the block, and a block
+scalar is a single scalar, so there is nowhere to put it. PyYAML answers
+`expected <block end>` and refuses the file; so does this, naming both lines:
+
+```bash
+printf 'v: |\n      a\n    b\n' | transmute --format yaml --output json
+```
+```
+Error: Could not parse input as yaml: YAML line 3: the first line of this block is indented 6, but this line is indented 4 — the first line sets the block's indentation, so this line is under it, not in it
+```
+
+A line that dedents all the way out is a different question and keeps working —
+it is the next key, or the next item of a sequence, and the block ends there:
+
+```bash
+printf 'v: |\n  a\nnext: 1\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "a\n",
+    "next": 1
+  }
+]
+```
+
+A line of nothing but spaces counts as a line with something on it, so *above*
+the block's first line it claims the indentation too — and the text may go
+deeper, never shallower. Six spaces then `a` and `b` at eight is a valid file
+whose six spaces dedent to nothing:
+
+```bash
+printf 'v: |\n      \n        a\n        b\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "\na\nb\n"
+  }
+]
+```
+
+Change those eight spaces to two and the same file is refused, because the six
+spaces above opened the block and `a` is under it. This is the reason the digit
+exists: it is the only way to write a block whose first line is not its
+shallowest line.
+
 #### Folding stops at a line indented deeper than the block
 
 `>` folds a line break into a space, the way prose does, so `one` and `two`
