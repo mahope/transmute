@@ -547,6 +547,48 @@ check('the Danish support page says what the English one says', () => {
   }
 });
 
+check('the privacy pages say where the fonts come from, and the stylesheet proves it', () => {
+  // The measurement that wrote this rule, on this repository on 2026-09-27:
+  // both privacy pages told the reader that the IBM Plex typefaces are loaded
+  // from Google Fonts, so that Google sees every visit. They are not. site/style.css
+  // declares all three @font-face blocks with a local `url(/fonts/…woff2)`, the
+  // three files sit in site/fonts/, and not one page or stylesheet in the site
+  // mentions a font host. So the page was not merely stale, it was describing a
+  // third party that never receives a byte — and a privacy page that is wrong
+  // about what leaves your browser is worse than one that says nothing.
+  //
+  // The rule is a rule and not a comment: it reads the committed stylesheet, so
+  // the day someone puts Google Fonts back, this fails and the page text has to
+  // be rewritten in the same commit rather than left to contradict it.
+  const THIRD_PARTY_FONTS = /fonts\.(?:googleapis|gstatic)\.com|@import\s+url\(\s*['"]?https?:/i;
+  const css = readFileSync(join(root, 'site', 'style.css'), 'utf8');
+  assert(!THIRD_PARTY_FONTS.test(css),
+    'site/style.css loads fonts from a third-party host, so the privacy pages must say so again');
+
+  const pages = ['site/privacy/index.html', 'site/da/privacy/index.html'];
+  for (const path of pages) {
+    const text = readFileSync(join(root, path), 'utf8');
+    const section = text.match(/<h2 id="(?:fonts|skrifttyper)">[\s\S]*?<\/p>/i);
+    assert(section, `${path} has no fonts section, so the claim this rule checks is not on the page`);
+    assert(!THIRD_PARTY_FONTS.test(section[0]),
+      `${path} says the fonts come from a third-party host, but no host is named in site/style.css`);
+    assert(/served from this site|serveres fra dette site/.test(section[0]),
+      `${path} does not say the fonts are served from this site`);
+  }
+
+  // Every font the stylesheet promises is a file in the repository, so "served
+  // from this site" is a statement about something that exists and not a promise.
+  const faces = [...css.matchAll(/@font-face\s*\{[\s\S]*?\}/g)];
+  assert(faces.length > 0, 'site/style.css declares no @font-face, so the privacy pages promise fonts that no rule supplies');
+  for (const face of faces) {
+    const source = face[0].match(/url\(([^)]+)\)/);
+    assert(source, 'an @font-face in site/style.css names no source file');
+    const file = source[1].replace(/^['"]|['"]$/g, '').replace(/^\//, '');
+    assert(existsSync(join(root, 'site', file)),
+      `site/style.css points at ${file}, which is not in the repository: the privacy pages cannot promise a font the site does not ship`);
+  }
+});
+
 check('the desktop app is not built or published from this repository', () => {
   for (const path of ['desktop', 'src-tauri', 'Cargo.toml', 'Cargo.lock', 'tauri.conf.json']) {
     assert(!existsSync(join(root, path)), `${path} is back in the public repository; the desktop app is built from the private repository`);
