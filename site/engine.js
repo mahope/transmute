@@ -2014,7 +2014,14 @@ function parseYAML(text, opts) {
   }
   if (start >= lines.length) return finishYAML(lines, []);
 
-  const ctx = { warnings: (opts && opts.warnings) || null };
+  const ctx = {
+    warnings: (opts && opts.warnings) || null,
+    // Anchors are names for values, and the names live as long as the document
+    // does. `pending` holds the name of an anchor whose value is still being
+    // read, which is the only way a value can hold itself.
+    anchors: new Map(),
+    pending: new Set()
+  };
 
   // A flow collection can be the whole document: `{a: 1, b: two}` or `[1, 2]`
   // on the root line. The block reader below does not know that syntax, so it
@@ -2216,6 +2223,101 @@ function splitYAMLKey(content) {
 }
 
 /**
+ * `&name` and `*name` are properties of the value they stand in front of, not
+ * the value itself. PyYAML reads `a: &x 1` as the number 1 with a name attached
+ * to it, and `b: *x` as that same 1 written a second time. Here both came out as
+ * the value's own text — `&x 1` and `*x`, two strings, exit 0, an empty stderr —
+ * and a file whose anchor sat above a block was refused outright, because
+ * `a: &x` reads as a finished line and the block under it was then an
+ * unexpected indentation. Eighteen of twenty measured files disagreed with
+ * PyYAML that way.
+ *
+ * A plain scalar never starts with `&` or `*`, so a name in this position always
+ * means what it means in YAML. The name runs to the first space, comment or flow
+ * indicator, and what is left of the line is the value the name was put on.
+ */
+function readYAMLProperty(raw) {
+  const m = /^([&*])([^\s#[\]{},]+)(?:[ \t]+(.*))?$/.exec(raw);
+  if (!m) return null;
+  return {
+    anchor: m[1] === '&',
+    name: m[2],
+    rest: (m[3] || '').replace(/^[ \t]+/, '')
+  };
+}
+
+/**
+ * The value a `*name` stands for, as a copy. Two keys sharing an anchor are two
+ * independent values once they are JSON, so renaming one must not reach into the
+ * other — the same rule the writers follow.
+ */
+function readYAMLAlias(name, ctx, no) {
+  const where = no ? `YAML line ${no}: ` : '';
+  if (ctx.pending.has(name)) {
+    throw new SyntaxError(
+      `${where}&${name} points at itself, and a value that holds itself is not one JSON can carry`
+    );
+  }
+  if (!ctx.anchors.has(name)) {
+    throw new SyntaxError(
+      `${where}found undefined alias '${name}' — an anchor is written &${name} and has to be named before it is used`
+    );
+  }
+  return copyYAMLValue(ctx.anchors.get(name));
+}
+
+function copyYAMLValue(value) {
+  if (Array.isArray(value)) return value.map(copyYAMLValue);
+  if (value && typeof value === 'object') {
+    const copy = {};
+    for (const key of Object.keys(value)) copy[key] = copyYAMLValue(value[key]);
+    return copy;
+  }
+  return value;
+}
+
+/**
+ * The fields a `<<:` merge key names: one reference, or a list of them. In a
+ * list the first mapping to carry a field wins, so a later anchor cannot
+ * overwrite an earlier one.
+ */
+function readYAMLMerge(text, ctx, no) {
+  const fields = {};
+  const take = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new SyntaxError(
+        `YAML line ${no}: a merge key ("<<") can only merge a mapping into this one, not ${JSON.stringify(value)}`
+      );
+    }
+    for (const key of Object.keys(value)) {
+      if (!(key in fields)) fields[key] = value[key];
+    }
+  };
+  const body = stripYAMLComment(text).trim();
+  if (body.startsWith('[')) {
+    const flow = parseYAMLFlow(body, ctx);
+    if (!flow.ok || !Array.isArray(flow.value)) {
+      throw new SyntaxError(
+        `YAML line ${no}: a merge key ("<<") takes a reference or a list of them, not "${body}"`
+      );
+    }
+    for (const item of flow.value) {
+      const ref = typeof item === 'string' ? /^\*([^\s#[\]{},]+)$/.exec(item) : null;
+      take(ref ? readYAMLAlias(ref[1], ctx, no) : item);
+    }
+    return fields;
+  }
+  const prop = readYAMLProperty(body);
+  if (!prop || prop.anchor || prop.rest !== '') {
+    throw new SyntaxError(
+      `YAML line ${no}: a merge key ("<<") takes a reference or a list of them, not "${body}"`
+    );
+  }
+  take(readYAMLAlias(prop.name, ctx, no));
+  return fields;
+}
+
+/**
  * Parse the block starting at `start`, indented by `indent`. Returns
  * `{ value, end }` so the caller can carry on after the block.
  */
@@ -2231,9 +2333,14 @@ function parseYAMLBlock(lines, start, indent, ctx) {
 function parseYAMLMapping(lines, start, indent, ctx) {
   const map = {};
   const seen = new Map();
+  const merged = new Set();
   // `k: 1` followed by `k: 2` is the classic YAML trap: the second line wins
   // with nothing to show for it, and the first value is simply gone. The key
-  // is kept, the run succeeds, and the collision is named.
+  // is kept, the run succeeds, and the collision is named. A field that arrived
+  // through a `<<` merge is not one of these: the document never wrote it twice,
+  // and PyYAML answers `base: &b` / `k: 1` / `child:` / `<<: *b` / `k: 2` with
+  // `{"k": 2}` and no word about a collision — the written field is the one that
+  // counts, in either order.
   const set = (key, value, no) => {
     if (seen.has(key)) {
       noteDuplicateKey(ctx.warnings, 'YAML', key, seen.get(key), { value, line: no });
@@ -2254,14 +2361,44 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     if (!split) {
       throw new SyntaxError(`YAML line ${lines[i].no}: expected "key: value", got "${lines[i].content}"`);
     }
-    const { key, rest } = split;
+    const { key } = split;
+
+    if (key === '<<') {
+      const fields = readYAMLMerge(split.rest, ctx, lines[i].no);
+      for (const field of Object.keys(fields)) {
+        if (seen.has(field) || merged.has(field)) continue;
+        merged.add(field);
+        setField(map, field, fields[field]);
+      }
+      i++;
+      continue;
+    }
+
+    // The value may carry a name: `&name` names it, `*name` stands in for one
+    // named before. Either way the name comes off first, so the value itself is
+    // read exactly as it is without one.
+    const prop = readYAMLProperty(split.rest);
+    if (prop && !prop.anchor) {
+      set(key, readYAMLAlias(prop.name, ctx, lines[i].no), lines[i].no);
+      i++;
+      continue;
+    }
+    if (prop) ctx.pending.add(prop.name);
+    const rest = prop ? prop.rest : split.rest;
+    const named = value => {
+      if (prop) {
+        ctx.anchors.set(prop.name, value);
+        ctx.pending.delete(prop.name);
+      }
+      return value;
+    };
 
     if (rest === '' || isYAMLComment(rest)) {
       // No value on the line, so the block underneath owns it — or it is null.
       const j = skipYAMLBlanks(lines, i + 1);
       if (j < lines.length && lines[j].indent > indent) {
         const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
-        set(key, child.value, lines[i].no);
+        set(key, named(child.value), lines[i].no);
         i = child.end;
         continue;
       }
@@ -2269,11 +2406,11 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       // which is how most hand-written config files are written.
       if (j < lines.length && lines[j].indent === indent && isYAMLSequenceEntry(lines[j].content)) {
         const child = parseYAMLSequence(lines, j, indent, ctx);
-        set(key, child.value, lines[i].no);
+        set(key, named(child.value), lines[i].no);
         i = child.end;
         continue;
       }
-      set(key, null, lines[i].no);
+      set(key, named(null), lines[i].no);
       i++;
       continue;
     }
@@ -2281,12 +2418,13 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     const block = blockScalarHeader(rest);
     if (block) {
       const child = readYAMLBlockScalar(lines, i + 1, indent, block);
-      set(key, child.value, lines[i].no);
+      set(key, named(child.value), lines[i].no);
       i = child.end;
       continue;
     }
 
-    set(key, parseYAMLScalar(rest, ctx), lines[i].no);
+    ctx.line = lines[i].no;
+    set(key, named(parseYAMLScalar(rest, ctx)), lines[i].no);
     i++;
   }
   return { value: map, end: i };
@@ -2308,15 +2446,34 @@ function parseYAMLSequence(lines, start, indent, ctx) {
     const lead = after.length - after.trimStart().length;
     const inner = after.trimStart();
 
-    if (inner === '' || isYAMLComment(inner)) {
+    // `- &name a` and `- *name` name the entry, they are not it. The name comes
+    // off before anything else, so an entry that carries one is read exactly as
+    // it is without one — including the bare `- &name` that owns the block below.
+    const prop = readYAMLProperty(inner);
+    if (prop && !prop.anchor) {
+      arr.push(readYAMLAlias(prop.name, ctx, lines[i].no));
+      i++;
+      continue;
+    }
+    if (prop) ctx.pending.add(prop.name);
+    const body = prop ? prop.rest : inner;
+    const named = value => {
+      if (prop) {
+        ctx.anchors.set(prop.name, value);
+        ctx.pending.delete(prop.name);
+      }
+      return value;
+    };
+
+    if (body === '' || isYAMLComment(body)) {
       const j = skipYAMLBlanks(lines, i + 1);
       if (j < lines.length && lines[j].indent > indent) {
         const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
-        arr.push(child.value);
+        arr.push(named(child.value));
         i = child.end;
         continue;
       }
-      arr.push(null);
+      arr.push(named(null));
       i++;
       continue;
     }
@@ -2330,16 +2487,17 @@ function parseYAMLSequence(lines, start, indent, ctx) {
     // three of the measured files slipped through a check that had already found
     // them. So the line remembers where it came from, not what it became.
     const childIndent = indent + 1 + lead;
-    const block = blockScalarHeader(inner);
+    const block = blockScalarHeader(body);
     if (block) {
       const child = readYAMLBlockScalar(lines, i + 1, indent, block);
-      arr.push(child.value);
+      arr.push(named(child.value));
       i = child.end;
       continue;
     }
-    lines[i] = { indent: childIndent, content: inner, blank: false, no: lines[i].no, tabAt: lines[i].tabAt };
+    lines[i] = { indent: childIndent, content: body, blank: false, no: lines[i].no, tabAt: lines[i].tabAt };
+    ctx.line = lines[i].no;
     const child = parseYAMLBlock(lines, i, childIndent, ctx);
-    arr.push(child.value);
+    arr.push(named(child.value));
     i = child.end;
   }
   return { value: arr, end: i };
@@ -2617,7 +2775,19 @@ function parseYAMLFlow(text, ctx) {
     }
     let raw = '';
     while (i < text.length && !separators.includes(text[i])) raw += text[i++];
-    return parseYAMLValue(raw.trim(), ctx);
+    const body = raw.trim();
+    // A flow item may name itself too — `[*a, *b]` is how a file shares one list
+    // between two keys, and reading `*a` as the three characters `*a` puts a
+    // name where the list was. The name is taken off before the item is read,
+    // and an alias standing alone *is* the item.
+    const prop = readYAMLProperty(body);
+    if (prop) {
+      if (!prop.anchor && prop.rest === '') return readYAMLAlias(prop.name, ctx, ctx.line);
+      const value = prop.rest === '' ? null : parseYAMLValue(prop.rest, ctx);
+      if (prop.anchor) ctx.anchors.set(prop.name, value);
+      return value;
+    }
+    return parseYAMLValue(body, ctx);
   };
 
   const value = () => {
