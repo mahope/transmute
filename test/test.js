@@ -3250,6 +3250,69 @@ t('a directive is the file naming its YAML version, not a document of its own', 
   }
 });
 
+t('a backslash in a SQL value is named, and the value is still written as it is', () => {
+  // The file is correct for the SQL it is written for, and that was measured
+  // rather than assumed: sqlite3 3.50.6 imports `C:\Users\Ada`, `a\nb` and a
+  // value *ending* in a backslash, and gives all three back as text with every
+  // character in it. MySQL and MariaDB read the same file as an escape, so the
+  // warning names the columns rather than rewriting a value that is right for
+  // one dialect and wrong for the other whichever way it is spelled.
+  const r = run('[{"path":"C:\\\\Users\\\\Ada"}]', 'json', [], 'sql');
+  const out = serializers.sql(r.data);
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /^sql: 1 of 1 columns hold a value with a backslash/, r.warnings[0]);
+  assert.match(r.warnings[0], /"path" \(1\)/, r.warnings[0]);
+  assert.match(r.warnings[0], /NO_BACKSLASH_ESCAPES/, r.warnings[0]);
+  // The value itself is untouched: the warning is the whole difference.
+  assert.ok(out.includes("('C:\\Users\\Ada')"), out);
+
+  // Both shapes that change a value on the way in are named, and a row count is
+  // a count of rows: two of two rows, not two columns.
+  const two = run('[{"p":"a\\\\b"},{"p":"c\\\\d"}]', 'json', [], 'sql');
+  assert.strictEqual(two.warnings.length, 1, JSON.stringify(two.warnings));
+  assert.match(two.warnings[0], /"p" \(2\)/, two.warnings[0]);
+  const tail = run('[{"p":"end\\\\"}]', 'json', [], 'sql');
+  assert.match(tail.warnings[0], /"p" \(1\)/, tail.warnings[0]);
+  assert.ok(serializers.sql(tail.data).includes("('end\\')"), serializers.sql(tail.data));
+
+  // A nested value is written as a JSON string literal, so a backslash inside it
+  // is in the file too and is counted — the rule reads the literals the file was
+  // written with, not the values the user typed.
+  const nested = run('[{"o":{"a":"x\\\\y"}}]', 'json', [], 'sql');
+  assert.strictEqual(nested.warnings.length, 1, JSON.stringify(nested.warnings));
+  assert.match(nested.warnings[0], /"o" \(1\)/, nested.warnings[0]);
+
+  // Two columns, one of them named: the count is of the columns that hold one.
+  const half = run('[{"a":"x\\\\y","b":"plain"}]', 'json', [], 'sql');
+  assert.match(half.warnings[0], /^sql: 1 of 2 columns/, half.warnings[0]);
+
+  // Nothing to say, nothing said. A forward-slash path, a number, a boolean, a
+  // nested value and a value that holds no backslash are the ordinary case, and
+  // a rule that named them would be noise on every file.
+  assert.deepStrictEqual(run(
+    '[{"p":"C:/Users/Ada"},{"n":19.99},{"b":true},{"o":{"a":"x"}},{"s":"a/b"}]',
+    'json', [], 'sql').warnings, []);
+  // The same file as CSV, where every value is text, and the same file as YAML.
+  assert.deepStrictEqual(run('p\nC:/Users/Ada\n', 'csv', [], 'sql').warnings, []);
+  assert.deepStrictEqual(run('p: "C:/Users/Ada"\n', 'yaml', [], 'sql').warnings, []);
+});
+
+t('the csv type warning names sql, which is the format that does change the type', () => {
+  // Three formats keep a string. One does not: a string that is a number is
+  // written as a number literal, so telling a user to switch to "another
+  // format" without saying which one is the wrong advice for sql.
+  const r = run('[{"v":"19.99"},{"v":"true"},{"v":"x"}]', 'json', [], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /json, yaml and xml keep the strings/, r.warnings[0]);
+  assert.match(r.warnings[0], /except a number, which it writes as a number/, r.warnings[0]);
+  // And the claim is the measured one: sql writes a number as a number and
+  // keeps a boolean-looking string as text.
+  const sql = run('[{"v":"19.99"},{"v":"true"}]', 'json', [], 'sql');
+  const text = serializers.sql(sql.data);
+  assert.ok(text.includes('(19.99)'), text);
+  assert.ok(text.includes("('true')"), text);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
