@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-27 (T67)
+Opdateret: 2026-09-27 (T68)
 
 
 ## Mission
@@ -8,6 +8,10 @@ Opdateret: 2026-09-27 (T67)
 Dette offentlige repo leverer den gratis, lokale og open source CLI til at transformere JSON, CSV, YAML og XML samt det offentlige site. Den betalte desktopudgave, licenslogikken og al Pro-implementation ligger i det private `mahope/transmute-desktop` og udvikles i loopet `transmute-desktop`. Her er målet at gøre CLI'en fuldt brugbar og gøre vejen til Desktop Pro tydelig. Hele udviklingen skal ske på `ceo/*`-branch og merges til `main`.
 
 ## Iterationsstatus
+
+**Næste iteration (T68): T68 er færdig på `ceo/bom-json` (fra `main`), commit `0d8c194`.** Den tog en fejlklasse de 67 foregående iterationer ikke rørte, fordi de alle målte *advarsler* og ikke *afvisninger*: **en gyldig JSON-fil med en byte order mark foran blev afvist med exit 3.** De tre andre læsere læste den samme fil uden et ord, fordi de trimmer og `String.prototype.trim()` fjerner `U+FEFF` — så filens format afgjorde, om de samme tre byte var velkomne, og det afgjorde det omvendt af hvor svært de er at få med. Målt på den rigtige binary før koden blev rørt: exit 3 på fil, på `--format json` og på stdin, plus den samme fejl i den vej browserplaygroundet bruger. Se punkt 68.
+
+**Næste opgave, målt før den skrives: punkt 69**, den anden fejl T68's måling fandt — en YAML-fil med en `%YAML 1.2`-direktiv mister hele sin mapping. Uden nyt valg: (a) `❓ Til Mads` punkt 1, deploy-kommandoen, den eneste blokering for både købssiden og alle 0.3.0-rettelser; (b) `❓ Til Mads` punkt 18, `npm run release -- 0.3.0`; (c) punkt 15's tabsfri læser, som kræver Mads' svar om typen; (d) punkt 69.
 
 **Næste iteration (T67): T67 er færdig på `ceo/float-precision` (fra `main`), commit `faeaf9a`, MERGERET til `main` som `b8ebfb6`.** Den tog T66's eget mål (d) — **den anden halvdel af den klasse T66 målte, de tal der ikke er heltal** — og fundet var større end T66 skrev, at det ville være: **T66's regel var ikke bare blind for decimaler, den var blind for det mellemtal T66 havde afdækket.** Elle varianter målt på den rigtige binary før koden blev rørt, gennem alle seks formater og begge læsere. Se punkt 67.
 
@@ -327,6 +331,8 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ## Prioriteret opgavekø
 
+- 2026-09-27 ca. 09:5x–10:1x CEST: **T68 gennemført på `ceo/bom-json` (fra `main`), commit `0d8c194`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **tooghalvtredsindstyvende** gang i træk, live er `3d90812`, og afvigelserne er de samme 28 filer som altid. Emnet var ikke en advarselsklasse men **den eneste fejlklasse der betyder at værktøjet ikke virker**: en gyldig fil afvist. Elle varianter målt på den rigtige binary før koden blev rørt, og fundet var at **tre af fire læsere allerede læste BOM'en** — de trimmer, og `trim()` fjerner `U+FEFF` — mens `JSON.parse` ikke gør det. Filens format afgjorde altså om de samme tre byte var velkomne, og det afgjorde det omvendt af hvor svært de er at få med. Rettelsen er én betingelse i `parsers.json`. Se punkt 68.
+
 - 2026-09-27 ca. 07:5x–08:2x CEST: **T67 gennemført på `ceo/float-precision` (fra `main`), MERGERET til `main`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **enoghalvtredsindstyvende** gang i træk, live er `3d90812`, og målt direkte svarer **`/support/` 404** og **`/da/support/` 404**. Emnet var T66's eget mål (d): **de tal der ikke er heltal** — den halvdel af T66's klasse, T66 skrev at den var "bevidst urørt" uden at have målt den. Elle varianter målt på den rigtige binary før koden blev rørt, i alle seks formater og begge læsere, og fundet var **større end forventet: T66's regel var blind for hele klassen af tal med en brøkdel, fordi `exactIntegerValue` forlod spørgsmålet om præcision på den sidste viste ciffer.** Tre målte tavse tab hvor den halvdel forsvinder, ét hvor filen skriver 34 decimaler og der står `1`, og ét beløb på 18 betydende cifre der kom ud som et andet beløb. Rettelsen er **én regel for heltal og decimaler**: sammenlign værdien der kom ud med værdien filen skrev, ved det sted hvor filens sidste ciffer står. Se punkt 67.
 
 - 2026-09-27 ca. 06:1x–06:4x CEST: **T65 gennemført på `ceo/join-collisions` (fra `main`), commit `cbfb13b`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **halvtredsindstyvende** gang i træk, live er `3d90812`, og målt direkte svarer **`/support/` 404** og **`/da/support/` 404**. Emnet var T64's eget mål (c): **de øvrige skriveveje i samme klasse** — den der *læser et navn* og skriver det et andet sted, ikke dem der skriver to gange i samme post. T64 skrev at `join` dækkes af T20's `prefix`; målingen siger at T20 rettede *guarden*, ikke *tabet*. Elle varianter målt på den rigtige binary før koden blev rørt: **seks hvor den joinede værdi forsvinder, exit 0, 0 B stderr** i alle seks formater, **syv kontroller der er rene**. Rettelsen er `reportJoinCollisions`: advarsel, ikke fejl, fordi kollisionen afhænger af data. Se punkt 65.
@@ -350,6 +356,64 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - 2026-09-26 ca. 22:5x–23:0x CEST: **T55 gennemført på `ceo/claims-bound-to-code` (branch fra `ceo/release-path-guards`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **niogtyvende** gang i træk, live er `3d90812`, 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig — tre nye batch-vinduer siden T54's måling, så bunken er **niogtyven** commits på **niogtyve** branch uden merge. Emnet var T54's tredje kandidat: **en påstand bundet til kommittet kode**. Målingen før koden blev rørt fandt at omdøbe pakkenavnet i både `package.json` og locken holdt alle 174 checks grønne mens 30 offentlige filer sagde det gamle navn, og at `contract.cli`'s tre claims blev læst af ingen regel. Se punkt 55.
 
 - 2026-09-26 ca. 21:2x–21:5x CEST: **T53 gennemført på `ceo/release-path-guards` (branch fra `ceo/published-version-lies`), ikke mergeret til `main`.** `npm run check:deploy` kørt først: `DEPLOY-MISSING` uændret for **syvogtyvende** gang i træk, live er `3d90812`, 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. Emnet var T52's første kandidat: **udgivelsens egen tjekliste**. Tre fund i `scripts/release.mjs`'s 18 linjer, alle tre målt på den rigtige script i en klon uden remote. Se punkt 53.
+
+### 69. [ ] Læs en YAML-fil der starter med en direktive, i stedet for at miste den
+
+**Status:** ÅBEN. Emnet er fundet ved T68's måling, som så efter den næste fejl i samme klasse. **Målt, ikke gæt** — fire varianter plus en kontrol, på den rigtige binary:
+
+| # | Kørsel | Nu |
+|---|---|---|
+| 1 | `%YAML 1.2` + `---` + `id: 1` + `name: Ada` | advarsel om 2 dokumenter, og output er `["%YAML 1.2"]` — **`{id: 1, name: "Ada"}` er væk** |
+| 2 | `%YAML 1.1` + `---` + en sekvens | `["%YAML 1.1"]` — hele sekvensen væk |
+| 3 | `%TAG ! tag:example.com,2000:` + `---` + `id: 1` | `[{"%TAG ! tag:example.com,2000": null}]` — et nøglerum af en direktive, og `id` væk |
+| 4 | begge direktiver over hinanden | `["%YAML 1.2"]` |
+| 5 | kontrol: kun `---` og `id: 1` | `[{"id": 1}]` — rent, `---` er ikke en fejl |
+
+**Hvorfor det betyder noget.** En `%YAML`-direktiv er ikke en kuriøsitet: Kubernetes-manifest, Ansible-playbooks og en del CI-konfiguration begynder med `%YAML 1.1`. En bruger, der kører sådan en fil gennem Transmute, får **en række med tekst i stedet for data**, exit 0. Advarslen siger "2 documents in file, only the first was read", som er sandt og ubrugeligt: den peger på en regel om flere dokumenter, mens årsagen er at læseren **tæller direktivet som et dokument**. Det er samme fejltype som T57's ("en advarsel skal beskrive den fil, der blev skrevet") — beskeden er sand, men den peger på det forkerte.
+
+**Acceptkriterier, målt på den rigtige binary før koden røres.**
+1. Alle fire varianter læses som den mapping/sekvens de indeholder, exit 0.
+2. `---` alene og uden direktiver er uændret rent (kontrol 5 låst).
+3. En `%`-linje der står **midt i** dokumentet, efter data, er stadig enten data eller en fejl med en besked der peger på den — ikke tavst.
+4. To rigtige dokumenter med `---` imellem, hvor det første *er* data, skal stadig advare om at kun det første læses. Det er den eksisterende regel, og den må ikke svækkes af rettelsen.
+5. En test pr. variant, kørt mod `git show HEAD:src/engine.js`, rød med præcis det målte symptom (`["%YAML 1.2"]`).
+6. `docs/cli.md` får reglen med kørte kommandoer og ordret output, og `site/engine.js` regenereres byte-identisk.
+
+**Beslutning der skal træffes, og som ikke er målt endnu:** om en `!tag`-særlig nøgle skal læses som nøglerummet plus lokalnavn (`!e!foo` → tages med som `!e!foo`) eller afvises med exit 3. Lokale navne findes i vores datasæt (numrene `0074` kom fra YAML 1.1's heltalsregel, punkt 40), så de findes i brugernes data også. Det er en afvejning og ikke en måling, så det er skrevet ned her i stedet for gættet.
+
+### 68. [x] Og læs en JSON-fil der starter med en byte order mark
+
+**Status:** FÆRDIG på `ceo/bom-json` (fra `main`), commit `0d8c194`. `DEPLOY-MISSING` står uændret (52. måling).
+
+**Begrundelse.** Produktfasens prioritet 1 er "fejl der rammer brugere", og den her er den mest basale form af den: **en gyldig fil bliver afvist**. Ikke en advarsel om noget, ikke en typetransformation — filen er korrekt JSON, og værktøjet siger exit 3. Det er den fejlklasse, der gør at en bruger dropper et værktøj efter én tur.
+
+**Målingen, elle varianter, på den rigtige binary før koden blev rørt.** De tre byte `EF BB BF` er ikke en hypotese: PowerShell 5.1 skriver dem med `Out-File -Encoding utf8`, og det gør en del editorer og eksportknapper.
+
+| # | Kørsel | Før | Efter |
+|---|---|---|---|
+| 1 | BOM + JSON-fil, auto-detect | **exit 3**, `Could not parse input as json: Unexpected token '﻿'` | exit 0, filen læst |
+| 2 | BOM + `--format json` | exit 3, samme fejl | exit 0 |
+| 3 | BOM gennem **stdin** | exit 3, samme fejl | exit 0 |
+| 4 | BOM i `run()` — **browserplaygroundets** vej | `error` i svaret, samme årsag | læst |
+| 5 | kontrol: BOM + CSV | læst | læst, uændret |
+| 6 | kontrol: BOM + YAML | læst | læst, uændret |
+| 7 | kontrol: BOM + XML | læst | læst, uændret |
+| 8 | kontrol: `U+FEFF` **inde i en værdi** | værdien beholdt | beholdt |
+| 9 | kontrol: BOM på **anden linje** | exit 3 | exit 3 — korrekt, en markering er kun en markering først |
+| 10 | kontrol: **to** BOM'er i front | exit 3 | exit 3 — ikke en markeret fil, men en markeret fil med en løs tegn |
+| 11 | kontrol: fil uden BOM | exit 0 | exit 0 |
+
+**Fundet er ikke bare fejlen, men hvorfor den lå i netop den ene læser.** `String.prototype.trim()` fjerner `U+FEFF` — det står i ECMAScripts `WhiteSpace`-produktion — og CSV-, YAML- og XML-læserne trimmer alle. Så de tre læsere **læste markeringen i forvejen**, mens `JSON.parse` ikke trimmer. Filens format afgjorde altså, om de samme tre byte var velkomne, og det afgjorde det **omvendt** af hensynet til hvor svært de er at få med: JSON er den strengeste og den eneste, der sagde nej. Det er samme slags fejl som T35's: to kunder, to veje ind, og den anden vej blev aldrig målt.
+
+**Rettelsen er én betingelse i `parsers.json`, fordi det er det ene sted begge kunder går igennem.** `JSON.parse` får teksten uden markeringen, og de to tekstvandrere — `duplicateJSONKeys` og `jsonNumberLiterals` — får **samme** tekst, så en fil der både starter med en markering og mister et ciffer stadig melder kun cifferet. Præcis **én** markering i allerførste tegn er kodningsmarkøren; alt andet er brugerens data. Derfor er kontrol 8, 9 og 10 holdt som de er, og de er låst i testen.
+
+**To fund undervejs, begge fanget af målingen og ikke af koden.** (1) Min første testforventning skrev `[{"id":1,"name":"Ada"}]` mod `output: json`, som **pretty-prints** — testen var forkert, ikke koden, og den blev skrevet om til at måle på `data` og på CSV-teksten, som er det en bruger faktisk ser. (2) CSV-skriveren **citerer allerede** en celle der begynder med `U+FEFF`. Det er målt, ikke antaget, og det er en stærkere garanti end den nye regel: en værdi der ligner en markering kan aldrig læses tilbage som en markering foran en fil. De to regler kender ikke til hinanden, og ingen af dem skulle have skullet ændres.
+
+**Nye tests, begge kørt mod den gamle kode.** 1 engine-test (231 → 232) der dækker alle elle rækker i tabellen, inklusive de tre kontroller der *skal* forblive fejl. 1 CLI-test (162 → 163) på den rigtige binary gennem alle seks formater med `--out`-krav på data, plus den navngivne `--format json` og **stdin** — to læseveje der hver afkoder deres egne bytes, så kun én af dem at teste ville være et halvt bevis. Lokalt grøn: `npm test` exit 0 med alle tolv trin (232+163+89+6+39+9+10+11+24 tests, 4 workflows, **183** kontraktontroller, `release_check.mjs`), `npm pack --dry-run` 5 filer uændret, `npm run check:site` grøn (`0 finding(s) across 20 pages`, `deviations: 0`, selftesten grøn). `site/engine.js` byte-identisk med `src/engine.js` (`cmp`), asset-hashene regenereret af `tools/site_chrome.py` til `ada555a4`; ingen publish, ingen tag, ingen release.
+
+VERIFICÉR DEPLOY: `parsers.json` læser en fil med én BOM i front — `site/engine.js` (byte-kopi af `src/engine.js`), `try.html`'s asset-hash `ada555a4`, `site/search-index.json` og de øvrige regenererede sider, commit `0d8c194` på `ceo/bom-json`, pushet 2026-09-27 ca. 10:1x CEST. Verificér på https://transmute.run/try/ ved at sætte `[{"id":1,"name":"Ada"}]` ind som JSON **med et BOM foran** (fx kopieret fra en PowerShell-fil) og se at den læses; kør samme tekst **uden** BOM og se at den også gør.
+
+**Næste opgave, målt før den skrives.** Denne måling fandt den anden fejl i samme måling, og den er **målt, ikke rettet**: en YAML-fil der starter med en `%YAML 1.2`-direktiv (Kubernetes, Ansible og en del CI skriver det) læses som **to dokumenter**, og det første — direktivet — bliver den eneste række: `["%YAML 1.2"]`. Advarslen om to dokumenter kommer, så det er ikke tavst, men **den mapping der egentlig stod i filen er væk**. Det er punkt 69, med scope og acceptkriterier skrevet ned. Uden nyt valg: (a) `❓ Til Mads` punkt 1, deploy-kommandoen, den eneste blokering for både købssiden og alle 0.3.0-rettelser; (b) `❓ Til Mads` punkt 18, `npm run release -- 0.3.0`; (c) punkt 15's tabsfri læser, som kræver Mads' svar om typen; (d) punkt 69.
 
 ### 67. [x] Sig, når et tal med en brøkdel mister noget ved læsning
 

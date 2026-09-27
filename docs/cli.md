@@ -383,6 +383,34 @@ guess would rewrite your bytes. Convert the file, then run it again — everythi
 valid UTF-8 is read, including `Møller`, `🚀` and `日本`, and including a file
 that really does contain a `U+FFFD` character.
 
+#### A byte order mark in front of a UTF-8 file
+
+Some tools put three invisible bytes in front of a UTF-8 file: `EF BB BF`, the
+byte order mark. PowerShell 5.1 does it with `Out-File -Encoding utf8`, and so
+do a number of editors and export buttons. It is the file saying which encoding
+it is, not part of the document, so Transmute drops it and reads the file:
+
+```bash
+transmute bom.json --output csv
+```
+
+```
+id,name
+1,Ada
+```
+
+That was not always so, and the old behaviour is worth naming because it was
+invisible: the CSV, YAML and XML readers have always accepted a mark, so the
+**JSON** reader alone refused the file — `exit 3` and `Unexpected token '﻿'`,
+pointing at the character instead of the reason it was there. The file format
+decided whether the same three bytes were welcome.
+
+Only a mark **in the very first character** is dropped, and only one. A `U+FEFF`
+anywhere else is your data and is kept: on the second line it is still a
+character the parser cannot read, and inside a value it is a value that happens
+to start with an invisible character. A CSV cell with such a value is quoted on
+the way out, so it can never be read back as a mark in front of a file.
+
 ### A name the input gives twice
 
 `{"id": 1, "id": 2}` is not valid JSON, and `id: 1` followed by `id: 2` is the
