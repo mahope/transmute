@@ -3126,6 +3126,50 @@ t('the advice the warning gives is a way out that works today', () => {
     /123456789012345680/, 'the value in the file is the one that changed');
 });
 
+t('a byte order mark is the file saying what it is, not the file saying something', () => {
+  // Measured on the real binary before the rule existed: the same three bytes
+  // are read by three of the four readers, because String.prototype.trim()
+  // removes U+FEFF and they all trim. JSON.parse does not trim, so the reader
+  // that had the least excuse refused the file outright — exit 3 and a message
+  // that points at the character, not at the reason it is there. PowerShell
+  // 5.1, many Windows editors and a fair number of export buttons write one.
+  const bom = '\uFEFF';
+  const r = run(`${bom}[{"id":1,"name":"Ada"}]`, 'json', [], 'csv');
+  assert.ok(!r.error, 'a marked JSON file must be read: ' + JSON.stringify(r));
+  assert.deepStrictEqual(r.data, [{ id: 1, name: 'Ada' }]);
+  assert.strictEqual(r.text.trim(), 'id,name\n1,Ada', r.text);
+  // It is an encoding marker at the very start of the file, so exactly one goes.
+  // The other three readers already behaved this way, and now they behave this
+  // way for a reason instead of by accident.
+  assert.deepStrictEqual(run(`${bom}id\n1\n`, 'csv', [], 'json').data, [{ id: 1 }]);
+  assert.deepStrictEqual(run(`${bom}id: 1\n`, 'yaml', [], 'json').data, [{ id: 1 }]);
+  assert.deepStrictEqual(run(`${bom}<r><i id="1"/></r>`, 'xml', [], 'json').data, [{ '@id': '1' }]);
+  // U+FEFF anywhere else is the file's own text and is the user's data. A BOM
+  // on the second line, and one inside a value, are both kept — a marker is
+  // only a marker at the front, and a value that starts with an invisible
+  // character is not something to repair.
+  const second = run(`\n${bom}{"a":1}`, 'json', [], 'json');
+  assert.match(second.error, /Unexpected token/, 'only the first character is a marker: ' + JSON.stringify(second));
+  const inValue = run(`{"a":"${bom}x"}`, 'json', [], 'csv');
+  assert.ok(!inValue.error, inValue.error);
+  assert.deepStrictEqual(inValue.data, [{ a: `${bom}x` }]);
+  // Measured while writing this: the CSV writer already quotes a cell that
+  // begins with a mark, so a value like this cannot be read back as a marker
+  // in front of a file. It is quoted on the way out, and left alone on the way
+  // in — the two rules do not have to know about each other.
+  assert.strictEqual(inValue.text.trim(), `a\n"${bom}x"`, JSON.stringify(inValue.text));
+  // A file with two of them in front is not a marked file, it is a marked file
+  // with a stray character, and the reader says so rather than picking one.
+  const two = run(`${bom}${bom}{"a":1}`, 'json', [], 'json');
+  assert.match(two.error, /Unexpected token/, JSON.stringify(two));
+  // The number rules still see the text they are meant to see: the marker is
+  // gone before the file is walked, so a file that both starts with one and
+  // loses a digit is reported for the digit alone.
+  const both = run(`${bom}[{"v":123456789012345678.5}]`, 'json', [], 'json');
+  assert.strictEqual(both.warnings.length, 1, JSON.stringify(both.warnings));
+  assert.match(both.warnings[0], /^JSON: 123456789012345678\.5 /, both.warnings[0]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

@@ -99,10 +99,26 @@ function findElementClose(inner, tag, closeTag, from) {
 
 const parsers = {
   json: (text, opts) => {
-    const data = JSON.parse(text);
+    // A UTF-8 byte order mark is the file saying which encoding it is, and it
+    // is not part of the document. Measured, not assumed: the CSV, YAML and XML
+    // readers all accept it without a word, because they trim and
+    // String.prototype.trim() removes U+FEFF, so the file's own format decided
+    // whether the same three bytes were welcome. `JSON.parse` does not trim, so
+    // the reader with the least excuse refused a valid file with exit 3 and a
+    // message that points at the character instead of the reason it is there.
+    // PowerShell 5.1, many editors and a number of export buttons write one.
+    //
+    // Exactly one marker at the very front is the encoding marker, and only
+    // that one is dropped: a U+FEFF anywhere else — a second one in front, one
+    // on the second line, one inside a value — is the file's own text, and a
+    // value that begins with an invisible character is data, not a repair.
+    // Dropping it here rather than at each caller is what lets the same rule
+    // serve the binary and the browser playground, which share this reader.
+    const source = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+    const data = JSON.parse(source);
     if (opts && Array.isArray(opts.warnings)) {
-      for (const dup of duplicateJSONKeys(text)) opts.warnings.push(dup);
-      for (const literal of jsonNumberLiterals(text)) {
+      for (const dup of duplicateJSONKeys(source)) opts.warnings.push(dup);
+      for (const literal of jsonNumberLiterals(source)) {
         collectLostPrecision(opts.warnings, 'JSON', literal);
       }
     }

@@ -1827,5 +1827,49 @@ test('a flatten member that carries a name the record has says which value is go
   }
 });
 
+test('a JSON file that starts with a byte order mark is read, not refused', () => {
+  // Measured on the real binary before the rule existed: exit 3 and
+  // "Could not parse input as json: Unexpected token '﻿'" for a file that is
+  // valid JSON with three encoding bytes in front of it. The same three bytes
+  // on a CSV, a YAML or an XML file were read without a word, because those
+  // readers trim and trim() removes U+FEFF — so the file format decided
+  // whether the same bytes were welcome. PowerShell 5.1 writes one, and so do
+  // a fair number of editors and export buttons, so this is a file that works
+  // in every other tool and not in this one.
+  const dir = mkdtempSync(join(tmpdir(), 't68-'));
+  try {
+    const path = join(dir, 'rows.json');
+    writeFileSync(path, '[{"id":1,"name":"Ada"},{"id":2,"name":"Bob"}]', 'utf-8');
+    const marked = join(dir, 'marked.json');
+    writeFileSync(marked, `\uFEFF${readFileSync(path, 'utf-8')}`, 'utf-8');
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+      const r = spawnSync(process.execPath, [cli, marked, '-o', format], { encoding: 'utf-8' });
+      assert.equal(r.status, 0, `${format}: expected exit 0, got ${r.status}: ${r.stderr}`);
+      assert.ok(r.stdout.includes('Ada'), `${format}: the data must be there: ${r.stdout}`);
+      assert.ok(!r.stdout.includes('\uFEFF'), `${format}: the marker is not data: ${JSON.stringify(r.stdout)}`);
+    }
+    // Named explicitly, because a file whose extension already says the format
+    // never asks the detector: the marker has to go before the parse either way.
+    const forced = spawnSync(process.execPath, [cli, marked, '-f', 'json', '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(forced.status, 0, forced.stderr);
+    assert.strictEqual(forced.stdout.trim(), 'id,name\n1,Ada\n2,Bob', forced.stdout);
+    // And through a pipe, which is a different read: the file path and stdin
+    // each decode their own bytes.
+    const piped = spawnSync(process.execPath, [cli, '-o', 'csv'], { encoding: 'utf-8', input: readFileSync(marked) });
+    assert.equal(piped.status, 0, piped.stderr);
+    assert.strictEqual(piped.stdout.trim(), 'id,name\n1,Ada\n2,Bob', piped.stdout);
+    // A mark in the second line is a character in the data, not a marker in
+    // front of the file, and the run still refuses it — with a message about
+    // the token it could not read, because that is what it is.
+    const second = join(dir, 'second.json');
+    writeFileSync(second, '\n\uFEFF{"id":1}', 'utf-8');
+    const late = spawnSync(process.execPath, [cli, second, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(late.status, 3, late.stdout);
+    assert.match(late.stderr, /Could not parse input as json/, late.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
