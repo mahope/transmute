@@ -19,6 +19,38 @@
 const XML_NAME = '[A-Za-z_][A-Za-z0-9._-]*(?::[A-Za-z_][A-Za-z0-9._-]*)?';
 
 /**
+ * The same name, minus the part the *writer* cannot use: a colon.
+ *
+ * `XML_NAME` above is the reader's question — "is this a tag in a document
+ * somebody else wrote?" — and a foreign document is allowed to declare its
+ * prefixes, so a colon belongs in it. The writer's question is different: "can
+ * a standard parser open the file I am about to write?" A colon in a name is a
+ * namespace *reference*, and a reference is only legal when the document
+ * declares the prefix it names. There is no URI here to declare, so a name that
+ * carries a prefix cannot be spelled as a name at all: `{"a:b":1}` wrote
+ * `<a:b>1</a:b>`, and a namespace-aware parser answered "unbound prefix" and
+ * gave up on the whole file, while this tool read its own output back and said
+ * it was fine.
+ *
+ * So a name with a prefix in it is not writable as a name, and travels as the
+ * `name` attribute of a `<field>` — which is legal everywhere, and is where
+ * every other name XML cannot carry already goes.
+ */
+const XML_WRITABLE_NAME = '[A-Za-z_][A-Za-z0-9._-]*';
+
+/**
+ * `xmlns` is not a name this writer may spell, even though the characters are
+ * legal ones: as an attribute it is a *declaration*, naming the default
+ * namespace of the element and of everything under it, and a conforming reader
+ * reports no attribute at all. `{"@xmlns":"http://x"}` therefore left a record
+ * whose only field was invisible to every other tool, in a document it had also
+ * quietly re-namespaced.
+ */
+function writesAsXMLName(name) {
+  return new RegExp(`^${XML_WRITABLE_NAME}$`).test(name) && name !== 'xmlns';
+}
+
+/**
  * `name="value"`, `name='value'` or a bare `name=value`; 1 is the name, 2–4 the
  * value. A bare value may not *end* in `/`, so `<i b=two/>` reads `two` and not
  * `two/` — the slash is the tag's own closing marker. Unquoted values are not
@@ -2622,8 +2654,8 @@ function writeXMLElement(tag, value, depth, key = null) {  const pad = '  '.repe
   // record with no fields at all. A key that is not a legal name travels in a
   // `name` attribute on `<field>` instead, which is legal everywhere, and
   // `readFieldName` puts it back on the way in.
-  const carried = key !== null && !new RegExp(`^${XML_NAME}$`).test(key);
-  const name = carried ? ` name="${escapeXML(key)}"` : '';
+  const carried = key !== null && !writesAsXMLName(key);
+  const name = carried ? ` name="${escapeXMLAttr(key)}"` : '';
   const safeTag = carried ? 'field' : tag;
   // A list is repeated elements of the same name. It is the one shape XML has
   // for one, it is what XML documents actually look like, and it is the shape
@@ -2665,8 +2697,8 @@ function writeXMLElement(tag, value, depth, key = null) {  const pad = '  '.repe
   // carrying `@name` of its own wrote `<field name="0" name="x"/>` — two `name`
   // attributes on one element, which expat refuses to parse at all, so the file
   // was not merely lossy but unreadable outside this tool.
-  const asAttribute = ([k]) => !carried && k.startsWith('@') && new RegExp(`^${XML_NAME}$`).test(k.slice(1));
-  const attrs = entries.filter(asAttribute).map(([k, v]) => ` ${k.slice(1)}="${escapeXML(String(v ?? ''))}"`).join('');
+  const asAttribute = ([k]) => !carried && k.startsWith('@') && writesAsXMLName(k.slice(1));
+  const attrs = entries.filter(asAttribute).map(([k, v]) => ` ${k.slice(1)}="${escapeXMLAttr(String(v ?? ''))}"`).join('');
   const rest = entries.filter(([k]) => !asAttribute([k]));
   if (rest.length === 0) return `${pad}<${safeTag}${name}${attrs}/>`;
   const inner = rest.map(([k, v]) =>
@@ -2682,6 +2714,30 @@ function escapeXML(val) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/**
+ * The same escaping, for an attribute value, plus the three whitespaces XML
+ * takes away on the way in.
+ *
+ * Attribute-value normalization (XML 1.0 3.3.3) replaces every literal tab,
+ * newline and carriage return in an attribute with a space, before any parser
+ * sees the value — and a character reference is appended as it stands, so
+ * `&#9;` is the one spelling that survives. Measured on the file this tool
+ * wrote: `note="a<TAB>b"` read back as `a b` in every real parser, and as
+ * `a\tb` in this one, which decodes references and does not normalize. Where
+ * this reader is the more faithful of the two, the file is what lies — and the
+ * file is what the user hands to somebody else.
+ *
+ * Element text is deliberately left literal. A parser keeps a tab and a
+ * newline in an element's content, so escaping them there would only make the
+ * file harder to read than the reader that has to read it.
+ */
+function escapeXMLAttr(val) {
+  return escapeXML(val)
+    .replace(/\t/g, '&#9;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;');
 }
 
 // The C0 controls, by the names `cat -v` and a terminal agree on. A file that

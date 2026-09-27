@@ -411,6 +411,33 @@ test('the three list shapes XML cannot carry are named on stderr', () => {
   );
 });
 
+test('a name XML cannot carry is written so a standard parser can read the file', () => {
+  // The file a user hands to somebody else is the point of the promise, so this
+  // is checked on the binary that ships: every name in the output has to be one
+  // a namespace-aware parser accepts, and every attribute value has to survive
+  // the normalization XML does to it. Both were measured against a real parser
+  // before the code was touched — `xml.etree.ElementTree` refused the file with
+  // "unbound prefix", and read `note="a<TAB>b"` as `a b` where this tool read
+  // `a\tb`.
+  const input = '[{"a:b":1,"@xlink:href":"u","a\\tb":2,"@xmlns":"http://x","@note":"x\\ty"}]';
+  const out = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input }));
+  // No name in the file carries a prefix, and `xmlns` is not an attribute.
+  assert.ok(!/<\/?[A-Za-z_][A-Za-z0-9._-]*:[A-Za-z_]/.test(out), out);
+  assert.ok(!/\s(?:xmlns|xmlns:[A-Za-z_][\w.-]*)=/.test(out), out);
+  // No attribute value holds a whitespace XML will take away.
+  for (const m of out.matchAll(/\s[\w.:-]+="([^"]*)"/g)) {
+    assert.ok(!/[\t\n\r]/.test(m[1]), `${JSON.stringify(m[1])} in ${out}`);
+  }
+  // And the record still comes back whole, keys and whitespace included.
+  assert.deepEqual(
+    JSON.parse(expectOk(sh(`"${process.execPath}" "${cli}" -f xml -o json`, { input: out }))),
+    [{ 'a:b': '1', '@xlink:href': 'u', 'a\tb': '2', '@xmlns': 'http://x', '@note': 'x\ty' }]
+  );
+  // The six formats still agree on an ordinary record, so nothing else moved.
+  const plain = expectOk(sh(`"${process.execPath}" "${cli}" -f json -o xml`, { input: '[{"a":1,"@b":"x"}]' }));
+  assert.ok(plain.includes('<item b="x">') && plain.includes('<a>1</a>'), plain);
+});
+
 console.log('── nested YAML is read, not flattened away ──');
 test('an indented block survives, instead of vanishing with exit 0', () => {
   const out = expectOk(sh(`"${process.execPath}" "${cli}" -f yaml -o json`, {
