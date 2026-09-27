@@ -903,11 +903,28 @@ test('join --prefix keeps the colliding field in the real binary', () => {
 });
 
 test('join without a prefix still keeps the left value and drops the right one', () => {
-  const out = expectOk(sh(`transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","with":[{"customer":"alice","status":"refunded"}]}]' --output json`));
+  // The output shape is unchanged — the left value wins and the right one is not
+  // written — and the run now says so on stderr instead of leaving the user to
+  // find out by looking. That is the whole difference from before this rule.
+  const r = sh(`transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","with":[{"customer":"alice","status":"refunded"}]}]' --output json`);
+  const out = expectOk(r, { allowStderr: true });
   const row = JSON.parse(out)[0];
   assert.equal(row.status, 'paid');
   assert.equal(Object.prototype.hasOwnProperty.call(row, 'refunded'), false);
   assert.equal(Object.keys(row).join(','), 'id,customer,status,items,total');
+  assert.match(r.stderr, /join: a joined field is already a field in the left records/, r.stderr);
+  assert.match(r.stderr, /"status" \(1 of 1\)/, r.stderr);
+  assert.doesNotMatch(out, /refunded/, 'the dropped value must not be in the output');
+});
+
+test('a join that loses nothing says nothing on the real binary', () => {
+  // The control, on the real binary: a field only the right side has is the
+  // ordinary join, and it must stay silent or the rule above trains the user to
+  // ignore stderr.
+  expectOk(sh(`transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","with":[{"customer":"alice","tier":"gold"}]}]' --output json`));
+  // And a prefix that does make room is silent too — the case the rule is about
+  // must not bleed into the case the docs promise works.
+  expectOk(sh(`transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","prefix":"was_","with":[{"customer":"alice","status":"refunded"}]}]' --output json`));
 });
 
 console.log('── a field name no record has ──');

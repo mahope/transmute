@@ -2842,6 +2842,95 @@ test('a flatten that loses no value says nothing', () => {
   assert.match(missing.warnings[0], /no record has a field named "items"/, missing.warnings[0]);
 });
 
+t('a joined field the left record already has says which value is gone', () => {
+  // The join writes a right-hand field only when the left has no name for it, so
+  // the joined value is simply not in the output. `docs/cli.md` promises that in
+  // prose; the run itself said nothing at all. It succeeds — the next file may
+  // not collide — and names the value instead of dropping it silently.
+  const r = run('[{"id":1,"name":"outer"}]', 'json',
+    [{ op: 'join', on: 'id', with: [{ id: 1, name: 'inner' }] }], 'json');
+  assert.strictEqual(r.error, undefined, r.error);
+  assert.match(r.text, /"name": "outer"/, r.text);
+  assert.doesNotMatch(r.text, /inner/, 'the dropped value must not be in the output');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /a joined field is already a field in the left records/, r.warnings[0]);
+  assert.match(r.warnings[0], /"name" \(1 of 1\)/, r.warnings[0]);
+  assert.match(r.warnings[0], /is not in the output/, r.warnings[0]);
+});
+
+t('a prefix that does not make room is named as the prefix it was', () => {
+  // The documented way out, and the case that matters most: `prefix: "x_"` is
+  // what the docs tell the user to reach for, and on a left row that already has
+  // `x_name` it drops the value just the same. The message leads with the prefix,
+  // because "pick a prefix that is not already in use" is advice no user can act
+  // on without reading every left row.
+  const r = run('[{"id":1,"name":"outer","x_name":"already"}]', 'json',
+    [{ op: 'join', on: 'id', prefix: 'x_', with: [{ id: 1, name: 'inner' }] }], 'json');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /join: with prefix "x_",/, r.warnings[0]);
+  // The name reported is the one that was actually taken, not the bare one.
+  assert.match(r.warnings[0], /"x_name" \(1 of 1\)/, r.warnings[0]);
+  // And the prefix that does make room still says nothing at all.
+  assert.deepStrictEqual(warningsFor([{ op: 'join', on: 'id', prefix: 'x_', with: [{ id: 1, name: 'inner' }] }],
+    '[{"id":1,"name":"outer"}]'), []);
+});
+
+t('every colliding joined name is named, and the row count is the denominator', () => {
+  // Two joined fields lose two values across two of three rows, and a warning
+  // naming only the first would leave the other value just as gone.
+  const r = run('[{"id":1,"name":"a","tier":"x"},{"id":2,"name":"b","tier":"y"},{"id":3,"name":"c"}]',
+    'json',
+    [{ op: 'join', on: 'id', with: [{ id: 1, name: 'R1', tier: 'T1' }, { id: 2, name: 'R2', tier: 'T2' }] }],
+    'json');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /2 joined fields are/, r.warnings[0]);
+  assert.match(r.warnings[0], /"name" \(2 of 2\), "tier" \(2 of 2\)/, r.warnings[0]);
+  assert.match(r.warnings[0], /values that would have gone there are not in the output/, r.warnings[0]);
+  // The denominator is the rows a join could have written into, not the rows that
+  // matched nothing. A right-hand row carrying the same name three times is one
+  // row that lost a value, not three.
+  const repeated = run('[{"sku":"keep"}]', 'json',
+    [{ op: 'join', on: 'sku', with: [{ sku: 'keep', a: 1, a: 2, a: 3 }] }], 'json');
+  assert.deepStrictEqual(repeated.warnings, [], 'duplicate JSON keys collapse in the reader, so nothing collides');
+});
+
+t('a join that loses no value says nothing', () => {
+  // The control that keeps the rule from being too broad, in four shapes. A
+  // right-hand field named after the join key is skipped on purpose, and the left
+  // row holds that value by definition of the match. A right value equal to the
+  // left one loses nothing — the same reason `{a: b, b: a}` does not warn in
+  // rename. A field only one side has is the ordinary join. And a row that
+  // matched nothing had no joined value to lose.
+  assert.deepStrictEqual(warningsFor([{ op: 'join', on: 'id', with: [{ id: 1 }] }], '[{"id":1,"name":"outer"}]'), []);
+  assert.deepStrictEqual(warningsFor([{ op: 'join', on: 'id', with: [{ id: 1, name: 'outer' }] }],
+    '[{"id":1,"name":"outer"}]'), []);
+  assert.deepStrictEqual(warningsFor([{ op: 'join', on: 'id', with: [{ id: 1, tier: 'gold' }] }],
+    '[{"id":1,"name":"outer"}]'), []);
+  assert.deepStrictEqual(warningsFor([{ op: 'join', on: 'id', with: [{ id: 77, name: 'x' }] }],
+    '[{"id":1,"name":"outer"}]'), []);
+  // A nested value compares by content, not by identity: two equal objects are
+  // one value under one name, and nothing is lost.
+  assert.deepStrictEqual(warningsFor([{ op: 'join', on: 'id', with: [{ id: 1, meta: { a: 1, b: [2] } }] }],
+    '[{"id":1,"meta":{"b":[2],"a":1}}]'), []);
+  // The rule before it still fires, so the two do not swallow each other: the
+  // left has the key and the right does not, which is the one-sided message.
+  const missing = run('[{"id":1,"city":"Aarhus","name":"outer"}]', 'json',
+    [{ op: 'join', on: 'city', with: [{ id: 1, name: 'inner' }] }], 'json');
+  assert.strictEqual(missing.warnings.length, 1, JSON.stringify(missing.warnings));
+  assert.match(missing.warnings[0], /no record on the right has a field named "city"/, missing.warnings[0]);
+});
+
+t('the joined value that is dropped is reported through csv too', () => {
+  // CSV has no way to say what a writer left out, so the warning has to reach the
+  // format that cannot carry it — the same reason the earlier rules hang on the
+  // transform rather than on a writer.
+  const r = run('id,name\n1,outer\n', 'csv',
+    [{ op: 'join', on: 'id', with: [{ id: 1, name: 'inner' }] }], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /"name" \(1 of 1\)/, r.warnings[0]);
+  assert.strictEqual(r.text, 'id,name\n1,outer', r.text);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

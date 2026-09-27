@@ -136,7 +136,7 @@
 <div class="doc-layout">
 <article class="prose">
 <h1>How to Join Two Files by a Shared Key</h1>
-<p class="meta"><span>Updated <time datetime="2026-09-26">26 September 2026</time></span><span>2 min read</span><button class="share" type="button" data-done="Link copied"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy link</span></button></p>
+<p class="meta"><span>Updated <time datetime="2026-09-26">26 September 2026</time></span><span>3 min read</span><button class="share" type="button" data-done="Link copied"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy link</span></button></p>
 <p>Orders in one file, customers in another. Inventory counts in one export, product names in another. Merging them usually means opening Python or loading both into SQLite. Here's the one-command version.</p>
 
 <h2 id="cli">The Transmute CLI (free)</h2>
@@ -173,7 +173,7 @@
 <tr><th>Option</th><th>Effect</th></tr>
 <tr><td><code>on</code></td><td>The shared key. Matching is string-compared, so <code>"A1"</code> matches <code>A1</code>.</td></tr>
 <tr><td><code>keep:"left"</code></td><td>Rows without a match are kept (SQL LEFT JOIN). Default drops them (INNER JOIN).</td></tr>
-<tr><td><code>prefix</code></td><td>Joined fields get this prefix, so they land under a new name and cannot collide with a column you already have. Without it, an existing name wins and the joined value is dropped.</td></tr>
+<tr><td><code>prefix</code></td><td>Joined fields get this prefix, so they land under a new name and cannot collide with a column you already have. Without it, an existing name wins and the joined value is dropped — and the run says so on stderr, so you never have to diff two files to find out what went missing.</td></tr>
 <tr><td><code>with</code></td><td>The rows to merge in. Pass a bigger dataset via shell substitution: <code>--pipe "[{\"op\":\"join\",\"on\":\"id\",\"with\":$(cat stock.json)}]"</code></td></tr>
 </table>
 </div>
