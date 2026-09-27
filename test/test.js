@@ -802,9 +802,47 @@ test('block scalars keep their line breaks, and a # inside one is data', () => {
   assert.strictEqual(r.data[0].after, 1);
 });
 
+test('a block scalar keeps the whitespace at the end of its own lines', () => {
+  // `tokenizeYAML` trims every line, which is right for a key and wrong for a
+  // block scalar: in a block scalar the trailing spaces are the value, and the
+  // note over the function already says so for `#`. A fixed-width column, a
+  // padded shell snippet and an indented recipe all live in here. Measured with
+  // PyYAML, which is the reader this one has to agree with; the old reader gave
+  // the answers in the comments, at exit 0 with empty stderr.
+  const cases = [
+    // clip, a space on a middle line
+    ['- v: |\n    a  \n    b\n', 'a  \nb\n', 'a\nb\n'],
+    // strip, and a line that is nothing but one space is content, not a break
+    ['- v: |-\n    a\n     \n    b\n', 'a\n \nb', 'a\n\nb'],
+    // strip, trailing spaces on the last line
+    ['- v: |-\n    a   \n', 'a   ', 'a'],
+    // keep: the block's own breaks and no break of the writer's own
+    ['- v: |+\n    a\n    b\n', 'a\nb\n', 'a\nb\n\n'],
+    ['- v: |+\n    a\n    b\n\n\n', 'a\nb\n\n\n', 'a\nb\n\n\n\n'],
+    // a tab is whitespace too
+    ['- v: |-\n    a\t\n    b\n', 'a\t\nb', 'a\nb'],
+    // folded: a space line is content, and it keeps the breaks around it
+    ['- v: >\n    a\n     \n    b\n', 'a\n \nb\n', 'a b\n'],
+    ['- v: >\n    a \n    b\n', 'a  b\n', 'a b\n'],
+    // and a plain scalar still loses them, because YAML says it does
+    ['- v: a   \n', 'a', 'a']
+  ];
+  for (const [text, expected, before] of cases) {
+    assert.strictEqual(run(text, 'yaml').data[0].v, expected,
+      `${JSON.stringify(text)} (was ${JSON.stringify(before)})`);
+  }
+});
+
 test('folded scalars join lines the way prose does', () => {
+  // Measured with PyYAML on this exact file: `one two\nthree`. The old reader
+  // added the last `\n` for every `>` and `|`, which is what this expectation
+  // used to say; the reader now asks PyYAML instead of guessing.
   const r = run('text: >\n  one\n  two\n\n  three', 'yaml');
-  assert.strictEqual(r.data[0].text, 'one two\nthree\n');
+  assert.strictEqual(r.data[0].text, 'one two\nthree');
+  // And with the break there, it is kept: the empty line spends the break of
+  // the run it is in, and the file's own last break is the value's.
+  const withBreak = run('text: >\n  one\n  two\n\n  three\n', 'yaml');
+  assert.strictEqual(withBreak.data[0].text, 'one two\nthree\n');
 });
 
 test('quoted YAML strings keep the characters that mean something', () => {
