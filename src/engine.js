@@ -2336,42 +2336,51 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
 
   let text;
   if (header.style === '>') {
-    // Folding is about the *break*, not the line: a single break between two
-    // lines that both have content becomes a space, and every other break
-    // stays. An empty line is where the break of a run of them is spent, so the
-    // line after it adds none — but a line of nothing but spaces is content
-    // (PyYAML: `a`, ` `, `b` is `a\n \nb`, not `a   b`), so it spends a break
-    // and carries its spaces.
+    // Folding is about the *break*, not the line, and the question is how many
+    // breaks lie between two lines that both have content. One break folds to a
+    // space; a run of b breaks folds to b-1 line breaks, because the first is
+    // the one the fold spends. So a run of empty lines is not "one break spent
+    // once" however long it is — measured with PyYAML, `one`,`two`,``,``,
+    // `three` is 'one two\n\nthree' and this used to read 'one two\nthree', so
+    // two empty lines lost a line break, silently, in the commonest chomping
+    // there is (clip is what `>` names when no indicator follows it).
     //
-    // A line indented *deeper* than the block is content the format keeps
-    // whole, and it keeps the break on both sides of it: a break next to one is
-    // a line break, not the space prose folds to. Measured with PyYAML, which
-    // read `v: >` / `    a` / `      b` as 'a\n  b\n' where this read 'a   b\n'
-    // — a line break replaced by a space, in a value that says it is folded, so
-    // nothing in the file said so. The test is the dedented line's own leading
-    // space, because that is exactly "more indented than this block", and it is
-    // the same question the indicator answers from the other direction.
+    // Nothing folds next to a line indented *deeper* than the block: that line
+    // is content the format keeps whole, and it keeps the breaks on both sides
+    // of it, so the run of b breaks there stays b (PyYAML: `b`, ``, `c` is
+    // 'b\nc' with b plain, and 'b\n\nc' with b deeper). The test is the dedented
+    // line's own leading space, because that is exactly "more indented than this
+    // block", and it is the same question the indicator answers from the other
+    // direction.
+    //
+    // The file's own trailing newline is not an empty line inside the block but
+    // the break that ends the last one, so the tail is counted as it stands:
+    // `>+` with one empty line after it keeps two breaks, because the empty line
+    // has a break of its own *and* the file has one after it. Leading breaks are
+    // kept whole for the same reason — there is nothing in front of them to fold
+    // with. A line of nothing but spaces is content, not an empty line (PyYAML:
+    // `a`, ` `, `b` is 'a\n \nb', not `a   b`), so it is a line like any other
+    // and it is deeper than the block, which is the same question again.
     const moreIndented = s => s.startsWith(' ');
+    const pieces = [];
+    let breaks = 0;
     text = '';
-    for (let k = 0; k < dedented.length; k++) {
-      const line = dedented[k];
-      if (k === 0) { text = line; continue; }
-      const prev = dedented[k - 1];
-      if (prev === '') { text += line; continue; }
-      if (line === '') {
-        // An empty line spends the fold of the break before it and carries one
-        // break of its own. After a deeper line that break is not a fold, so
-        // both are there (PyYAML: `b`, ``, `c` is 'b\nc', but `b` deeper and
-        // the same two lines after it is 'b\n\nc'). The file's own trailing
-        // newline is not an empty line inside the block but the break that ends
-        // the last one, so it is counted once either way.
-        text += moreIndented(prev) && collected[k] !== lines[lines.length - 1] ? '\n\n' : '\n';
-        continue;
+    for (const line of dedented) {
+      if (line === '') { breaks++; continue; }
+      if (pieces.length === 0) {
+        text = '\n'.repeat(breaks) + line;
+      } else {
+        const prev = pieces[pieces.length - 1];
+        const foldable = breaks === 0 && !moreIndented(prev) && !moreIndented(line);
+        if (foldable) text += ' ';
+        else if (moreIndented(prev) || moreIndented(line)) text += '\n'.repeat(breaks + 1);
+        else text += '\n'.repeat(breaks);
+        text += line;
       }
-      const literal = moreIndented(prev) || moreIndented(line) ||
-        line.trim() === '' || prev.trim() === '';
-      text += (literal ? '\n' : ' ') + line;
+      pieces.push(line);
+      breaks = 0;
     }
+    text += '\n'.repeat(breaks);
   } else {
     text = dedented.join('\n');
   }

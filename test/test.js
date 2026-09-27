@@ -3705,16 +3705,16 @@ t('an empty line after a deeper line carries two breaks, not one', () => {
   // PyYAML reads `b`, ``, `c` as 'b\nc', and the same three lines with `b`
   // indented deeper as 'b\n\nc'. This is the difference between "the empty line
   // spent a break" and "there were two breaks", and one newline cannot say which.
-  // Two empties in a row are deliberately *not* here: `keep` losing a trailing
-  // empty line is a separate defect that hits prose blocks too (`v: >+` / `a` /
-  // `b` / `` reads 'a b' where PyYAML says 'a b\n'), it is measured and open, and
-  // no test here claims a truth that does not hold.
+  // A *run* of empty lines is the same question asked once more: two empties are
+  // three breaks and fold to two, which is what the test below pins down too.
   const cases = [
     ['v: >\n    a\n      b\n\n    c\n', 'a\n  b\n\nc\n', "'a   b\\nc\\n'"],
     ['v: >+\n    a\n      b\n\n', 'a\n  b\n\n', "'a   b\\n'"],
+    ['v: >\n    a\n      b\n\n\n    c\n', 'a\n  b\n\n\nc\n', "'a\\n  b\\n\\nc\\n'"],
     // The file's own last line break is the break that *ends* the deeper line,
     // not an empty line inside the block, so it is counted once either way.
     ['v: >+\n    a\n      b\n', 'a\n  b\n', "'a   b\\n'"],
+    ['v: >+\n    a\n      b\n\n\n', 'a\n  b\n\n\n', "'a\\n  b\\n\\n'"],
   ];
   for (const [text, expected, before] of cases) {
     const r = run(text, 'yaml');
@@ -3747,6 +3747,64 @@ t('folding a block that has no deeper line is unchanged', () => {
     assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
     const got = Array.isArray(r.data) ? r.data[0] : r.data;
     assert.strictEqual(got.v, expected, JSON.stringify(text));
+  }
+});
+
+t('keep keeps every empty line at the end of a folded block', () => {
+  // `+` is the one chomping indicator that says *keep them all*, so the empty
+  // lines at the end of a block are the value. Each one has a line break of its
+  // own and the file has one after it, so `v: >+` / `a` / `b` / `` is 'a b\n\n'
+  // — measured with PyYAML, and this read 'a b\n', a line break dropped with no
+  // warning on the one indicator whose whole meaning is not to drop anything.
+  // Clip and strip are controls: they are the two that are *supposed* to spend
+  // the trailing breaks, and they were clean before and after.
+  const cases = [
+    ['v: >+\n    a\n    b\n\n', 'a b\n\n', "'a b\\n'"],
+    ['v: >+\n    a\n    b\n\n\n', 'a b\n\n\n', "'a b\\n'"],
+    ['v: >+\n    a\n    b\n\n\n\n', 'a b\n\n\n\n', "'a b\\n'"],
+    // The explicit indentation indicator says nothing about chomping, so the
+    // same file with one is the same value.
+    ['v: >+2\n  a\n  b\n\n', 'a b\n\n', "'a b\\n'"],
+    // A file with no last line break has none to keep, and a block that ends
+    // where the file ends has no empty line to keep either.
+    ['v: >+\n    a\n    b', 'a b', "'a b'"],
+    ['v: >\n    a\n    b\n\n', 'a b\n', "'a b\\n'"],
+    ['v: >-\n    a\n    b\n\n', 'a b', "'a b'"],
+  ];
+  for (const [text, expected, before] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    assert.strictEqual(got.v, expected, `${JSON.stringify(text)} (was ${before})`);
+  }
+});
+
+t('a run of empty lines folds to a line break each, not to one', () => {
+  // One empty line spends the fold of the break before it, which is why
+  // `one`, `two`, ``, `three` is 'one two\nthree' and not 'one two\n\nthree'.
+  // A *run* is a different question: two empty lines are three line breaks, and
+  // a run of b breaks folds to b-1, so 'one two\n\nthree' — measured with PyYAML
+  // and this read 'one two\nthree', a line break dropped in the middle of a
+  // value. Clip is the header `>` gets when no indicator follows it, so this was
+  // in the commonest chomping there is and not only under `keep`.
+  const cases = [
+    ['v: >\n    one\n    two\n\n    three\n', 'one two\nthree\n', "'one two\\nthree\\n'"],
+    ['v: >\n    one\n    two\n\n\n    three\n', 'one two\n\nthree\n', "'one two\\nthree\\n'"],
+    ['v: >\n    one\n    two\n\n\n\n    three\n', 'one two\n\n\nthree\n', "'one two\\nthree\\n'"],
+    // All three chompings agree on the middle of the block; only the tail differs.
+    ['v: >-\n    one\n    two\n\n\n    three\n', 'one two\n\nthree', "'one two\\nthree'"],
+    ['v: >+\n    one\n    two\n\n\n    three\n', 'one two\n\nthree\n', "'one two\\nthree\\n'"],
+    // A break at the front of the block has no break in front of it to fold with,
+    // so it stays (PyYAML: a leading empty line is '\none two', and this read
+    // 'one two' — a line break dropped at the other end of the same value).
+    ['v: >\n\n    one\n    two\n', '\none two\n', "'one two\\n'"],
+    ['v: >-\n\n    one\n    two\n', '\none two', "'one two'"],
+  ];
+  for (const [text, expected, before] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    assert.strictEqual(got.v, expected, `${JSON.stringify(text)} (was ${before})`);
   }
 });
 

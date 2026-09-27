@@ -1402,6 +1402,57 @@ printf 'v: |-\n    a\n    b' | transmute --format yaml --output json
 ]
 ```
 
+#### An empty line in a folded block is a line break, and a run of them is a run
+
+`>` folds a line break between two lines that both have content into a space.
+An *empty* line is where that fold is spent, so the line after it adds none — one
+empty line in the middle of a folded block is one line break:
+
+```bash
+printf 'v: >\n    one\n    two\n\n    three\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "one two\nthree\n"
+  }
+]
+```
+
+Two empty lines are two more lines, and a run of *b* line breaks folds to *b-1*
+of them, so the second one is a line break of its own:
+
+```bash
+printf 'v: >\n    one\n    two\n\n\n    three\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "one two\n\nthree\n"
+  }
+]
+```
+
+At the *end* of the block the same counting applies, and `>+` is the header that
+keeps all of it. The empty line has a line break of its own and the file has one
+after it, so `v: >+` / `a` / `b` / (empty line) is `a b` with two line breaks —
+the one that ends `b`, and the one the empty line carries:
+
+```bash
+printf 'v: >+\n    a\n    b\n\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "a b\n\n"
+  }
+]
+```
+
+`|`, `>-` and `>` (clip) are the same three files with the other two chompings, and
+they are the two that *spend* the trailing breaks: clip keeps the one the file has
+and strip drops them all.
+
 #### A directive is the file naming its YAML version, not a document
 
 A file may open with one or more directives — `%YAML 1.2` names the version,
