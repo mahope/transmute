@@ -417,6 +417,68 @@ collision: there is nothing to decide, so it stays silent. Neither is a key that
 appears in two different records, or a key that merely looks like one inside a
 string value.
 
+### A number written with more detail than a number keeps
+
+Every number in JSON and YAML becomes an IEEE 754 double, and a double holds
+about 17 significant digits. Past that, what the file says and what the tool can
+carry are two different numbers, and the difference is silent by default: exit 0,
+nothing on stderr, and a value in the output that was never in the input.
+
+This is not only about very large whole numbers. A decimal carries the same
+limit, and a file that writes more decimals than a double can tell apart loses
+them just as quietly:
+
+```bash
+printf '[{"id":9223372036854775807,"amount":123456789012345678.5,"rate":0.100000000000000000001}]\n' \
+  | transmute --format json --output csv
+```
+
+```
+id,amount,rate
+9223372036854776000,123456789012345680,0.1
+```
+
+```
+Warning: JSON: 9223372036854775807 is written with more detail than a JavaScript number keeps, so it was read as 9223372036854776000 in 1 place — the output holds a different value than the input. Write it in quotes ("9223372036854775807") to keep every digit.
+Warning: JSON: 123456789012345678.5 is written with more detail than a JavaScript number keeps, so it was read as 123456789012345680 in 1 place — the output holds a different value than the input. Write it in quotes ("123456789012345678.5") to keep every digit.
+Warning: JSON: 0.100000000000000000001 is written with more detail than a JavaScript number keeps, so it was read as 0.1 in 1 place — the output holds a different value than the input. Write it in quotes ("0.100000000000000000001") to keep every digit.
+```
+
+The run still succeeds and still writes its file: the value is changed, not
+missing, so anyone who wants the output has a reason to read the warning instead
+of finding an empty directory. Each distinct value is named once with the value
+it became, and repeated on many rows it says `in 12 places` rather than saying
+it twelve times. Quoting is the way out and it works today in all six output
+formats — the digits then stay text.
+
+**It is not a digit count.** Sixteen digits can be fine or can lose one, and
+twenty can be exact, so the rule compares the value the file wrote with the value
+that came out, at the precision the file is written in:
+
+| In the file | In the output | Said? |
+| --- | --- | --- |
+| `9223372036854775807` | `9223372036854776000` | yes — three digits changed |
+| `9007199254740993` | `9007199254740992` | yes — one digit changed |
+| `9007199254740994` | `9007199254740994` | no — sixteen digits, exact |
+| `10000000000000000000` | `10000000000000000000` | no — twenty digits, exact |
+| `123456789012345678.5` | `123456789012345680` | yes — the half is gone |
+| `0.100000000000000000001` | `0.1` | yes — twenty decimals, seventeen kept |
+| `19.99`, `0.07`, `1.50`, `100.00` | `19.99`, `0.07`, `1.5`, `100` | no — same value, shorter spelling |
+| `0.30000000000000004` | `0.30000000000000004` | no — that is the value, exactly |
+| `"AB-9007199254740993"` | `"AB-9007199254740993"` | no — inside a string, never a number |
+
+A number that is *spelled* differently but is the same value stays silent:
+`1.50` and `1.5` are one number, and `1e5` and `100000` are one number. So is
+the largest double there is, `1.7976931348623157e308`, written in the seventeen
+digits anyone can write it in — its exact value has more digits, and not one a
+reader can see. A value that is no value at all is a different case and an older
+rule: `1e400` is refused by the writer, with an error and exit 1.
+
+CSV and XML input are never affected: both hand every value on as text, so
+nothing is rounded before a writer sees it. A file that goes through `csv` and
+comes out as `csv` keeps `123456789012345678.5` as the string it always was —
+read it as JSON and it is a number, and then the rule above applies.
+
 ### Flow collections, on one line and as the whole file
 
 `[a, b]` and `{k: v}` are read as collections, wherever they sit in a YAML

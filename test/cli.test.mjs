@@ -1169,6 +1169,58 @@ test('a value that is not finite stops every writer, and no file is left behind'
   }
 });
 
+test('a decimal a number cannot hold is reported on stderr, and the file is still written', () => {
+  // Measured on the real binary before the rule reached decimals: `amount`
+  // came out with different digits in all six formats, exit 0 and empty
+  // stderr. An amount in a currency unit with eighteen whole digits, a
+  // measurement with more decimals than a double can tell apart, and a
+  // snowflake id written as a decimal all have this shape — and a rule that
+  // only asked about whole numbers saw none of them, because a fraction does
+  // not survive the shift into an integer.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'amounts.json');
+    writeFileSync(path, '[{"amount":123456789012345678.5,"rate":0.100000000000000000001}]', 'utf-8');
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+      const out = join(dir, `out.${format}`);
+      const result = spawnSync(process.execPath, [cli, path, '-o', format, '--out', out], { encoding: 'utf-8' });
+      assert.equal(result.status, 0, `${format}: expected exit 0, got ${result.status}: ${result.stderr}`);
+      // Both literals are named as they were written, because that is what the
+      // user has to look for in their own file.
+      assert.ok(result.stderr.includes('123456789012345678.5'),
+        `${format}: the message must name the value that was in the file: ${result.stderr}`);
+      assert.ok(result.stderr.includes('0.100000000000000000001'),
+        `${format}: the deep decimal must be named too: ${result.stderr}`);
+      // …and the values that came out, which are the numbers the file they now
+      // hold actually contains.
+      assert.ok(result.stderr.includes('123456789012345680'),
+        `${format}: the message must name the value that came out: ${result.stderr}`);
+      assert.ok(result.stderr.includes('0.1'),
+        `${format}: 0.1 is what the deep decimal became: ${result.stderr}`);
+      // One sentence per distinct literal, not per occurrence: one row, one of
+      // each, so this also proves the two are told apart rather than merged.
+      assert.strictEqual((result.stderr.match(/is written with more detail/g) || []).length, 2,
+        `${format}: one sentence per value: ${result.stderr}`);
+    }
+    // The run still wrote its file. The value is changed, not missing, so a user
+    // who wants the output has a reason to read the warning rather than find an
+    // empty directory.
+    const csv = readFileSync(join(dir, 'out.csv'), 'utf-8');
+    assert.ok(csv.includes('123456789012345680'), csv);
+    // Quoting is the way out, and it is the advice the warning gives. Measured
+    // through CSV: all nineteen digits of the half, and all twenty-one of the
+    // deep decimal, come back exactly as they went in.
+    const quoted = join(dir, 'quoted.json');
+    writeFileSync(quoted, '[{"amount":"123456789012345678.5","rate":"0.100000000000000000001"}]', 'utf-8');
+    const fixed = spawnSync(process.execPath, [cli, quoted, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(fixed.stderr, '', 'a quoted value loses nothing and says nothing: ' + fixed.stderr);
+    assert.strictEqual(fixed.stdout.trim(),
+      'amount,rate\n123456789012345678.5,0.100000000000000000001', fixed.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a whole number a number cannot hold is reported on stderr, and the file is still written', () => {
   // Measured on the real binary before the rule existed: `id` came out one digit
   // short in all six formats, exit 0 and empty stderr. A snowflake id, an order
@@ -1193,7 +1245,7 @@ test('a whole number a number cannot hold is reported on stderr, and the file is
       // The digits inside a string are text and were never rounded, so the
       // message is about the number only — a file where the same digits appear
       // in both places gets one sentence, not two.
-      assert.strictEqual((result.stderr.match(/9223372036854775807 is a whole number/g) || []).length, 1,
+      assert.strictEqual((result.stderr.match(/9223372036854775807 is written with more detail/g) || []).length, 1,
         `${format}: one sentence per value, not per occurrence: ${result.stderr}`);
     }
     // The run still wrote its file: the value is changed, not missing, and a

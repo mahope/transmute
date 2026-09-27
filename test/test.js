@@ -2985,7 +2985,10 @@ t('a whole number written with an exponent is still a whole number', () => {
   // one digit-count rule and the one spelling rule both miss.
   const r = run('[{"a":9.007199254740993e15},{"b":1e15},{"c":-1.25e2}]', 'json', [], 'json');
   assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /9\.007199254740993e15 is a whole number/, r.warnings[0]);
+  // The sentence no longer says "whole number", because the rule now reaches
+  // decimals too; what it has to keep saying is the literal as it was written,
+  // exponent and all, so the user can find it in their own file.
+  assert.match(r.warnings[0], /9\.007199254740993e15 is written with more detail/, r.warnings[0]);
   // -1.25e2 is -125 exactly, so it is a whole number that is held exactly.
   assert.match(r.warnings[0], /in 1 place/, r.warnings[0]);
   // Eighteen digits that read as safe, and are not: 123456789012345678 comes
@@ -3009,6 +3012,97 @@ t('the readers that never lose a value stay silent', () => {
   // rule existed too.
   assert.deepStrictEqual(run('id\n9007199254740993\n', 'csv', [], 'json').warnings, []);
   assert.deepStrictEqual(run('<r><i><id>9007199254740993</id></i></r>', 'xml', [], 'json').warnings, []);
+  // The same two readers with a decimal that the number readers lose, because
+  // this is not a property of JSON and YAML: it is a property of rounding.
+  assert.deepStrictEqual(run('v\n123456789012345678.5\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('<r><v>123456789012345678.5</v></r>', 'xml', [], 'json').warnings, []);
+});
+
+t('a decimal that changes on the way in is named, with the value it became', () => {
+  // 123456789012345678.5 is eighteen whole digits and a half. The rule that
+  // asked "is this an integer that fits" never saw it, because its fraction
+  // does not survive the shift into an integer — so the value came out as
+  // 123456789012345680 with nothing on stderr, in all six output formats, and
+  // the same class as the integer two iterations back went unnamed.
+  const r = run('[{"v":123456789012345678.5},{"v":123456789012345678.5}]', 'json', [], 'json');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /^JSON: 123456789012345678\.5 /, r.warnings[0]);
+  // The value that came out is named, because that is the number the user will
+  // have to look for in the file they now have.
+  assert.match(r.warnings[0], /read as 123456789012345680/, r.warnings[0]);
+  // Two rows, one sentence — the same counting as the whole number above it,
+  // because a file decides how often its own mistake repeats.
+  assert.match(r.warnings[0], /in 2 places/, r.warnings[0]);
+  // The half is the point: 9007199254740993.5 and 9007199254740993.25 are the
+  // integer that was already reported, with a fraction the old rule dropped on
+  // its way to the integer test, and both lose the half as well as a digit.
+  for (const literal of ['9007199254740993.5', '9007199254740993.25', '-123456789012345678.5']) {
+    const one = run(`[{"v":${literal}}]`, 'json', [], 'json');
+    assert.strictEqual(one.warnings.length, 1, `${literal}: ${JSON.stringify(one.warnings)}`);
+    assert.match(one.warnings[0], new RegExp(`^JSON: ${literal.replace(/[.\-]/g, '\\$&')} `),
+      one.warnings[0]);
+  }
+});
+
+t('a number written with more decimals than a number keeps is named', () => {
+  // 1.0000000000000000000000000000000001 is thirty-four digits, and the
+  // seventeen a double can tell apart are all the same: the file says "1 and
+  // then thirty-three zeros and a one" and the output says "1". Nothing about
+  // the size of the number is involved, which is why the rule cannot be about
+  // magnitude — only the last shown digit says anything here.
+  const r = run('[{"v":1.0000000000000000000000000000000001},{"v":0.100000000000000000001}]',
+    'json', [], 'json');
+  assert.strictEqual(r.warnings.length, 2, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /^JSON: 1\.0000000000000000000000000000000001 /, r.warnings[0]);
+  assert.match(r.warnings[0], /read as 1 in 1 place/, r.warnings[0]);
+  assert.match(r.warnings[1], /^JSON: 0\.100000000000000000001 /, r.warnings[1]);
+  assert.match(r.warnings[1], /read as 0\.1 /, r.warnings[1]);
+  // The whole-value spelling of the same file: twenty digits that are exactly
+  // held, and twenty decimals that are not. One rule decides both, because the
+  // place the last digit stands in is the only thing it asks about.
+  assert.deepStrictEqual(run('[{"a":10000000000000000000},{"b":0.10000000000000000000}]',
+    'json', [], 'json').warnings, []);
+});
+
+t('a decimal that is held exactly is not named, whatever it is written as', () => {
+  // This is the half of the rule that decides whether it can be used at all: it
+  // has to stay silent on every number a correct writer produces, or it is
+  // noise on good input. None of these is quiet because of its size, its
+  // exponent or the number of its decimals — each is quiet because the value
+  // that came out is the value the file wrote, in every digit the file showed.
+  assert.deepStrictEqual(run(
+    '[{"a":19.99},{"b":0.07},{"c":1.50},{"d":100.00},{"e":1.005},{"f":2.675},' +
+    '{"g":0.30000000000000004},{"h":0.8455124082255701},{"i":33.33},{"j":1e-7},' +
+    '{"k":0.0000001},{"l":123.456},{"m":-0.0},{"n":1.7976931348623157e308},' +
+    '{"o":5e-324},{"p":1.0},{"q":123456789.123456},{"r":2.2250738585072014e-308}]',
+    'json', [], 'json').warnings, []);
+  // Fifteen digits that carry the value is where the fast path stops and the
+  // exact comparison starts, so both sides of that line are here: this one is
+  // held, and the next one is not — 1234567890123456.7 comes back as
+  // 1234567890123456.8, which is a different amount of money.
+  assert.deepStrictEqual(run('[{"v":123456789012345.67}]', 'json', [], 'json').warnings, []);
+  const edge = run('[{"w":1234567890123456.7}]', 'json', [], 'json');
+  assert.strictEqual(edge.warnings.length, 1, JSON.stringify(edge.warnings));
+  assert.match(edge.warnings[0], /read as 1234567890123456\.8/, edge.warnings[0]);
+});
+
+t('the same rule reads a decimal YAML scalar, and leaves a quoted one alone', () => {
+  const block = run('v: 123456789012345678.5\nname: Ada\n', 'yaml', [], 'json');
+  assert.strictEqual(block.warnings.length, 1, JSON.stringify(block.warnings));
+  assert.match(block.warnings[0], /^YAML: 123456789012345678\.5 /, block.warnings[0]);
+  assert.match(block.warnings[0], /read as 123456789012345680/, block.warnings[0]);
+  // A flow scalar is a number too, and a quoted one is a string, so there is
+  // nothing to have lost.
+  const flow = run('{v: 123456789012345678.5}\n', 'yaml', [], 'json');
+  assert.strictEqual(flow.warnings.length, 1, JSON.stringify(flow.warnings));
+  assert.match(flow.warnings[0], /read as 123456789012345680/, flow.warnings[0]);
+  assert.deepStrictEqual(run('v: "123456789012345678.5"\n', 'yaml', [], 'json').warnings, []);
+  // A decimal deeper in the file is reached the same way, so the rule is not
+  // attached to the first number it meets.
+  const deep = run('outer:\n  inner:\n    v: 1.0000000000000000000000000000000001\nn: 2\n',
+    'yaml', [], 'json');
+  assert.strictEqual(deep.warnings.length, 1, JSON.stringify(deep.warnings));
+  assert.match(deep.warnings[0], /^YAML: 1\.0000000000000000000000000000000001 /, deep.warnings[0]);
 });
 
 t('the advice the warning gives is a way out that works today', () => {
@@ -3017,6 +3111,19 @@ t('the advice the warning gives is a way out that works today', () => {
   const quoted = run('[{"id":"9223372036854775807"}]', 'json', [], 'csv');
   assert.deepStrictEqual(quoted.warnings, []);
   assert.strictEqual(quoted.text, 'id\n9223372036854775807', quoted.text);
+  // The same answer for the decimals, measured rather than assumed: all
+  // nineteen digits of the half, and all thirty-four of the deep decimal, come
+  // back out through CSV exactly as they went in.
+  const quotedDecimal = run('[{"v":"123456789012345678.5"}]', 'json', [], 'csv');
+  assert.deepStrictEqual(quotedDecimal.warnings, []);
+  assert.strictEqual(quotedDecimal.text, 'v\n123456789012345678.5', quotedDecimal.text);
+  const quotedDeep = run('[{"v":"1.0000000000000000000000000000000001"}]', 'json', [], 'csv');
+  assert.deepStrictEqual(quotedDeep.warnings, []);
+  assert.strictEqual(quotedDeep.text, 'v\n1.0000000000000000000000000000000001', quotedDeep.text);
+  // And the unquoted ones really are changed in the file the user is handed,
+  // so the advice is not a way of keeping a value that was never lost.
+  assert.match(run('[{"v":123456789012345678.5}]', 'json', [], 'csv').text,
+    /123456789012345680/, 'the value in the file is the one that changed');
 });
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);

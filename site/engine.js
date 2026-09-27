@@ -499,73 +499,124 @@ function jsonNumberLiterals(text) {
 }
 
 /**
- * The value of a number literal as an exact integer, or null when the literal
- * is not one.
+ * What a number literal shows: the digits it is written with, the place its
+ * last digit stands in, and how many of those digits carry the value.
  *
- * `BigInt` will not take `"9.007199254740993e15"` — it reads an integer or
- * nothing — so the literal is taken apart here and shifted by hand: the value
- * of `-12.50e1` is `-125`, which is the digit string `1250` moved one place
- * left. A literal whose fraction survives the shift is not an integer and gets
- * no answer, which is what keeps `0.1` and `1.50` out of the way.
+ * `1.50` shows `150` with its last digit at 10^-2, `1.5e1` shows `15` with its
+ * last digit at 10^0, and `9007199254740993` shows itself at 10^0. That place
+ * is the most anyone can see of either number, so it is the one the reading has
+ * to agree with — and it is what makes `1.50` and `1.5` the same question: the
+ * same value, written with a different number of last digits.
+ *
+ * `keep` counts only the digits that carry the value, so leading and trailing
+ * zeros are not part of it: `100.00` has two and `1e21` has one. It is what the
+ * fast path in `losesPrecision` goes by, and it is why the twenty written digits
+ * of `10000000000000000000` — a value that is held exactly — do not make this a
+ * long number.
  */
-function exactIntegerValue(literal) {
+function shownDigits(literal) {
   const m = /^(-?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(literal);
   if (!m) return null;
   const fraction = m[3] || '';
-  const shift = (m[4] ? Number(m[4]) : 0) - fraction.length;
-  if (shift < 0) return null;
-  return (m[1] === '-' ? -1n : 1n) * BigInt(m[2] + fraction) * 10n ** BigInt(shift);
+  const written = m[2] + fraction;
+  return {
+    digits: BigInt(written),
+    scale: (m[4] ? Number(m[4]) : 0) - fraction.length,
+    keep: written.replace(/^0+/, '').replace(/0+$/, '').length,
+  };
 }
 
 /**
  * Does reading `literal` as a JavaScript number change a digit the file shows?
  *
- * Two questions, not one, and the second is the one that matters. A number is
- * a 64-bit float, so it holds every integer up to 2^53 exactly and then every
+ * Two questions, not one, and the second is the one that matters. A number is a
+ * 64-bit float, so it holds every integer up to 2^53 exactly and then every
  * *other* one — which is why a rule counting digits is wrong at both ends:
  * `9007199254740993` is sixteen digits and loses one, `9007199254740994` is
  * sixteen and loses none, and `10000000000000000000` is twenty and is exact.
  *
- * Comparing the two values with `BigInt` is not enough on its own, and the test
- * that says so is `1.7976931348623157e308`: it is the largest double there is,
- * written in the seventeen digits that are the most anyone can write it in, and
- * its exact value as a *literal* is 17976931348623157000…0 while the double is
- * 179769313486231570814527…  The two are different numbers and no reader can
- * tell, because the difference is entirely in digits past the seventeenth.
- * That file is already what a correct tool writes, so a warning about it is
- * noise on correct input.
+ * The question is not therefore about the literal but about the two numbers:
+ * the value the file wrote, and the value that came out of it. They are
+ * compared at the precision the file is written in — the place its last digit
+ * stands — because that is the most anyone can see of either. A double that
+ * written back at that place gives the same digits back has not changed anything
+ * the file showed, however the bits underneath it are arranged. That is one
+ * answer for a whole number and for a decimal alike, and it is what keeps
+ * `1.50`, `0.1` and `19.99` quiet: their nearest double is a hair away in binary
+ * and exact in every digit the file wrote.
  *
- * So the values are compared at the precision the literal itself is written in:
- * the double is cut down to as many digits as the file shows, and if those are
- * the digits the file already had, nothing the user can read has changed. The
- * cut truncates rather than rounds, and it is the right way round — truncation
- * can only ever expose a difference, never hide one, so a value that agrees in
- * every digit shown is a value the user cannot tell apart.
+ * Comparing at the file's own place instead of counting digits is what reaches
+ * the decimals. `123456789012345678.5` is nineteen digits of which the last is a
+ * half, and the rule that asked "is this an integer that fits" never looked at
+ * it: its fraction did not survive the shift, so it had no integer to be wrong
+ * about, and `123456789012345678.5` came out as `123456789012345680` with
+ * nothing on stderr. The value changed and no digit count could have seen it.
+ *
+ * `1e400` is no value at all rather than a changed one, and
+ * `1.7976931348623157e308` is the largest double there is written in the
+ * seventeen digits anyone can write it in — its exact value has more, but not one
+ * a reader can see. Both are answered elsewhere: the first by the writer that
+ * refuses it, the second by coming back out of this comparison unchanged.
  */
 function losesPrecision(literal) {
+  const shown = shownDigits(literal);
+  if (!shown) return false;
   const read = Number(literal);
   if (!Number.isFinite(read)) return false;
-  const exact = exactIntegerValue(literal);
-  if (exact === null) return false;
-  return exact !== cutToSignificantDigits(BigInt(read), significantDigitCount(literal));
+  // Fifteen digits that carry the value cannot be lost, and that is a proof
+  // rather than a sample: a double's neighbours are 2^-52 apart relative to it,
+  // so at the top of a fifteen-digit value they are under a quarter of the
+  // file's last shown digit, and rounding there gives the file's own digits
+  // back. It also keeps `BigInt` off every ordinary number in a file, which is
+  // all this path would have cost.
+  if (shown.keep <= 15) return false;
+  const exact = exactDecimalOf(read);
+  return rescaleAt(exact.numerator, exact.scale, shown.scale) !== shown.digits;
 }
 
-/** How many digits of `literal` are digits the file actually shows. */
-function significantDigitCount(literal) {
-  const m = /^(-?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(literal);
-  if (!m) return 0;
-  return (m[2] + (m[3] || '')).replace(/^0+/, '').length;
+/** The exact value of a finite double, as `numerator · 10^scale`. */
+const doubleBits = new DataView(new ArrayBuffer(8));
+
+function exactDecimalOf(value) {
+  doubleBits.setFloat64(0, Math.abs(value));
+  const bits = doubleBits.getBigUint64(0);
+  const fraction = bits & ((1n << 52n) - 1n);
+  const biased = Number(bits >> 52n);
+  // A normal number is `1.fraction · 2^(biased - 1023)` and a subnormal one has
+  // no leading 1: its exponent is the fixed 2^-1074 and its significand is the
+  // fraction alone. Both come out of here as `significand · 2^power`, which is
+  // the form that becomes a decimal without a division — a negative power of two
+  // is `5^-power / 10^-power`.
+  //
+  // The sign is dropped on the way in, because no sign changes a digit: `-0` and
+  // `0` are the same number, and `-123456789012345678.5` is held exactly when
+  // `123456789012345678.5` is.
+  const significand = biased === 0 ? fraction : (1n << 52n) + fraction;
+  const power = biased === 0 ? -1074 : biased - 1075;
+  if (power >= 0) return { numerator: significand << BigInt(power), scale: 0 };
+  return { numerator: significand * 5n ** BigInt(-power), scale: power };
 }
 
 /**
- * `value` written with `keep` digits and zeros after them, which is what a
- * reader comparing two numbers of this size would see.
+ * The digits of `numerator · 10^from` seen at the place `to`, which is what a
+ * reader writing that value with its last digit at 10^to would show.
+ *
+ * Rounding is half away from zero, and only the digits *below* the place the
+ * file asked for are ever affected — the digits above it are copied, not
+ * recomputed, which is why a value that is a hair below what the file said can
+ * still be the value the file said. Truncating instead would be the sound but
+ * noisy way round: `19.99` is `19.989999999999998573…` in binary and has to be
+ * allowed to round back up to `19.99`.
  */
-function cutToSignificantDigits(value, keep) {
-  const digits = (value < 0n ? -value : value).toString();
-  if (digits.length <= keep) return value * 10n ** BigInt(keep - digits.length);
-  const cut = 10n ** BigInt(digits.length - keep);
-  return (value / cut) * cut;   // BigInt division truncates toward zero
+function rescaleAt(numerator, from, to) {
+  const shift = from - to;
+  if (shift === 0) return numerator;
+  if (shift > 0) return numerator * 10n ** BigInt(shift);
+  const unit = 10n ** BigInt(-shift);
+  const whole = numerator / unit;
+  const rest = numerator % unit;
+  const twice = rest < 0n ? -rest : rest;
+  return twice * 2n >= unit ? whole + (numerator < 0n ? -1n : 1n) : whole;
 }
 
 /**
@@ -585,14 +636,15 @@ function collectLostPrecision(warnings, format, literal) {
 }
 
 /**
- * Say what a whole number lost on the way in, once per distinct literal.
+ * Say what a number lost on the way in, once per distinct literal.
  *
  * The count is here rather than in the message-per-occurrence because the file
  * decides how often it happens: `id: 9223372036854775807` on ten thousand rows
  * is one mistake repeated, and telling the user that ten thousand times buries
  * everything else on stderr. Quoting is the way out, and it is a way that
  * exists today in both readers — `"9223372036854775807"` comes back as the same
- * text, in all six formats.
+ * text, in all six formats, and so does `"123456789012345678.5"`, which the
+ * warning had measured to keep all nineteen of its digits through CSV.
  */
 function reportLostPrecision(warnings) {
   if (!Array.isArray(warnings)) return;
@@ -602,8 +654,8 @@ function reportLostPrecision(warnings) {
   for (const [literal, { format, read, count }] of found) {
     const where = count === 1 ? '1 place' : `${count} places`;
     warnings.push(
-      `${format}: ${literal} is a whole number a JavaScript number cannot hold ` +
-      `exactly, so it was read as ${read} in ${where} — the output holds a ` +
+      `${format}: ${literal} is written with more detail than a JavaScript number ` +
+      `keeps, so it was read as ${read} in ${where} — the output holds a ` +
       'different value than the input. Write it in quotes ("' + literal + '") ' +
       'to keep every digit.'
     );
@@ -1723,9 +1775,9 @@ function parseYAMLValue(val, ctx) {
   const num = Number(val);
   if (!isNaN(num) && val.trim() !== '') {
     // The one place a YAML scalar becomes a number, so it is the one place a
-    // whole number that cannot be held can be noticed. The JSON reader cannot
-    // do it this way — `JSON.parse` has already rounded by the time it returns
-    // — which is why that one walks the text instead.
+    // value that cannot be held can be noticed. The JSON reader cannot do it
+    // this way — `JSON.parse` has already rounded by the time it returns — which
+    // is why that one walks the text instead.
     if (ctx) collectLostPrecision(ctx.warnings, 'YAML', val.trim());
     return num;
   }
