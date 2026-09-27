@@ -1940,5 +1940,53 @@ test('a backslash in a SQL value is named on stderr, and the file still imports'
     "  ('C:/Users/Ada');\n");
 });
 
+console.log('── a null that XML writes as text ──');
+
+test('xml says which field held a null, and still writes the file', () => {
+  // The value WAS there and a different value came back: `String(null)` is the
+  // four letters `null`, so `<nul>null</nul>` reads back as the string "null" —
+  // an absence turned into a value, which was exit 0 and an empty stderr. The
+  // file is still written, because XML has no spelling that keeps the
+  // difference: `<nul/>` is an empty string and leaving the element out is a
+  // field the record does not have.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const target = join(dir, 'out.xml');
+    const r = sh(`printf '%s' '[{"id":1,"nul":null,"note":"ok"}]' | transmute --output xml --out ${JSON.stringify(target)}`);
+    expectOk(r, { allowStderr: true });
+    const written = readFileSync(target, 'utf-8');
+    assert.equal(written.includes('<nul>null</nul>'), true, written);
+    assert.match(r.stderr, /^Warning: xml: 1 field\(s\) hold an explicit null/, r.stderr);
+    assert.match(r.stderr, /"nul" \(1\)/, r.stderr);
+    // And the file really does come back with a value where the input had an
+    // absence, read by this tool and not by the one that wrote it.
+    const back = sh(`transmute ${JSON.stringify(target)} --output json`);
+    assert.equal(JSON.parse(expectOk(back))[0].nul, 'null');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the other five formats each keep the difference or say that they do not', () => {
+  // json and yaml keep it, sql writes NULL, and csv and table say it out loud in
+  // their own warning — so exactly one format turns a null into a value without
+  // saying so, and it is the one the new rule is about.
+  const quiet = ['json', 'yaml', 'sql'];
+  for (const format of quiet) {
+    const r = sh(`printf '%s' '[{"id":1,"nul":null}]' | transmute --output ${format}`);
+    expectOk(r);
+    assert.equal(r.stderr, '', `${format} should have nothing to say:\n${r.stderr}`);
+  }
+  for (const format of ['csv', 'table']) {
+    const r = sh(`printf '%s' '[{"id":1,"nul":null}]' | transmute --output ${format}`);
+    expectOk(r, { allowStderr: true });
+    assert.ok(/columns holds an explicit null: "nul" \(1 of 1\)/.test(r.stderr), `${format}: ${r.stderr}`);
+  }
+  // And csv's warning does not claim xml keeps it, because it does not.
+  const csv = sh(`printf '%s' '[{"id":1,"nul":null}]' | transmute --output csv`);
+  assert.ok(csv.stderr.includes('json and yaml keep the difference'), csv.stderr);
+  assert.equal(csv.stderr.includes('json, yaml and xml keep the difference'), false, csv.stderr);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

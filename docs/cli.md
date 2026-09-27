@@ -827,6 +827,82 @@ printf '[{"first name":["Ada","Bob"]}]' | transmute --format json --output xml
 </data>
 ```
 
+### A null in XML: the text `null`, and no spelling that says otherwise
+
+A `null` is a value that is not there, and XML has no word for it. What the
+writer did instead was `String(null)` — the four letters `null` — so an absence
+became a value, and nothing on stderr said so:
+
+```bash
+printf '[{"id":1,"nul":null,"note":"ok"}]' | transmute --output xml
+```
+
+```text
+Warning: xml: 1 field(s) hold an explicit null, which XML has no spelling for: "nul" (1). Each was written as text and reads back as a string — the element "null", an attribute "" — so a value stands where the file had an absence. json and yaml keep the difference; no spelling in this format can.
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <item>
+    <id>1</id>
+    <nul>null</nul>
+    <note>ok</note>
+  </item>
+</data>
+```
+
+Reading that file back gives a value where the input had an absence, and the
+reader is this tool:
+
+```bash
+printf '[{"id":1,"nul":null,"note":"ok"}]' | transmute --output xml | transmute --format xml --output json
+```
+
+```json
+[
+  {
+    "id": "1",
+    "nul": "null",
+    "note": "ok"
+  }
+]
+```
+
+The other five formats each have an answer, and the run above is the reason the
+warning is worth reading: `json` and `yaml` keep the difference (an absent key is
+absent, a null is a key holding null), `sql` writes `NULL`, and `csv` and `table`
+write an empty cell that reads back as `""` and say so in their own warning.
+
+Every place a null can sit is named, each under the name it comes back with:
+
+```bash
+printf '[{"a":{"b":null},"c":[1,null],"@d":null},[null]]' | transmute --output xml
+```
+
+```text
+Warning: xml: 4 field(s) hold an explicit null, which XML has no spelling for: "b" (1), "c" (1), "@d" (1), "item" (1). Each was written as text and reads back as a string — the element "null", an attribute "" — so a value stands where the file had an absence. json and yaml keep the difference; no spelling in this format can.
+```
+
+| Where the null sat | Written as | Reads back as | Counted as |
+|---|---|---|---|
+| a field, `{"nul":null}` | `<nul>null</nul>` | `"null"` | `"nul"` |
+| inside an object, `{"a":{"b":null}}` | `<b>null</b>` | `{"b":"null"}` | `"b"` |
+| in a list, `{"c":[1,null]}` | `<c>1</c><c>null</c>` | `["1","null"]` | `"c"` |
+| an attribute, `{"@d":null}` | `d=""` | `"@d":""` | `"@d"` |
+| a whole row, `[null]` | `<item>null</item>` | `{"item":"null"}` | `"item"` |
+
+The file is still written, and the counts are per field, so a file with 40 000
+nulls says `"nul" (40000)` once and not 40 000 times.
+
+**There is no better answer in this format, and that is the point.** `<nul/>` is
+what an empty string is, and leaving the element out is a field the record does
+not have — both are already other values in the same file. `xsi:nil` is the
+standard's own spelling, but it means nothing to a reader that does not know the
+schema, and a file that only this tool can read is the worse trade. So the file
+keeps the shape XML has and the loss is said out loud.
+
+A **string** that spells `null` is not a null and is never named: `{"a":"null"}`
+writes the same bytes, which is exactly why no spelling in the file can tell the
+two apart. It is quiet, and so is a file with no null in it.
+
 ### XML output: the characters XML itself cannot hold
 
 XML 1.0 is not able to represent every character. Its `Char` production is
@@ -1338,15 +1414,17 @@ trusts the file stores `''` in a column you meant to leave empty.
 
 `sql` is not named, and that is the difference between the two answers: it
 writes `NULL`, which is SQL's own word for a value that is not there, so the
-file says it out loud. `json`, `yaml` and `xml` keep the difference too — an
-absent key is absent and a null is a key holding null.
+file says it out loud. `json` and `yaml` keep the difference too — an absent key
+is absent and a null is a key holding null. `xml` does **not**: it has no word
+for a null and writes the text `null`, so it names the columns in its own
+warning ([below](#a-null-in-xml-the-text-null-and-no-spelling-that-says-otherwise)).
 
 ```bash
 printf '[{"id":1,"navn":"Ada","email":null},{"id":2,"navn":"Bo"},{"id":3,"email":"c@x.dk"}]' | transmute --output csv
 ```
 
 ```text
-Warning: csv: 2 of 3 columns are not in every row: "navn" (1 of 3), "email" (1 of 3); 1 of 3 columns holds an explicit null: "email" (1 of 3). Those cells are written empty and read back as an empty string, which is a value and not an absence. sql writes NULL instead; json, yaml and xml keep the difference.
+Warning: csv: 2 of 3 columns are not in every row: "navn" (1 of 3), "email" (1 of 3); 1 of 3 columns holds an explicit null: "email" (1 of 3). Those cells are written empty and read back as an empty string, which is a value and not an absence. sql writes NULL instead; json and yaml keep the difference, xml writes the text null and names the columns on its own.
 id,navn,email
 1,Ada,
 2,Bo,
@@ -1904,7 +1982,7 @@ transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","keep"
 ```
 
 ```text
-Warning: table: 1 of 6 columns is not in every row: "tier" (1 of 3). Those cells are shown empty, and nothing on the screen says which of the two it was. sql writes NULL instead; json, yaml and xml keep the difference.
+Warning: table: 1 of 6 columns is not in every row: "tier" (1 of 3). Those cells are shown empty, and nothing on the screen says which of the two it was. sql writes NULL instead; json and yaml keep the difference, xml writes the text null and names the columns on its own.
 +----+----------+--------+---------------------------------+-------+--------+
 | id | customer | status | items                           | total | tier   |
 +----+----------+--------+---------------------------------+-------+--------+
