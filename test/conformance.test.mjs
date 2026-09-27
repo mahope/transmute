@@ -277,8 +277,10 @@ test('docs/cli.md quotes the real error for input that is not UTF-8', () => {
 test('docs/cli.md shows the real table cell and sql identifier output', () => {
   // The same lock as the silences above, for a silence of the other kind: these
   // values *can* be written, they were just written in a way that misrepresented
-  // them. A paragraph and a table of claims are worth nothing if the four
-  // commands above them do not print what the page says, so the page is run.
+  // them. A paragraph and a table of claims are worth nothing if the commands
+  // above them do not print what the page says, so the page is run. The fifth is
+  // the backslash rule: the file is run through sqlite3 in the prose above it,
+  // and the SQL block here is the same file, so the two cannot disagree.
   // The blocks are taken from the page itself, which is also what stops the
   // examples and the engine from drifting apart.
   const section = (() => {
@@ -292,7 +294,7 @@ test('docs/cli.md shows the real table cell and sql identifier output', () => {
   // it. The page spells an escape as `\\n` inside a shell command and as `\n`
   // inside the output, so the comparison is on the printed text, not on source.
   const runs = [...section.matchAll(/```bash\n([\s\S]*?)```\n\n```(?:sql)?\n([\s\S]*?)```/g)];
-  assert.equal(runs.length, 4, `the section should show four runnable examples, found ${runs.length}`);
+  assert.equal(runs.length, 5, `the section should show five runnable examples, found ${runs.length}`);
 
   for (const [, command, expected] of runs) {
     const result = spawnSync('sh', ['-c', command.replace(/(^|\s)transmute /g, '$1' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(join(root, 'src', 'cli.js')) + ' ')], {
