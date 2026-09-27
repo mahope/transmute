@@ -1169,6 +1169,50 @@ test('a value that is not finite stops every writer, and no file is left behind'
   }
 });
 
+test('a whole number a number cannot hold is reported on stderr, and the file is still written', () => {
+  // Measured on the real binary before the rule existed: `id` came out one digit
+  // short in all six formats, exit 0 and empty stderr. A snowflake id, an order
+  // number and an amount in minor units all have this shape, and none of them
+  // are float-shaped by accident.
+  //
+  // It is a warning and not an error because the value the user meant is
+  // genuinely gone by then: the reader rounded it, and every writer only copies
+  // what it is handed. The run does its job and says what it could not keep.
+  const dir = mkdtempSync(join(tmpdir(), 'transmute-'));
+  try {
+    const path = join(dir, 'ids.json');
+    writeFileSync(path, '[{"id":9223372036854775807,"order":"AB-9223372036854775807"}]', 'utf-8');
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+      const out = join(dir, `out.${format}`);
+      const result = spawnSync(process.execPath, [cli, path, '-o', format, '--out', out], { encoding: 'utf-8' });
+      assert.equal(result.status, 0, `${format}: expected exit 0, got ${result.status}: ${result.stderr}`);
+      assert.ok(result.stderr.includes('9223372036854775807'),
+        `${format}: the message must name the value that was in the file: ${result.stderr}`);
+      assert.ok(result.stderr.includes('9223372036854776000'),
+        `${format}: the message must name the value that came out: ${result.stderr}`);
+      // The digits inside a string are text and were never rounded, so the
+      // message is about the number only — a file where the same digits appear
+      // in both places gets one sentence, not two.
+      assert.strictEqual((result.stderr.match(/9223372036854775807 is a whole number/g) || []).length, 1,
+        `${format}: one sentence per value, not per occurrence: ${result.stderr}`);
+    }
+    // The run still wrote its file: the value is changed, not missing, and a
+    // user who wants the output has a reason to look at the warning rather than
+    // an empty directory.
+    const csv = readFileSync(join(dir, 'out.csv'), 'utf-8');
+    assert.ok(csv.includes('9223372036854776000'), csv);
+    assert.ok(csv.includes('AB-9223372036854775807'), 'the string kept every digit: ' + csv);
+    // Quoting is the way out, and it is the advice the warning gives.
+    const quoted = join(dir, 'quoted.json');
+    writeFileSync(quoted, '[{"id":"9223372036854775807"}]', 'utf-8');
+    const fixed = spawnSync(process.execPath, [cli, quoted, '-o', 'csv'], { encoding: 'utf-8' });
+    assert.equal(fixed.stderr, '', 'a quoted value loses nothing and says nothing: ' + fixed.stderr);
+    assert.strictEqual(fixed.stdout.trim(), 'id\n9223372036854775807', fixed.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a division by zero in a pipeline is refused by name, not written as null', () => {
   // The second way in, and the one a user meets: JSON cannot spell NaN or
   // Infinity, but an `add` expression divides by zero all the time — an `amount
