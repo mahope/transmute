@@ -2931,6 +2931,94 @@ t('the joined value that is dropped is reported through csv too', () => {
   assert.strictEqual(r.text, 'id,name\n1,outer', r.text);
 });
 
+t('a whole number that a number cannot hold is named, once, with the value it became', () => {
+  // 9223372036854775807 is the largest 64-bit signed integer, and it is the
+  // shape a snowflake id, an order number or an amount in minor units has. It
+  // does not survive being read: the nearest double is printed back with
+  // different digits, so the output holds a value the input never had.
+  const r = run('[{"id":9223372036854775807},{"id":9223372036854775807}]', 'json', [], 'json');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /^JSON: 9223372036854775807 /, r.warnings[0]);
+  // The value that came out is named, because that is the number the user will
+  // find in the file and have to look for.
+  assert.match(r.warnings[0], /read as 9223372036854776000/, r.warnings[0]);
+  // Two rows, one sentence: the count is what keeps a file from saying the
+  // same thing once per row.
+  assert.match(r.warnings[0], /in 2 places/, r.warnings[0]);
+});
+
+t('a whole number that survives the reading is not named', () => {
+  // Counting digits would be wrong at both ends of this list, and that is why
+  // the rule asks whether the two values are the same number instead:
+  // 9007199254740994 is sixteen digits and exact, 10000000000000000000 is
+  // twenty and exact, 1.0 and 1e5 are only spelled differently, and the digits
+  // inside a string were never a number at all. 123456789012345678 was measured
+  // to belong in the other test: eighteen digits that look safe and are not.
+  const r = run(
+    '[{"a":9007199254740991},{"a":9007199254740992},{"a":9007199254740994},' +
+    '{"a":10000000000000000000},{"a":1.0},{"a":1.50},' +
+    '{"a":1e5},{"a":0.1},{"a":"AB-9007199254740993"}]', 'json', [], 'json');
+  assert.deepStrictEqual(r.warnings, []);
+  // The largest double there is, in the seventeen digits it can be written in.
+  // Its exact value as a literal and the double behind it differ from the
+  // seventeenth digit on, and no reader can see that — so the rule compares the
+  // digits the file shows, and a file this tool wrote itself stays silent.
+  assert.deepStrictEqual(
+    run('[{"v":1.7976931348623157e308},{"w":5e-324},{"x":-0.0}]', 'json', [], 'json').warnings, []);
+});
+
+t('the same rule reads a YAML scalar, and a flow one with it', () => {
+  const block = run('id: 9007199254740993\nname: Ada\n', 'yaml', [], 'json');
+  assert.strictEqual(block.warnings.length, 1, JSON.stringify(block.warnings));
+  assert.match(block.warnings[0], /^YAML: 9007199254740993 /, block.warnings[0]);
+  assert.match(block.warnings[0], /read as 9007199254740992/, block.warnings[0]);
+  const flow = run('{a: 9223372036854775807}\n', 'yaml', [], 'json');
+  assert.strictEqual(flow.warnings.length, 1, JSON.stringify(flow.warnings));
+  assert.match(flow.warnings[0], /read as 9223372036854776000/, flow.warnings[0]);
+  // A quoted YAML scalar is a string, so it never goes through the number and
+  // there is nothing to have lost.
+  assert.deepStrictEqual(run('id: "9007199254740993"\n', 'yaml', [], 'json').warnings, []);
+});
+
+t('a whole number written with an exponent is still a whole number', () => {
+  // 9.007199254740993e15 is 9007199254740993 written another way, and it is the
+  // one digit-count rule and the one spelling rule both miss.
+  const r = run('[{"a":9.007199254740993e15},{"b":1e15},{"c":-1.25e2}]', 'json', [], 'json');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /9\.007199254740993e15 is a whole number/, r.warnings[0]);
+  // -1.25e2 is -125 exactly, so it is a whole number that is held exactly.
+  assert.match(r.warnings[0], /in 1 place/, r.warnings[0]);
+  // Eighteen digits that read as safe, and are not: 123456789012345678 comes
+  // back as 123456789012345680. No digit count could have told the two apart.
+  const long = run('[{"a":123456789012345678}]', 'json', [], 'json');
+  assert.strictEqual(long.warnings.length, 1, JSON.stringify(long.warnings));
+  assert.match(long.warnings[0], /read as 123456789012345680/, long.warnings[0]);
+});
+
+t('a whole number too large for any number is left to the writer that refuses it', () => {
+  // 1e400 is not read as a changed value, it is read as no value at all, and
+  // the writer already says so out loud and exits 1. Two rules for one file
+  // would only make the loud one harder to find.
+  const r = run('[{"a":1e400}]', 'json', [], 'json');
+  assert.match(r.error, /Infinity/, JSON.stringify(r));
+});
+
+t('the readers that never lose a value stay silent', () => {
+  // CSV and XML hand every value on as text, so nothing is rounded before a
+  // writer sees it. Measured, not assumed: these two were silent before the
+  // rule existed too.
+  assert.deepStrictEqual(run('id\n9007199254740993\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('<r><i><id>9007199254740993</id></i></r>', 'xml', [], 'json').warnings, []);
+});
+
+t('the advice the warning gives is a way out that works today', () => {
+  // Quoting is the only lossless answer the readers have, so a warning that
+  // recommends it is recommending something real and not a promise.
+  const quoted = run('[{"id":"9223372036854775807"}]', 'json', [], 'csv');
+  assert.deepStrictEqual(quoted.warnings, []);
+  assert.strictEqual(quoted.text, 'id\n9223372036854775807', quoted.text);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

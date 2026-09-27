@@ -102,6 +102,9 @@ const parsers = {
     const data = JSON.parse(text);
     if (opts && Array.isArray(opts.warnings)) {
       for (const dup of duplicateJSONKeys(text)) opts.warnings.push(dup);
+      for (const literal of jsonNumberLiterals(text)) {
+        collectLostPrecision(opts.warnings, 'JSON', literal);
+      }
     }
     return Array.isArray(data) ? data : [data];
   },
@@ -454,6 +457,157 @@ function duplicateJSONKeys(text) {
     advanceTo(i, nested ? v : (valueEnd > 0 ? valueEnd : after));
   }
   return warnings;
+}
+
+/**
+ * Every number literal in a JSON document that is not inside a string.
+ *
+ * The document has already been through `JSON.parse` by the time this runs, so
+ * it is valid JSON — and in valid JSON the only places a digit or a minus sign
+ * appear outside a string are the number literals themselves. Skipping the
+ * strings is therefore not a guess about where numbers hide, it is what keeps
+ * a digit inside `"AB-9007199254740993"` a digit in a string and silent.
+ */
+function jsonNumberLiterals(text) {
+  const out = [];
+  let i = 0;
+  const digits = () => { while (i < text.length && text[i] >= '0' && text[i] <= '9') i++; };
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '"') {
+      i++;
+      while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1;
+      i++;
+      continue;
+    }
+    if (ch === '-' || (ch >= '0' && ch <= '9')) {
+      const start = i;
+      if (ch === '-') i++;
+      digits();
+      if (text[i] === '.') { i++; digits(); }
+      if (text[i] === 'e' || text[i] === 'E') {
+        i++;
+        if (text[i] === '+' || text[i] === '-') i++;
+        digits();
+      }
+      out.push(text.slice(start, i));
+      continue;
+    }
+    i++;
+  }
+  return out;
+}
+
+/**
+ * The value of a number literal as an exact integer, or null when the literal
+ * is not one.
+ *
+ * `BigInt` will not take `"9.007199254740993e15"` — it reads an integer or
+ * nothing — so the literal is taken apart here and shifted by hand: the value
+ * of `-12.50e1` is `-125`, which is the digit string `1250` moved one place
+ * left. A literal whose fraction survives the shift is not an integer and gets
+ * no answer, which is what keeps `0.1` and `1.50` out of the way.
+ */
+function exactIntegerValue(literal) {
+  const m = /^(-?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(literal);
+  if (!m) return null;
+  const fraction = m[3] || '';
+  const shift = (m[4] ? Number(m[4]) : 0) - fraction.length;
+  if (shift < 0) return null;
+  return (m[1] === '-' ? -1n : 1n) * BigInt(m[2] + fraction) * 10n ** BigInt(shift);
+}
+
+/**
+ * Does reading `literal` as a JavaScript number change a digit the file shows?
+ *
+ * Two questions, not one, and the second is the one that matters. A number is
+ * a 64-bit float, so it holds every integer up to 2^53 exactly and then every
+ * *other* one — which is why a rule counting digits is wrong at both ends:
+ * `9007199254740993` is sixteen digits and loses one, `9007199254740994` is
+ * sixteen and loses none, and `10000000000000000000` is twenty and is exact.
+ *
+ * Comparing the two values with `BigInt` is not enough on its own, and the test
+ * that says so is `1.7976931348623157e308`: it is the largest double there is,
+ * written in the seventeen digits that are the most anyone can write it in, and
+ * its exact value as a *literal* is 17976931348623157000…0 while the double is
+ * 179769313486231570814527…  The two are different numbers and no reader can
+ * tell, because the difference is entirely in digits past the seventeenth.
+ * That file is already what a correct tool writes, so a warning about it is
+ * noise on correct input.
+ *
+ * So the values are compared at the precision the literal itself is written in:
+ * the double is cut down to as many digits as the file shows, and if those are
+ * the digits the file already had, nothing the user can read has changed. The
+ * cut truncates rather than rounds, and it is the right way round — truncation
+ * can only ever expose a difference, never hide one, so a value that agrees in
+ * every digit shown is a value the user cannot tell apart.
+ */
+function losesPrecision(literal) {
+  const read = Number(literal);
+  if (!Number.isFinite(read)) return false;
+  const exact = exactIntegerValue(literal);
+  if (exact === null) return false;
+  return exact !== cutToSignificantDigits(BigInt(read), significantDigitCount(literal));
+}
+
+/** How many digits of `literal` are digits the file actually shows. */
+function significantDigitCount(literal) {
+  const m = /^(-?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(literal);
+  if (!m) return 0;
+  return (m[2] + (m[3] || '')).replace(/^0+/, '').length;
+}
+
+/**
+ * `value` written with `keep` digits and zeros after them, which is what a
+ * reader comparing two numbers of this size would see.
+ */
+function cutToSignificantDigits(value, keep) {
+  const digits = (value < 0n ? -value : value).toString();
+  if (digits.length <= keep) return value * 10n ** BigInt(keep - digits.length);
+  const cut = 10n ** BigInt(digits.length - keep);
+  return (value / cut) * cut;   // BigInt division truncates toward zero
+}
+
+/**
+ * Lossy number literals, counted per literal, keyed by the warnings array they
+ * were collected into. A file can hold the same id in a million rows, and a
+ * million copies of one sentence is the same advice a million times.
+ */
+const lostPrecision = new WeakMap();
+
+function collectLostPrecision(warnings, format, literal) {
+  if (!Array.isArray(warnings) || !losesPrecision(literal)) return;
+  let found = lostPrecision.get(warnings);
+  if (!found) { found = new Map(); lostPrecision.set(warnings, found); }
+  const seen = found.get(literal);
+  if (seen) { seen.count++; return; }
+  found.set(literal, { format, read: Number(literal), count: 1 });
+}
+
+/**
+ * Say what a whole number lost on the way in, once per distinct literal.
+ *
+ * The count is here rather than in the message-per-occurrence because the file
+ * decides how often it happens: `id: 9223372036854775807` on ten thousand rows
+ * is one mistake repeated, and telling the user that ten thousand times buries
+ * everything else on stderr. Quoting is the way out, and it is a way that
+ * exists today in both readers — `"9223372036854775807"` comes back as the same
+ * text, in all six formats.
+ */
+function reportLostPrecision(warnings) {
+  if (!Array.isArray(warnings)) return;
+  const found = lostPrecision.get(warnings);
+  if (!found) return;
+  lostPrecision.delete(warnings);
+  for (const [literal, { format, read, count }] of found) {
+    const where = count === 1 ? '1 place' : `${count} places`;
+    warnings.push(
+      `${format}: ${literal} is a whole number a JavaScript number cannot hold ` +
+      `exactly, so it was read as ${read} in ${where} — the output holds a ` +
+      'different value than the input. Write it in quotes ("' + literal + '") ' +
+      'to keep every digit.'
+    );
+  }
 }
 
 function escapeSQLString(val) {
@@ -1562,12 +1716,19 @@ function csvCell(val, oneColumn) {
   return escapeCSV(cell);
 }
 
-function parseYAMLValue(val) {
+function parseYAMLValue(val, ctx) {
   if (val === 'true') return true;
   if (val === 'false') return false;
   if (val === 'null' || val === '~') return null;
   const num = Number(val);
-  if (!isNaN(num) && val.trim() !== '') return num;
+  if (!isNaN(num) && val.trim() !== '') {
+    // The one place a YAML scalar becomes a number, so it is the one place a
+    // whole number that cannot be held can be noticed. The JSON reader cannot
+    // do it this way — `JSON.parse` has already rounded by the time it returns
+    // — which is why that one walks the text instead.
+    if (ctx) collectLostPrecision(ctx.warnings, 'YAML', val.trim());
+    return num;
+  }
   return val;
 }
 
@@ -1928,7 +2089,7 @@ function parseYAMLScalar(raw, ctx) {
     const flow = parseYAMLFlow(value, ctx);
     if (flow.ok) return flow.value;
   }
-  return parseYAMLValue(value);
+  return parseYAMLValue(value, ctx);
 }
 
 /**
@@ -1982,7 +2143,7 @@ function parseYAMLFlow(text, ctx) {
     }
     let raw = '';
     while (i < text.length && !separators.includes(text[i])) raw += text[i++];
-    return parseYAMLValue(raw.trim());
+    return parseYAMLValue(raw.trim(), ctx);
   };
 
   const value = () => {
@@ -3096,6 +3257,10 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
     // Parse
     if (!parsers[inputFormat]) return { error: `Unknown input format: ${inputFormat}` };
     let data = parsers[inputFormat](inputText, { ...opts, warnings });
+    // One sentence per literal that lost precision, after the parse has seen
+    // every row, so a value repeated across a file is counted instead of
+    // repeated.
+    reportLostPrecision(warnings);
 
     // Transform
     for (const [index, step] of pipeline.entries()) {
