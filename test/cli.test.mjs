@@ -1658,5 +1658,39 @@ test('a list position that is a record field is named on the real binary', () =>
   }
 });
 
+test('two fields renamed to one name is a usage error on the real binary', () => {
+  // The pipeline cannot do what it says, whatever the file holds, so it is exit
+  // 2 and nothing is written — not a warning beside a file with one value in it.
+  const dir = mkdtempSync(join(tmpdir(), 't62-'));
+  try {
+    const path = join(dir, 'two.csv');
+    writeFileSync(path, 'id,city,town\n1,Aarhus,Vejle\n');
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'json', '-p',
+      '[{"op":"rename","mapping":{"city":"where","town":"where"}}]'], { encoding: 'utf-8' });
+    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /"town" and "city" are both renamed to "where"/, r.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a rename onto a name the records have says which value is gone', () => {
+  const dir = mkdtempSync(join(tmpdir(), 't62-'));
+  try {
+    const path = join(dir, 'two.csv');
+    writeFileSync(path, 'id,city,town\n1,Aarhus,Vejle\n');
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'json', '-p',
+      '[{"op":"rename","mapping":{"town":"city"}}]'], { encoding: 'utf-8' });
+    assert.equal(r.status, 0, r.stderr);
+    // The value the step was told to write is the one that survives, and the
+    // other is said out loud rather than being gone without a word.
+    assert.match(r.stdout, /"city": "Vejle"/, r.stdout);
+    assert.match(r.stderr, /"town" → "city" \(1 of 1\)/, r.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

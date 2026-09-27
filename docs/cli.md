@@ -1601,6 +1601,45 @@ transmute test/fixtures/orders.json --pipe '[{"op":"rename","mapping":{"customer
 ]
 ```
 
+A rename can put two values where the record had two fields, and a file cannot
+say so. Both cases are handled, and neither of them writes a value away in
+silence.
+
+**Two fields cannot become one name.** `rename` writes into a new object, so
+two mapping values that are the same string are two writes to one key: the
+second replaces the first in every row, whatever the file holds. That is knowable
+before a byte is read and wrong for every input, so it is a bad pipeline — exit
+2, nothing written, before the file is even opened:
+
+```bash
+transmute test/fixtures/orders.json --pipe '[{"op":"rename","mapping":{"total":"amount","status":"amount"}}]' --output csv
+```
+
+```
+Error: Pipeline step 1 (rename): "status" and "total" are both renamed to "amount", so one of the two values is dropped from every row. Rename them one at a time, or use map to keep both.
+```
+
+**A name the records already have is a warning, not an error.** A pipeline
+written for one file is often run against another, and the next file may only
+have the old name, so the run succeeds and writes its output. The value the step
+was told to write is the one that survives; the one that was in the record's own
+field is gone, and stderr says so on one line while stdout stays the data:
+
+```bash
+transmute test/fixtures/orders.json --pipe '[{"op":"rename","mapping":{"total":"status"}}]' --output csv
+```
+
+```
+Warning: rename: a renamed name is already a field in the records — "total" → "status" (3 of 3). The value that was in that field is not in the output.
+id,customer,status,items
+1,alice,120,"[{""sku"":""a-1"",""qty"":2}]"
+2,bob,60,"[{""sku"":""b-1"",""qty"":1},{""sku"":""b-2"",""qty"":3}]"
+3,carla,250,"[{""sku"":""c-1"",""qty"":5}]"
+```
+
+A target that is itself renamed away is not a collision: `{a: b, b: a}` swaps
+the two values, nothing is lost, and nothing is said about it.
+
 ### flatten
 
 Expand an array field into one record per element. Object elements are merged

@@ -2749,6 +2749,46 @@ test('a null row is named like every other row that is not a record', () => {
   assert.ok(r.warnings[0].includes('row 1 is null'), r.warnings[0]);
 });
 
+test('two fields renamed to one name are a pipeline error, not a file', () => {
+  // Knowable before a byte is read, and wrong for every input: the second write
+  // replaces the first in every row, and the output has one field where the
+  // pipeline named two. Nothing in the file says a value is gone.
+  const r = run('[{"city":"Aarhus","town":"Vejle"}]', 'json',
+    [{ op: 'rename', mapping: { city: 'where', town: 'where' } }], 'json');
+  assert.ok(r.error.includes('"town" and "city" are both renamed to "where"'), r.error);
+  assert.strictEqual(r.usage, true, 'a pipeline that cannot do its job is the user’s own input');
+  assert.strictEqual(r.text, undefined, 'nothing is written');
+});
+
+test('a rename onto a name the records have says which value is not in the output', () => {
+  // A reasonable pipeline — the next file may only have `town` — so the run
+  // succeeds and writes its output. What changes is that the value the record's
+  // own `city` held is named instead of quietly vanishing.
+  const r = run('[{"city":"Aarhus","town":"Vejle"}]', 'json',
+    [{ op: 'rename', mapping: { town: 'city' } }], 'json');
+  assert.strictEqual(r.error, undefined, r.error);
+  assert.match(r.text, /"city": "Vejle"/, r.text);
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /"town" → "city" \(1 of 1\)/, r.warnings[0]);
+  assert.match(r.warnings[0], /not in the output/, r.warnings[0]);
+});
+
+test('a rename that loses no value says nothing', () => {
+  // A swap renames onto names the records have and loses nothing: `a` becomes
+  // `b` and `b` becomes `a`, so warning about it would be noise, and a rule
+  // broad enough to catch it would fire on every working pipeline. A name
+  // nobody has is the ordinary case and stays silent.
+  const both = '[{"a":1,"b":2},{"a":3,"b":4}]';
+  assert.deepStrictEqual(warningsFor([{ op: 'rename', mapping: { a: 'b', b: 'a' } }], both), []);
+  assert.deepStrictEqual(warningsFor([{ op: 'rename', mapping: { town: 'by' } }],
+    '[{"city":"Aarhus","town":"Vejle"}]'), []);
+  // And the same file through csv, where the file has no way to say it either.
+  const r = run('city,town\nAarhus,Vejle\n', 'csv',
+    [{ op: 'rename', mapping: { town: 'city' } }], 'csv');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /"town" → "city" \(1 of 1\)/, r.warnings[0]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

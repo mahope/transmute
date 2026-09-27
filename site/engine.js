@@ -2693,8 +2693,36 @@ function validatePipeline(pipeline) {
         );
       }
     }
+    if (step.op === 'rename') rejectSharedRenameTargets(step.mapping, at);
   });
   return pipeline;
+}
+
+/**
+ * Two fields cannot become one name.
+ *
+ * `rename` writes into a fresh object, so two mapping values that are the same
+ * string are two writes to one key: the second replaces the first in every row,
+ * and the output has one field where the pipeline asked for two. Nothing in the
+ * file says a value is gone. This is knowable from the pipeline alone, before a
+ * single byte is read, and it holds for every input — so it is a bad pipeline
+ * (exit 2) and not a warning about the data, which is the line T26 drew between
+ * an assumption about data and a step that cannot do its job.
+ */
+function rejectSharedRenameTargets(mapping, at) {
+  if (!isPlainObject(mapping)) return;
+  const firstSource = new Map();
+  for (const [from, to] of Object.entries(mapping)) {
+    if (typeof to !== 'string') continue;
+    const other = firstSource.get(to);
+    if (other !== undefined) {
+      throw pipelineError(
+        `${at} (rename): "${from}" and "${other}" are both renamed to "${to}", so one of the ` +
+        'two values is dropped from every row. Rename them one at a time, or use map to keep both.'
+      );
+    }
+    firstSource.set(to, from);
+  }
 }
 
 // ─── Fields a step names ─────────────────────────────────────────────────
@@ -2794,6 +2822,45 @@ function reportMissingFields(data, step, warnings) {
     if (present.has(field)) continue;
     warnings.push(`${step.op}: no record has a field named "${field}"; ${FIELD_EFFECTS[step.op](field, data.length, step)}`);
   }
+}
+
+/**
+ * Say that a rename lands on a name the records already have.
+ *
+ * `{"town":"city"}` on records that have both fields is a reasonable pipeline —
+ * the next file may only have `town` — so the run succeeds and writes its
+ * output, exactly as a field name no record has does. What it does not do is
+ * keep quiet about the value that is gone: `rename` writes into a fresh object,
+ * so the record's own `city` is replaced, and the output holds one `city` where
+ * the input held two fields with a value each.
+ *
+ * A target that is itself renamed away is not a collision. `{a: b, b: a}` swaps
+ * the two values, and the record's `b` becomes its `a`, so no value is lost and
+ * there is nothing to warn about.
+ */
+function reportRenameCollisions(data, step, warnings) {
+  if (!Array.isArray(warnings) || step.op !== 'rename' || !isPlainObject(step.mapping)) return;
+  const mapping = step.mapping;
+  const sources = new Set(Object.keys(mapping));
+  const records = data.filter(isPlainObject);
+  if (records.length === 0) return;
+  const target = new Map();
+  for (const [from, to] of Object.entries(mapping)) {
+    if (typeof to === 'string' && !target.has(to)) target.set(to, from);
+  }
+  const hits = [];
+  for (const [name, from] of target) {
+    if (sources.has(name)) continue;
+    const rows = records.filter(row => hasField(row, name)).length;
+    if (rows > 0) hits.push(`"${from}" → "${name}" (${rows} of ${records.length})`);
+  }
+  if (hits.length === 0) return;
+  const one = hits.length === 1;
+  warnings.push(
+    `rename: ${one ? 'a renamed name is' : `${hits.length} renamed names are`} already a field in the ` +
+    `records — ${hits.join(one ? '' : ', ')}. The value that was in ${one ? 'that field' : 'those fields'} ` +
+    'is not in the output.'
+  );
 }
 
 // ─── Rows that are not records ───────────────────────────────────────────
@@ -2902,6 +2969,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
       // `rename` removed is gone from it.
       requireRecords(data, step, index);
       reportMissingFields(data, step, warnings);
+      reportRenameCollisions(data, step, warnings);
       data = operations[step.op](data, step);
       if (!Array.isArray(data)) data = [data];
     }
