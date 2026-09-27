@@ -827,6 +827,44 @@ printf '[{"first name":["Ada","Bob"]}]' | transmute --format json --output xml
 </data>
 ```
 
+### A name with a `:` in it is a namespace reference, not a name
+
+A name that carries a colon is a namespace *reference*, and a reference is only
+legal when the document declares the prefix it names. There is no URI here to
+declare, so such a name cannot be spelled as a name at all — it travels in the
+`name` attribute like any other name XML cannot carry:
+
+```bash
+printf '[{"a:b":1,"@xlink:href":"u"}]' | transmute --format json --output xml
+```
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <item>
+    <field name="a:b">1</field>
+    <field name="@xlink:href">u</field>
+  </item>
+</data>
+```
+
+This used to be written as `<a:b>1</a:b>`, and a namespace-aware parser
+answered `unbound prefix` and gave up on the whole file while this tool read its
+own output back and said it was fine. Two more names travel the same road for
+the same reason: `xmlns`, which as an attribute is a *declaration* rather than a
+value, and an attribute value that holds a tab, a newline or a carriage return,
+which XML replaces with a space before any parser sees it.
+
+| Written as | Reads as | In |
+|---|---|---|
+| `<a:b>1</a:b>` | `unbound prefix` — the file does not open | XML |
+| `<item xmlns="http://x"/>` | no attribute at all, and the element is re-namespaced | XML |
+| `note="a<TAB>b"` | `a b` | XML |
+| `<field name="a&#9;b">` | `a<TAB>b` | XML |
+
+Element text is not affected: a parser keeps a tab and a newline there, so those
+stay literal and the file stays readable.
+
 ### A null in XML: the text `null`, and no spelling that says otherwise
 
 A `null` is a value that is not there, and XML has no word for it. What the
