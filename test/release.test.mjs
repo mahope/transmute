@@ -47,6 +47,28 @@ const git = (repo, ...args) =>
   }).trim();
 
 /**
+ * The machine's own git identity, taken away.
+ *
+ * `npm version` commits, and a commit needs an identity. A developer machine has
+ * one in ~/.gitconfig; a CI runner has none, and git then answers `empty ident
+ * name ... not allowed` and the release dies with status 128. That is why these
+ * tests were green here and red on main for seven pushes (measured 2026-09-27):
+ * the gate was not the gate. `user.useConfigOnly` also switches off git's own
+ * guess at an identity, so a run cannot pass by borrowing the developer's name.
+ */
+const blankGitConfig = join(mkdtempSync(join(tmpdir(), 'transmute-release-home-')), 'gitconfig');
+writeFileSync(blankGitConfig, '');
+
+const withoutMachineIdentity = {
+  HOME: dirname(blankGitConfig),
+  GIT_CONFIG_GLOBAL: blankGitConfig,
+  GIT_CONFIG_SYSTEM: blankGitConfig,
+  GIT_CONFIG_COUNT: '1',
+  GIT_CONFIG_KEY_0: 'user.useConfigOnly',
+  GIT_CONFIG_VALUE_0: 'true',
+};
+
+/**
  * A working repo on main with a bare origin, holding this repo's release
  * scripts. `version` is written as package.json's version.
  */
@@ -68,13 +90,15 @@ function repo({ version = '0.3.0', withSrc = true } = {}) {
   writeFileSync(join(work, 'package.json'), `${JSON.stringify({ name: 'x', version, scripts: {} }, null, 2)}\n`);
 
   git(work, 'init', '--quiet', '--initial-branch=main');
+  git(work, 'config', 'user.email', 'release@example.invalid');
+  git(work, 'config', 'user.name', 'Release Test');
   git(work, 'add', '-A');
   git(work, 'commit', '--quiet', '-m', 'Udgiv v0.0.1');
   git(work, 'remote', 'add', 'origin', remote);
   git(work, 'push', '--quiet', '-u', 'origin', 'main');
   git(work, 'remote', 'set-head', 'origin', 'main');
 
-  return { dir, work, remote, release: (...args) => spawnSync(process.execPath, ['scripts/release.mjs', ...args], { cwd: work, encoding: 'utf8' }) };
+  return { dir, work, remote, release: (...args) => spawnSync(process.execPath, ['scripts/release.mjs', ...args], { cwd: work, encoding: 'utf8', env: { ...process.env, ...withoutMachineIdentity } }) };
 }
 
 const tags = (repoPath) => {
@@ -184,6 +208,18 @@ test('a repo with no committed version is drift, not a crash', () => {
   const seen = inspectRelease(r.work, 'patch');
   assert.match(seen.problems.join('\n'), /src\/ has changed in 1 commit/);
   assert.ok(!seen.problems.join('\n').includes('origin/main'), `a pushed main must pass the branch rule, so the only reason left is drift: ${seen.problems.join('; ')}`);
+});
+
+test('a release commits as the temp repo, not as the machine it runs on', () => {
+  const r = repo();
+
+  const result = r.release('patch');
+  assert.equal(result.status, 0, `expected a release, got:\n${result.stdout}${result.stderr}`);
+  assert.equal(
+    git(r.work, 'log', '-1', '--format=%an <%ae>'),
+    'Release Test <release@example.invalid>',
+    'the release commit must carry the temp repo\'s own identity, or the test only passes where a developer has configured one',
+  );
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
