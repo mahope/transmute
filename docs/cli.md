@@ -1261,6 +1261,147 @@ comments. Anchors, aliases and multi-document files are not supported; a file
 with more than one document is read as its first document and says so on
 stderr.
 
+#### A block scalar's digit says where the block starts
+
+A block scalar's lines are normally found by looking at the first one, which
+means the first line can never begin with a space. The digit in the header says
+where the block really starts instead, counted from the column the header sits
+in, so those leading spaces are content:
+
+```bash
+printf 'v: |2\n    a\n  b\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "  a\nb\n"
+  }
+]
+```
+
+The digit is a single 1-9 and may come before or after the chomping indicator,
+so `|2-` and `|-2` name the same header. `|0`, `|02` and `|12` are not headers at
+all and are refused rather than guessed at, and so is a line indented *less*
+than the header promised:
+
+```bash
+printf 'v: |2\n a\n' | transmute --format yaml --output json
+```
+```
+Error: Could not parse input as yaml: YAML line 2: block scalar header says 2 spaces of indentation, but this line is indented 1
+```
+
+This is why the tool writes the digit at all. A multi-line value is written two
+spaces in from the key, so a value whose *first* line begins with a space is the
+one case a plain marker cannot carry — a reader would take that space for
+indentation, find the rest of the block under-indented, and refuse the file:
+
+```bash
+printf '[{"v":" a\\nb"}]' | transmute --output yaml
+```
+```
+- v: |-2
+     a
+    b
+
+```
+
+The `2` is what keeps that file openable. Written as a plain `|-`, PyYAML — the
+parser every other tool on your machine uses — raises a `ParserError` on it.
+
+#### Folding stops at a line indented deeper than the block
+
+`>` folds a line break into a space, the way prose does, so `one` and `two`
+become `one two`. It does *not* fold next to a line indented deeper than the
+block itself: that line is content the format keeps whole, and the breaks on
+both sides of it stay breaks.
+
+```bash
+printf 'v: >\n    one\n      two\n    three\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "one\n  two\nthree\n"
+  }
+]
+```
+
+The fold resumes as soon as both neighbours are ordinary lines again, so the
+break between `two` and `three` above is a break while `one` and `two` on their
+own are a space:
+
+```bash
+printf 'v: >\n    one\n    two\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "one two\n"
+  }
+]
+```
+
+An empty line after a deeper line therefore carries **two** breaks, not one: it
+no longer spends a fold that was not there.
+
+```bash
+printf 'v: >\n    a\n      b\n\n    c\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "a\n  b\n\nc\n"
+  }
+]
+```
+
+`|` has no folding at all, so the same file with `|` keeps the break and the
+deeper line is simply part of the value:
+
+```bash
+printf 'v: |\n    one\n      two\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "one\n  two\n"
+  }
+]
+```
+
+#### A block scalar's own spaces are data
+
+Trailing spaces on a block's line are part of the value, not padding, because
+this is the one place in a YAML file where a reader cannot tell the difference:
+
+```bash
+printf 'v: |\n    a   \n    b\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "a   \nb\n"
+  }
+]
+```
+
+The three chomping indicators decide what happens to the breaks at the *end* of
+the block: `|` keeps the one the file has, `|-` drops every trailing break, and
+`|+` keeps all of them. None of them invents a break, so a document that does not
+end in a newline is read as the file wrote it and keeps its last character:
+
+```bash
+printf 'v: |-\n    a\n    b' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "a\nb"
+  }
+]
+```
+
 #### A directive is the file naming its YAML version, not a document
 
 A file may open with one or more directives — `%YAML 1.2` names the version,

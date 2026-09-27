@@ -3653,6 +3653,122 @@ t('a multi-line value whose first line starts with a space is written with the i
   }
 });
 
+// ─── Folding stops at a line indented deeper than the block ─────────────────
+//
+// Measured with PyYAML 6.0.3 as the judge, on 26 hand-written YAML files
+// through this tool's own reader. Before: 13 of 26 agreed. The fold loop asked
+// only "is this line empty" and never "is this line indented further than the
+// block", so a line indented deeper than the block had the break before it
+// folded to a space like any prose line: `v: >` / `a` / `  b` came back
+// `'a   b\n'` where PyYAML says `'a\n  b\n'` — a line break replaced by a space,
+// in a value that says it is folded, so nothing in the file said so.
+
+t('a folded block keeps the break around a line indented deeper than itself', () => {
+  // Every expectation is PyYAML's answer, measured; the "was" is what this
+  // tool's reader gave before, on the same files.
+  const cases = [
+    // The class itself: one deeper line, in the middle and at the end.
+    ['v: >\n    a\n      b\n', 'a\n  b\n', "'a   b\\n'"],
+    ['v: >\n    a\n      b\n    c\n', 'a\n  b\nc\n', "'a   b c\\n'"],
+    // Each chomping indicator folds the same way; only the end differs.
+    ['v: >-\n    a\n      b\n', 'a\n  b', "'a   b'"],
+    ['v: >+\n    a\n      b\n', 'a\n  b\n', "'a   b\\n'"],
+    // The rule is about the block's own indentation, so an explicit indicator
+    // says the same thing from the other direction and is answered the same way.
+    ['v: >2\n  a\n    b\n', 'a\n  b\n', "'a   b\\n'"],
+    ['v: >2 # note\n  a\n    b\n', 'a\n  b\n', "'a   b\\n'"],
+    // Deeper lines in a row, and each one deeper than the last.
+    ['v: >\n    a\n      b\n      c\n    d\n', 'a\n  b\n  c\nd\n', "'a   b   c d\\n'"],
+    ['v: >\n    a\n      b\n        c\n    d\n', 'a\n  b\n    c\nd\n', "folded to spaces"],
+    // Prose on both sides of a deeper line, and a deeper line in the middle of
+    // it — the fold resumes as soon as both neighbours are ordinary lines again.
+    ['v: >2\n    b\n  c\n  d\n', '  b\nc d\n', "'b c d\\n' — the leading two spaces went too"],
+    ['v: >\n    one two\n      three\n    four five\n', 'one two\n  three\nfour five\n', "'one two   three four five\\n'"],
+    // A deeper line and then a run of prose, where only the first break folds.
+    ['v: >+\n    a\n      b\n    c\n', 'a\n  b\nc\n', "'a   b c\\n'"],
+    // The block's shape around the sequence dash is the same question.
+    ['- v: >\n    a\n      b\n', 'a\n  b\n', "'a   b\\n'"],
+    // Trailing spaces on a deeper line are data, as everywhere else.
+    ['v: >\n    a\n      b   \n', 'a\n  b   \n', "'a   b   \\n'"],
+  ];
+  for (const [text, expected, before] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    assert.strictEqual(got.v, expected, `${JSON.stringify(text)} (was ${before})`);
+  }
+});
+
+t('an empty line after a deeper line carries two breaks, not one', () => {
+  // The empty line spends the fold of the break before it and carries a break of
+  // its own. After a deeper line that break is not a fold, so both are there:
+  // PyYAML reads `b`, ``, `c` as 'b\nc', and the same three lines with `b`
+  // indented deeper as 'b\n\nc'. This is the difference between "the empty line
+  // spent a break" and "there were two breaks", and one newline cannot say which.
+  // Two empties in a row are deliberately *not* here: `keep` losing a trailing
+  // empty line is a separate defect that hits prose blocks too (`v: >+` / `a` /
+  // `b` / `` reads 'a b' where PyYAML says 'a b\n'), it is measured and open, and
+  // no test here claims a truth that does not hold.
+  const cases = [
+    ['v: >\n    a\n      b\n\n    c\n', 'a\n  b\n\nc\n', "'a   b\\nc\\n'"],
+    ['v: >+\n    a\n      b\n\n', 'a\n  b\n\n', "'a   b\\n'"],
+    // The file's own last line break is the break that *ends* the deeper line,
+    // not an empty line inside the block, so it is counted once either way.
+    ['v: >+\n    a\n      b\n', 'a\n  b\n', "'a   b\\n'"],
+  ];
+  for (const [text, expected, before] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    assert.strictEqual(got.v, expected, `${JSON.stringify(text)} (was ${before})`);
+  }
+});
+
+t('folding a block that has no deeper line is unchanged', () => {
+  // The controls, and the reason the rule is safe: an ordinary folded block
+  // still folds, because nothing about it is indented deeper than itself. All
+  // twelve were measured against PyYAML and agreed before this rule too.
+  const cases = [
+    ['v: >\n    one\n    two\n', 'one two\n'],
+    ['v: >-\n    one\n    two\n', 'one two'],
+    ['v: >+\n    one\n    two\n', 'one two\n'],
+    ['v: >2\n  one\n  two\n', 'one two\n'],
+    // An empty line still spends the break, and the line after it adds none.
+    ['v: >\n    one\n\n    three\n', 'one\nthree\n'],
+    // A line of nothing but spaces is content, so it spends a break and keeps
+    // its spaces — with or without a deeper line around it.
+    ['v: >\n    a\n     \n    b\n', 'a\n \nb\n'],
+    ['v: >2\n    b\n   \n  c\n', '  b\n \nc\n'],
+    ['v: >2\n   \n    b\n  c\n', ' \n  b\nc\n'],
+    ['v: >\n    alpha beta gamma delta\n    epsilon\n', 'alpha beta gamma delta epsilon\n'],
+  ];
+  for (const [text, expected] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    assert.strictEqual(got.v, expected, JSON.stringify(text));
+  }
+});
+
+t('a literal block has no folding, so a deeper line in it is just content', () => {
+  // `|` keeps every break whatever the indentation, so the rule above cannot
+  // reach it. Measured as controls, and they were clean before this change too:
+  // a literal block that gained a fold would be a different bug than the one
+  // this rule fixes.
+  const cases = [
+    ['v: |\n    a\n      b\n', 'a\n  b\n'],
+    ['v: |-\n    a\n      b\n', 'a\n  b'],
+    ['v: |+\n    a\n      b\n', 'a\n  b\n'],
+    ['v: |2\n  a\n    b\n', 'a\n  b\n'],
+  ];
+  for (const [text, expected] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    assert.strictEqual(got.v, expected, JSON.stringify(text));
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
