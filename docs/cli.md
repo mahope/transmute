@@ -584,6 +584,58 @@ A collection has to close on its own line to be read as a collection. A file
 that opens one and never closes it, and a collection spread over several lines,
 are read the way they always were — as the text they are.
 
+### Anchors, references and `<<`
+
+`&name` names the value in front of it, and `*name` stands in for a value named
+before. Both are read as names, so the value comes out as the value. `<<` is not
+a key at all: it copies the fields of the mappings it names into the mapping it
+stands in, and the fields the file writes itself win.
+
+```bash
+printf 'defaults: &d\n  retries: 3\n  timeout: 30\nservice:\n  <<: *d\n  name: api\ncopy: *d\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "defaults": {
+      "retries": 3,
+      "timeout": 30
+    },
+    "service": {
+      "retries": 3,
+      "timeout": 30,
+      "name": "api"
+    },
+    "copy": {
+      "retries": 3,
+      "timeout": 30
+    }
+  }
+]
+```
+
+A reference is a copy, not a shared object: the two keys above hold the same two
+values, and nothing in one of them can reach into the other. A `<<` that repeats
+a field is not a key given twice — it is the merge saying it again — so it draws
+no warning; in a list `<<: [*a, *b]` the first mapping to carry a field wins.
+
+A reference to a name nothing gave is a mistake PyYAML refuses too, and the
+refusal says which line it is on:
+
+```bash
+printf 'a: 1\nb: *nope\n' | transmute --format yaml --output json
+```
+
+```
+Error: Could not parse input as yaml: YAML line 2: found undefined alias 'nope' — an anchor is written &nope and has to be named before it is used
+```
+
+One file that PyYAML reads and this tool does not: a value that refers to
+itself. `a: &r` + `self: *r` is a structure JSON cannot carry, so it is refused
+in words rather than answered with something that would not survive the
+conversion.
+
 ### A cell that cannot be shown: `table` and `sql`
 
 The refusals above are about a character **no** file can hold. This is the other
