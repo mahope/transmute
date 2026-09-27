@@ -3532,6 +3532,127 @@ t('a multi-line value survives all four readers it is written for', () => {
   assert.ok(sql.includes("'first\nsecond'"), sql);
 });
 
+// ─── The indentation indicator: what it says, and who needs it ─────────────
+//
+// Measured with PyYAML 6.0.3 as the judge, on 44 hand-written YAML files
+// through this tool's own reader. Before: 16 of 44 agreed. `blockScalarHeader`
+// knew `|`, `>` and the two chomping indicators and nothing else, so a header
+// carrying a digit was not a header at all — the value came back as the *text*
+// `|2` at exit 0 with empty stderr, and a file whose block was indented
+// further than the line above it was refused with exit 3 and
+// `unexpected indentation`. T68's class: a valid file the tool cannot open.
+
+t('a block header with an indentation indicator is read as the block it names', () => {
+  // The digit says how far in the block's own lines sit, counted from the line
+  // the header is on, so the leading spaces the automatic detection would have
+  // eaten are content. Every expectation is PyYAML's answer, measured; the
+  // "was" is what this tool's reader gave before, on the same files.
+  const cases = [
+    // clip: two spaces and then `a`, because the block starts at column two
+    ['v: |2\n    a\n  b\n', '  a\nb\n', 'exit 3: unexpected indentation'],
+    // the indicator is counted from the key's column, not the dash's, so the
+    // same header in a sequence item asks for four and not two
+    ['- v: |2\n      a\n    b\n', '  a\nb\n', 'exit 3: unexpected indentation'],
+    // ... and from the key's column two levels down, too
+    ['a:\n  b: |4\n        x\n      y\n', '  x\ny\n', 'exit 3: unexpected indentation'],
+    // the same indicator with each chomping indicator, in either order
+    ['v: |4\n      a\n    b\n', '  a\nb\n', 'exit 3: unexpected indentation'],
+    ['v: |-2\n    a\n  b\n', '  a\nb', 'exit 3: unexpected indentation'],
+    ['v: |+2\n    a\n  b\n', '  a\nb\n', 'exit 3: unexpected indentation'],
+    ['v: |2-\n    a\n  b\n', '  a\nb', 'exit 3: unexpected indentation'],
+    // a comment may follow it, as after any other header
+    ['v: |2 # why\n    a\n  b\n', '  a\nb\n', 'exit 3: unexpected indentation'],
+    // an indicator equal to the detected indentation keeps every space
+    ['v: |2\n    a\n    b\n', '  a\n  b\n', 'exit 3: unexpected indentation'],
+    ['v: |4\n    a\n    b\n', 'a\nb\n', 'exit 3: unexpected indentation'],
+    // a leading empty line is content, and it does not move the block
+    ['v: |2\n\n    a\n  b\n', '\n  a\nb\n', 'exit 3: unexpected indentation'],
+    // a line at exactly the declared indentation is content, not the next key
+    ['root:\n  v: |2\n    next: 1\n', 'next: 1\n', 'exit 3: unexpected indentation'],
+    // a line at the parent indentation ends the block, as it always has
+    ['root:\n  v: |2\n      x\n  next: 1\n', '  x\n', 'exit 3: unexpected indentation'],
+    // a plain block scalar in a sequence counts from the dash
+    ['- |2\n    a\n  b\n', '  a\nb\n', 'exit 3: unexpected indentation'],
+    // trailing spaces on a block's own line are still data
+    ['v: |2\n    a   \n  b\n', '  a   \nb\n', 'exit 3: unexpected indentation'],
+  ];
+  for (const [text, expected, before] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused (${before}): ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    const v = [got.v, got.b, got.root && got.root.v, got.a && got.a.b].find(x => x !== undefined);
+    assert.strictEqual(v !== undefined ? v : got, expected, `${JSON.stringify(text)} (was ${before})`);
+  }
+});
+
+t('an empty block with an indentation indicator is empty, not the header text', () => {
+  // The reader took the whole header as a plain scalar, so `v` came back as the
+  // three characters `|2` — a value where the file says there is none, at exit
+  // 0 with empty stderr. Every one of these was measured; PyYAML says empty.
+  for (const text of ['- v: |2\n', '- v: |2', '- v: |2\n\n', '- v: |2 # c\n']) {
+    const r = run(text, 'yaml');
+    assert.strictEqual(r.data[0].v, '', JSON.stringify(text));
+  }
+  // The controls: a header *without* an indicator was already read as an empty
+  // block, and stays that way.
+  for (const text of ['- v: |\n', '- v: |-\n', '- v: |+\n', '- v: >\n']) {
+    assert.strictEqual(run(text, 'yaml').data[0].v, '', JSON.stringify(text));
+  }
+});
+
+t('a digit that is not an indentation indicator is refused, not guessed at', () => {
+  // `|0`, `|02` and `|12` are not headers, and PyYAML refuses all three. Before
+  // this rule the reader refused them too, but for the wrong reason and with a
+  // message about indentation; what matters is that the answer did not change.
+  for (const text of ['- v: |0\n    a\n', '- v: |02\n    a\n  b\n', '- v: |12\n     a\n  b\n']) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `must stay refused: ${JSON.stringify(text)} -> ${JSON.stringify(r.data)}`);
+  }
+  // And a header that claims more indentation than its first line has is an
+  // error, which is the other half of what the digit promises.
+  const under = run('v: |2\n a\n', 'yaml');
+  assert.ok(under.error, `a line under the declared indentation must not be read: ${JSON.stringify(under)}`);
+  assert.match(under.error, /YAML line 2/, under.error);
+  assert.match(under.error, /says 2 spaces of indentation/, under.error);
+  // The same file with the line under the *parent's* indentation never reaches
+  // the block at all, and is refused one step earlier — PyYAML refuses it too.
+  assert.ok(run('- v: |2\n a\n', 'yaml').error, 'must stay refused');
+  // A sequence item's header counts from the key's column, so the same file
+  // with the second line at two is a line *under* the declared four, and both
+  // readers refuse it.
+  assert.ok(run('- v: |2\n    a\n  b\n', 'yaml').error, 'must stay refused');
+});
+
+t('a multi-line value whose first line starts with a space is written with the indicator', () => {
+  // The block is written two spaces in from the key, so a first line that
+  // begins with a space would be *indentation* to a reader — and then the rest
+  // of the block, written at two, is under-indented and the file is not YAML
+  // any more. Measured with PyYAML, which raised a ParserError on every file
+  // written before this rule, while this tool's own reader read all of them
+  // back unharmed: the file was the thing that was wrong, and only other
+  // readers ever saw it.
+  for (const value of [' a\nb', '  deep\nx', '   \na', ' a\n b\nc', ' a\n']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.match(text, /- v: \|-?\+?2\n/, `${JSON.stringify(value)} -> ${text}`);
+    assert.strictEqual(run(text, 'yaml').data[0].v, value, text);
+  }
+  // The chomping marker keeps its place in front of the digit, and a value that
+  // does not start with a space is written the way it always was — a plain
+  // marker, because there is nothing for an indicator to say.
+  assert.ok(serializers.yaml([{ v: ' a\nb\n' }]).includes('- v: |2\n'), serializers.yaml([{ v: ' a\nb\n' }]));
+  // `a\n b` is a control for the leading-space rule: the space is on a *later*
+  // line, where the automatic detection has already found the block, so it is
+  // data and needs no indicator. `a\n\tb` is left out on purpose — a tab in a
+  // block scalar line is read as a space (`tokenizeYAML`'s `^[ \t]*` eats it as
+  // indentation and the dedent puts a space back), which is a reader bug of its
+  // own, measured and written up in the plan.
+  for (const value of ['a\nb', 'a\nb\n', 'a\nb\n\n', 'a\n b', 'a\n  b\nc']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.ok(!/v: \|[+-]?\d/.test(text), `${JSON.stringify(value)} -> ${text}`);
+    assert.strictEqual(run(text, 'yaml').data[0].v, value, text);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

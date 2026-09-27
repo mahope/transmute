@@ -2271,13 +2271,26 @@ function parseYAMLFoldedScalar(lines, start, indent) {
 
 /**
  * `key: |` and `key: >`, with the chomping indicators `-` (drop the final
- * newline) and `+` (keep every one). `|` keeps line breaks, `>` folds them
- * into spaces the way prose does.
+ * newline) and `+` (keep every one), and the indentation indicator — a digit
+ * saying how far in the block's own lines sit, counted from this line's
+ * indentation. `|` keeps line breaks, `>` folds them into spaces the way prose
+ * does.
+ *
+ * The two indicators may come in either order (`|2-` and `|-2` name the same
+ * header), and the digit is a single 1-9: `|0`, `|02` and `|12` are not
+ * headers, so a file using one is rejected the way PyYAML rejects it rather
+ * than guessed at here.
  */
 function blockScalarHeader(value) {
-  const m = /^[|>]([+-]?)[ \t]*(?:#.*)?$/.exec(value.trim());
+  const m = /^[|>]((?:[+-][1-9]?|[1-9][+-]?)?)[ \t]*(?:#.*)?$/.exec(value.trim());
   if (!m) return null;
-  return { style: m[0][0], chomp: m[1] || 'clip' };
+  const flags = m[1];
+  const digit = /\d/.exec(flags);
+  return {
+    style: m[0][0],
+    chomp: flags.includes('-') ? '-' : flags.includes('+') ? '+' : 'clip',
+    indent: digit ? Number(digit[0]) : null
+  };
 }
 
 function readYAMLBlockScalar(lines, start, parentIndent, header) {
@@ -2288,12 +2301,31 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
     i++;
   }
 
+  // An explicit indentation indicator says where this block's own lines start,
+  // so the leading spaces the automatic detection would have eaten are content:
+  // `v: |2` with a line at four spaces is two spaces and then `a`. That is the
+  // whole reason the indicator exists — without it the *first* line's
+  // indentation is the indentation, so a block whose first line sits deeper
+  // than the rest cannot be written at all (PyYAML: `v: |2` / `    a` / `  b`
+  // is `'  a\nb'`, and a file that says `|2` and then indents less than two
+  // is an error, not a block).
+  const declared = header.indent === null ? null : parentIndent + header.indent;
+  if (declared !== null) {
+    const under = collected.find(l => !l.blank && l.indent < declared);
+    if (under) {
+      throw new SyntaxError(
+        `YAML line ${under.no}: block scalar header says ${header.indent} spaces of ` +
+        `indentation, but this line is indented ${under.indent}`
+      );
+    }
+  }
+
   // The block is one piece of text first and a value second, because that is
   // the order the format works in: chomping is defined on the trailing line
   // breaks of the text, and a line of nothing but spaces is *content* inside a
   // literal block (`a`, ` `, `b` is three lines) while it is still a line of
   // nothing but spaces here — so `raw` decides, and `content` never gets a vote.
-  const shared = collected.reduce(
+  const shared = declared !== null ? declared : collected.reduce(
     (min, l) => (l.raw.trim() === '' ? min : Math.min(min, l.indent)),
     Infinity
   );
@@ -2638,8 +2670,18 @@ function writeYAMLEntry(prefix, key, value, indent) {
     // PyYAML, which read `a\nb` written as `|-` back as `a`, and `a\nb\nc\nd`
     // as `a\nb\nc`: exit 0, empty stderr, and this tool's own reader agreed,
     // so a round trip through Transmute hid it as completely as any other.
+    //
+    // The body is written two spaces in from the key, so a value whose *first*
+    // line starts with a space is the one case a plain marker cannot carry: a
+    // reader takes that space for the indentation and then finds the rest of
+    // the block under-indented, and refuses the file. Measured with PyYAML,
+    // which raised a ParserError on `" a\nb"` written as `|-` with a line at
+    // five spaces and the next at four — a file this tool wrote, that its own
+    // reader read back and no other YAML reader could open. The indicator says
+    // where the block really starts, so the space stays data.
+    const lead = /^[ ]/.test(value) ? String(pad.length - indent) : '';
     const body = marker === '|-' ? value : value.slice(0, -1);
-    return [head + ' ' + marker, ...body.split('\n').map(line => pad + line)];
+    return [head + ' ' + marker + lead, ...body.split('\n').map(line => pad + line)];
   }
 
   if (Array.isArray(value)) {
