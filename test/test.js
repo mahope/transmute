@@ -632,6 +632,81 @@ test('a list member with an attribute cannot be a duplicate attribute', () => {
   assert.ok(!ok.text.includes('field'), ok.text);
 });
 
+test('a name carrying a prefix is carried, not written as a name', () => {
+  // `<a:b>1</a:b>` is a namespace *reference*, and a reference is only legal
+  // when the document declares the prefix it names. There is no URI here to
+  // declare, so the file was one no namespace-aware parser could open at all:
+  // measured on the binary this writes, `xml.etree.ElementTree` answers
+  // "unbound prefix" and gives up, while this tool read its own output back and
+  // reported it fine. A name that carries a prefix therefore cannot be spelled
+  // as a name, and travels the way every other unspellable name already does.
+  for (const key of ['a:b', 'xml:x', 'xlink:href', 'ns:a:b', ':b']) {
+    const r = run(JSON.stringify([{ [key]: 1 }]), 'json', [], 'xml');
+    assert.ok(!new RegExp(`<(/?)${key}[ >/]`).test(r.text), `${key}: ${r.text}`);
+    assert.ok(r.text.includes(`<field name="${key}">1</field>`), `${key}: ${r.text}`);
+    assert.deepStrictEqual(run(r.text, 'xml', [], 'json').data, [{ [key]: '1' }]);
+  }
+  // An attribute name carries the same rule: `@xlink:href` wrote
+  // `xlink:href="…"`, an undeclared prefix, so that file would not open either.
+  // It keeps its `@` on the way, the way `@first name` already did.
+  const attr = run('[{"@xlink:href":"u"}]', 'json', [], 'xml');
+  assert.ok(!/xlink:href=/.test(attr.text), attr.text);
+  assert.deepStrictEqual(run(attr.text, 'xml', [], 'json').data, [{ '@xlink:href': 'u' }]);
+  // A prefixed name on the way *in* is still read: the reader is untouched,
+  // which is what keeps a foreign document with namespaces readable.
+  const read = run('<data><item><ns:v>1</ns:v></item></data>', 'xml', [], 'json');
+  assert.deepStrictEqual(read.data, [{ 'ns:v': '1' }]);
+});
+
+test('a tab, newline or return in an attribute keeps its whitespace', () => {
+  // XML normalizes an attribute value before a parser ever sees it: a literal
+  // tab, newline or carriage return in one becomes a space (XML 1.0 3.3.3). A
+  // character reference is appended as it stands, so `&#9;` is the spelling
+  // that survives. Measured on the file this tool wrote: `note="a<TAB>b"` came
+  // back from a real parser as `a b`, and this reader — which decodes
+  // references and does not normalize — said `a\tb`, so the two disagreed about
+  // the same bytes. Where this reader is more faithful than a real one, the
+  // file is what lies, and the file is what the user hands to somebody else.
+  for (const ch of ['\t', '\n', '\r']) {
+    const value = `a${ch}b`;
+    const r = run(JSON.stringify([{ '@note': value }]), 'json', [], 'xml');
+    const m = r.text.match(/note="([^"]*)"/);
+    assert.ok(m, r.text);
+    assert.ok(!/[\t\n\r]/.test(m[1]), JSON.stringify(value) + ': ' + r.text);
+    assert.deepStrictEqual(run(r.text, 'xml', [], 'json').data, [{ '@note': value }]);
+  }
+  // And in a carried key, where it is worse than a lost space: `{"a\nb":1,
+  // "a b":2}` wrote two `name="a b"`, and the file could no longer say which
+  // was which.
+  const two = run('[{"a\\nb":1,"a b":2}]', 'json', [], 'xml');
+  assert.strictEqual((two.text.match(/<field name="a&#10;b">/g) || []).length, 1, two.text);
+  assert.ok(two.text.includes('<field name="a b">2</field>'), two.text);
+  assert.deepStrictEqual(run(two.text, 'xml', [], 'json').data, [{ 'a\nb': '1', 'a b': '2' }]);
+  // Element text is a different rule and stays literal: a parser keeps a tab
+  // and a newline in an element's content, so escaping them there would only
+  // make the file harder to read than the reader that has to read it.
+  const text = run('[{"v":"a\\tb\\nc"}]', 'json', [], 'xml');
+  assert.ok(text.text.includes('<v>a\tb\nc</v>'), JSON.stringify(text.text));
+  assert.deepStrictEqual(run(text.text, 'xml', [], 'json').data, [{ v: 'a\tb\nc' }]);
+});
+
+test('xmlns is a declaration, so it is not written as an attribute', () => {
+  // `<item xmlns="http://x"/>` carries no value: it names the default namespace
+  // of the element and of everything under it, and a conforming reader reports
+  // no attribute at all. `{"@xmlns":"http://x"}` therefore left a record whose
+  // only field was invisible to every other tool, in a file that had also
+  // re-namespaced the whole document around it.
+  const r = run('[{"@xmlns":"http://x"}]', 'json', [], 'xml');
+  assert.ok(!/\sxmlns=/.test(r.text), r.text);
+  assert.ok(r.text.includes('<field name="@xmlns">http://x</field>'), r.text);
+  assert.deepStrictEqual(run(r.text, 'xml', [], 'json').data, [{ '@xmlns': 'http://x' }]);
+  // An ordinary attribute is untouched: it is still an attribute, and it is
+  // still the shortest spelling for a name XML can carry.
+  const ok = run('[{"@id":"7"}]', 'json', [], 'xml');
+  assert.ok(ok.text.includes('<item id="7"/>'), ok.text);
+  assert.deepStrictEqual(run(ok.text, 'xml', [], 'json').data, [{ '@id': '7' }]);
+});
+
 test('the XML writer names the three list shapes XML cannot carry', () => {
   // Repeated elements are a complete answer for a list of several members, so
   // the ordinary case is silent — a file full of lists must not become a file
