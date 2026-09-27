@@ -2047,12 +2047,14 @@ function parseYAML(text, opts) {
   // item), a mapping (one record), or a run of bare scalars (one record per
   // line). The last one is not YAML, but the reader above it accepted it and
   // data in the wild is shaped that way.
-  if (!isYAMLSequenceEntry(lines[start].content) && !splitYAMLKey(lines[start].content)) {
+  if (!isYAMLSequenceEntry(lines[start].content) && !splitYAMLKey(lines[start].content) &&
+      !isYAMLExplicitKey(lines[start].content)) {
     const records = [];
     for (let i = start; i < lines.length; i++) {
       if (lines[i].blank || isYAMLComment(lines[i].content)) continue;
       if (lines[i].content === '---' || lines[i].content === '...') break;
-      if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content)) break;
+      if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content) ||
+          isYAMLExplicitKey(lines[i].content)) break;
       records.push(parseYAMLScalar(lines[i].content));
     }
     return finishYAML(lines, records);
@@ -2192,6 +2194,31 @@ function skipYAMLBlanks(lines, i) {
 
 function isYAMLSequenceEntry(content) {
   return content === '-' || /^-[\s]/.test(content);
+}
+
+/**
+ * A line that opens an *explicit* mapping key: `? x`, alone or with its value
+ * under it. `?` is a YAML indicator, so a plain scalar never starts with one, and
+ * this is the only position where it can mean a key.
+ *
+ * An explicit key is the one key YAML spells out in front of, and it is what
+ * `!!set` is written on. The reader had no notion of one, so what it did with the
+ * line depended on what stood around it: `? x` + `: 1` was refused with
+ * "unexpected indentation" — PyYAML answers `{x: 1}` — while `? x` with nothing
+ * after it was read as the invented text `"? x"`, exit 0, an empty stderr, and in
+ * a sequence `- ? x` gave a record whose only field was called `"? x"`.
+ */
+function isYAMLExplicitKey(content) {
+  return content === '?' || /^\?\s/.test(content);
+}
+
+/**
+ * A line that carries only the value of the explicit key above it: a `:` with a
+ * space or the end of the line after it, exactly the rule that decides a key's
+ * colon, so `12:30` and `a:b` stay the plain scalars they look like.
+ */
+function isYAMLMappingValue(content) {
+  return content === ':' || /^:\s/.test(content);
 }
 
 /**
@@ -2480,7 +2507,9 @@ function parseYAMLBlock(lines, start, indent, ctx) {
   if (i >= lines.length || lines[i].indent < indent) return { value: null, end: i };
   const content = lines[i].content;
   if (isYAMLSequenceEntry(content)) return parseYAMLSequence(lines, i, lines[i].indent, ctx);
-  if (splitYAMLKey(content, lines[i].no)) return parseYAMLMapping(lines, i, lines[i].indent, ctx);
+  if (splitYAMLKey(content, lines[i].no) || isYAMLExplicitKey(content)) {
+    return parseYAMLMapping(lines, i, lines[i].indent, ctx);
+  }
   return parseYAMLFoldedScalar(lines, i, lines[i].indent);
 }
 
@@ -2513,7 +2542,83 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     }
     const split = splitYAMLKey(lines[i].content, lines[i].no);
     if (!split) {
-      throw new SyntaxError(`YAML line ${lines[i].no}: expected "key: value", got "${lines[i].content}"`);
+      if (!isYAMLExplicitKey(lines[i].content)) {
+        throw new SyntaxError(`YAML line ${lines[i].no}: expected "key: value", got "${lines[i].content}"`);
+      }
+      // `? x` and the `: value` under it are one entry, written out. A key with
+      // no value of its own is a key holding nothing, which is `null` — the same
+      // answer `x:` gets — and it is what a `!!set` is written as.
+      const keyNo = lines[i].no;
+      // The key may be quoted, so the `#` is only a comment when it stands in
+      // the open — the same question `stripYAMLComment` asks everywhere else.
+      const keyText = stripYAMLComment(lines[i].content.slice(1)).replace(/^[ \t]+/, '').replace(/\s+$/, '');
+      const keyProp = keyText ? readYAMLProperties(keyText, keyNo) : null;
+      // A key written as nothing at all is the empty name, not a missing one, and
+      // a quoted key is the text inside its quotes — the same answer `k: v` gives.
+      const quotedKey = keyText[0] === '"' || keyText[0] === "'" ? readYAMLQuoted(keyText, 0) : null;
+      const rawName = quotedKey
+        ? quotedKey.value
+        : keyText
+          ? (keyProp ? keyProp.rest : keyText)
+          : '';
+      const name = rawName === ''
+        ? ''
+        : keyProp && keyProp.alias
+          ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, keyNo), keyNo, ctx)
+          : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
+            ? String(applyYAMLTag(keyProp.tag, rawName, ctx, keyNo))
+            : keyProp && keyProp.tag
+              ? keyText
+              : rawName;
+      if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
+      const named = value => {
+        if (!keyProp || !keyProp.anchor) return value;
+        ctx.anchors.set(keyProp.anchor, value);
+        return value;
+      };
+
+      // The value stands on its own line, at the key's indentation or the one
+      // level a sequence entry pushed it to. A deeper line with no `:` is the
+      // key's own block (`? |` and the text under it), which is a key, so a
+      // block here becomes a key that is not text and is refused by name.
+      const j = skipYAMLBlanks(lines, i + 1);
+      const valueLine = j < lines.length && lines[j].indent >= indent &&
+        isYAMLMappingValue(lines[j].content) ? j : -1;
+      if (valueLine >= 0) {
+        const rest = lines[valueLine].content.slice(1).replace(/^[ \t]+/, '');
+        if (rest === '' || isYAMLComment(rest)) {
+          const k = skipYAMLBlanks(lines, valueLine + 1);
+          if (k < lines.length && lines[k].indent > lines[valueLine].indent) {
+            const child = parseYAMLBlock(lines, k, lines[k].indent, ctx);
+            set(name, named(child.value), valueLine === i ? keyNo : lines[valueLine].no);
+            i = child.end;
+            continue;
+          }
+          set(name, named(null), lines[valueLine].no);
+          i = valueLine + 1;
+          continue;
+        }
+        const block = blockScalarHeader(rest);
+        if (block) {
+          const child = readYAMLBlockScalar(lines, valueLine + 1, lines[valueLine].indent, block);
+          set(name, named(child.value), lines[valueLine].no);
+          i = child.end;
+          continue;
+        }
+        ctx.line = lines[valueLine].no;
+        set(name, named(parseYAMLScalar(rest, ctx)), lines[valueLine].no);
+        i = valueLine + 1;
+        continue;
+      }
+      if (j < lines.length && lines[j].indent > indent) {
+        const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
+        set(name, named(child.value), keyNo);
+        i = child.end;
+        continue;
+      }
+      set(name, named(null), keyNo);
+      i++;
+      continue;
     }
     const { key, keyProp } = split;
     let name = key;
@@ -2686,7 +2791,8 @@ function parseYAMLFoldedScalar(lines, start, indent) {
   const parts = [];
   let i = start;
   while (i < lines.length && !lines[i].blank && lines[i].indent === indent) {
-    if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content)) break;
+    if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content) ||
+        isYAMLExplicitKey(lines[i].content)) break;
     parts.push(parseYAMLScalar(lines[i].content));
     i++;
   }
