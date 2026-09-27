@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-28 (T82)
+Opdateret: 2026-09-28 (T83)
 
 
 ## Mission
@@ -8,6 +8,22 @@ Opdateret: 2026-09-28 (T82)
 Dette offentlige repo leverer den gratis, lokale og open source CLI til at transformere JSON, CSV, YAML og XML samt det offentlige site. Den betalte desktopudgave, licenslogikken og al Pro-implementation ligger i det private `mahope/transmute-desktop` og udvikles i loopet `transmute-desktop`. Her er målet at gøre CLI'en fuldt brugbar og gøre vejen til Desktop Pro tydelig. Hele udviklingen skal ske på `ceo/*`-branch og merges til `main`.
 
 ## Iterationsstatus
+
+**Næste iteration (T83): T83 er færdig på `ceo/release-test-identity` (fra `main`), commit `PLACEHOLDER83`, MERGERET til `main`, pushet 2026-09-27 ca. 23:4x CEST.** Den tog **punkt 82's slutning og Kvalitetsgate's røde måling ordret: CI har været rød på `main` i syv kørsler, og årsagen var ikke koden.** Se punkt 83.
+
+**Fejlen var en ikke-hermetisk test, og den lå i `test/release.test.mjs`.** Testen kører det rigtige `scripts/release.mjs` i et midlertidigt repo, og `npm version` **committer** — en commit skal have en identitet. Min maskine har en i `~/.gitconfig`; en CI-runner har ingen, og git svarer `fatal: empty ident name (for <runner@runnervmlx…>) not allowed`, exit 128, `7 passed, 2 failed`. De to fejlslag var præcis de to tests der faktisk bumper versionen.
+
+**Målingen blev reproduceret lokalt, så den ikke er en antagelse fra en log.** Først forsøgte jeg at tage maskinens identitet væk med `HOME` + tom `GIT_CONFIG_GLOBAL`, og testen blev **grøn** — fordi macOS' git gætter en identitet ud fra brugerens fulde navn i passwd. En container-runner har ingen, fordi `runner`'s gecos-felt er tomt. Med `user.useConfigOnly` slået til fik jeg **CI's tal præcis: `7 passed, 2 failed`.** Det er derfor målingen blev lavet med to grep i stedet for én.
+
+**Rettelsen er to linjer og én env, og testen kan ikke længere låne en identitet.** Temp-repoet får `user.name`/`user.email` i sin egen config — samme idiom som `test/deploy.test.mjs:47-48`, som derfor altid har været grøn i CI — og selve release-kørslen sker nu med maskinens git-config nulstillet og `user.useConfigOnly` slået til, så **et kørende testparløb er grønt uanset hvem der har kørt det.** Den nye tiende test siger det samme i én linje: den aflæser hvem release-committen er skrevet af og kræver temp-repoets egen identitet.
+
+**Bevis for at låsen bider:** da de to config-linjer blev fjernet igen, faldt nøjagtig de to CI-tests *plus* den nye — `7 passed, 3 failed` — og efter revert `10 passed, 0 failed`. Rettelsen er altså ikke en tilfældighed, men en betingelse testen selv håndhæver.
+
+**Ingen site-fil, intet `engine.js`, ingen asset-hash, ingen `VERIFICÉR DEPLOY`-note.** Iterationen rører kun `test/release.test.mjs`. Lokalt grøn: `npm test` exit 0 med alle tolv trin (266+168+89+6+39+**10**+10+11+24 tests, 4 workflows, **184** kontraktontroller), `npm pack --dry-run` 5 filer uændret.
+
+**Næste opgave, målt før den skrives: punkt 82's otte tilbage, som er tags og navne på nøgler.** Mål `a: !!str 1`, `a: !!int "1"`, `a: !custom v`, `a: !<tag:example.com,2026> v`, et tag på en blokskalar (`a: !!str |` + `  1`) og et tag på en nøgle; mål at `!!str` ikke gør tal til strænge i **alle seks** formater, fordi det er den eneste konstruktion der bevidst ændrer en type. Mål desuden `&k b: 2`, `*x: 2`, `&base.image` og `- <<: *b`. **Kontroltabellen fra T82 må ikke flytte sig**: `2*3`, `x&y`, `a#b: 1` og tre runde ture gennem værktøjets egen skriver.
+
+**Uden nyt valg** er de tre valg de samme: (a) `❓ Til Mads` punkt 1, deploy-kommandoen, den eneste blokering for både købssiden og alle 0.3.0-rettelser; (b) `❓ Til Mads` punkt 18, `npm run release -- 0.3.0`; (c) punkt 15's tabsfri læser.
 
 **Næste iteration (T82): T82 er færdig på `ceo/yaml-alias` (fra `main`), commit `34977c1`, MERGERET til `main` som `a19f9bd`, pushet 2026-09-27 ca. 23:5x CEST.** Den tog **punkt 81's eget næste mål** — og **målingen sagde først, at det ikke var en opgave, så den målte videre og fandt en større.** Se punkt 82.
 
@@ -423,7 +439,9 @@ Den obligatoriske gate er denne, i den angivne rækkefølge:
 
 Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bruger Node 20 og 22 og kører kun `npm test` efterfulgt af `npm pack --dry-run`; T6 har lagt site-gaten i `.github/workflows/site-gate.yml`, som kun kører på site- og værktøjsændringer. Nye frontendtests skal wire ind i `npm test`, så de faktisk er en del af gaten. `npm run snapshots:cli` regenererer `test/fixtures/expected.json` og må kun køres som en del af en bevidst ændring af engine-adfærd. `npm run release`, tag-triggerede workflows og workflow-dispatch må ikke køres af loopet, fordi de kan publicere eller oprette releases.
 
-**Målt 2026-09-27 ca. 23:5x (T82): CI er rød på `main` på *alle* syv seneste kørsler, og det er ikke min kode.** `gh run list --workflow=CI` viser `failure` for hvert push helt tilbage til T79's merge. Årsagen er én linje i `test/release.test.mjs`, som kører det **rigtige** `scripts/release.mjs` i et midlertidigt repo: `npm version patch` kræver en git-identitet, og CI-runneren har ingen — `fatal: empty ident name (for <runner@runnervmlx…>) not allowed`, exit 128, og de to release-tests `7 passed, 2 failed`. Lokalt går de samme tests, fordi min maskine *har* en identitet. **Det er altså et ikke-hermetisk test, ikke en regression** — og det betyder at "gaten er grøn" lokalt og "CI er grøn" ikke er det samme. Rettelsen er lille og er målt, ikke gættet: temp-repoet skal have `user.name`/`user.email` sat (eller kalderen `git -c user.name=… -c user.email=…`), så testen er den samme overalt. **Ikke lavet i T82** (tidsgrænsen), og det er det første punkt i næste iterations kø.
+**Målt 2026-09-27 ca. 23:5x (T82), og rettet i T83: CI var rød på `main` på *alle* syv seneste kørsler, og det var ikke min kode.** `gh run list --workflow=CI` viste `failure` for hvert push helt tilbage til T79's merge. Årsagen var én linje i `test/release.test.mjs`, som kører det **rigtige** `scripts/release.mjs` i et midlertidigt repo: `npm version patch` kræver en git-identitet, og CI-runneren har ingen — `fatal: empty ident name (for <runner@runnervmlx…>) not allowed`, exit 128, og de to release-tests `7 passed, 2 failed`. Lokalt går de samme tests, fordi min maskine *har* en identitet. **Det var altså et ikke-hermetisk test, ikke en regression** — og det betød at "gaten er grøn" lokalt og "CI er grøn" ikke var det samme, i syv kørsler og tre iterationer. **T83 har rettet det:** temp-repoet har nu sin egen `user.name`/`user.email`, og release-kørslen sker med maskinens git-config nulstillet og `user.useConfigOnly` slået til, så filen er grøn på enhver maskine. Se punkt 83.
+
+**Læren er skrevet ned som en regel, ikke som en note: en test der kører et rigtigt script, skal køre det i et miljø, der ligner CI's.** Git-identitet er det første eksempel, og det er ikke det eneste — `HOME`, `npm_config_*`, locale og tidszone er de samme slags. Den nye test i punkt 83 siger det i én linje: release-committen skal være skrevet af temp-repoets egen identitet, så et kørende testparløb ikke kan være grønt ved at låne en udviklers navn.
 
 ## Deploy
 
@@ -464,6 +482,8 @@ VERIFICÉR DEPLOY: `flatten` siger, når et listeelement lægger sig i en kolonn
 VERIFICÉR DEPLOY: `rename` siger når to felter lægger sig i én kolonne — exit 2 før filen læses når to mappingværdier er ens, ellers én advarselslinje på stderr når målnavnet er et felt posten allerede har — samme ændring i `src/engine.js` og `site/engine.js` (byte-identiske) plus `try.html`'s asset-hash, commit `3fcd793` på `ceo/rename-collisions`, **ikke mergeret til `main`**. Denne note opdateres med commit-ref når bunken merges; indtil da er intet af T62 live.
 
 **DEPLOY-MISSING: live er `3d90812` fra 2026-09-24, og 5 site-commit står u deployede — målt, ikke gættet (2026-09-26, **ottende** måling i træk med `npm run check:deploy`; uændret hver gang). To batch-vinduer (17:30 og 21:30 den 25/9) er gået uden deploy.**
+
+**Målt igen 2026-09-27 ca. 23:2x (T83): uændret for ottende iteration i træk.** Live svarer til INGEN af de 40 seneste site-commits, og de afvigende filer er de samme seks (`/da/privacy/`, `/engine.js`, `/privacy/`, `/site.js`, `/style.css`, `/try.html`). T83 rørte ingen site-fil, så intet af T83's arbejde kan vente på en batch. **Tællingen i dette afsnit er i stykker og bliver ikke ført videre:** T79 og T81 skriver "54.", T80 "51." og T82 "53." for den samme måling, fordi hver iteration tæller sin egen række. Den sande kendsgerning er den korte: `npm run check:deploy` har svaret uændret siden 2026-09-24, og kun en kørsel af `npm run deploy:site` kan ændre den (se `❓ Til Mads` punkt 1).
 
 **Målt igen 2026-09-26 ca. 18:3x, starten på T48-iterationen:** uændret for **trettende** gang i træk. Live er stadig `3d90812` (2026-09-24 23:32:50 +0200), 5 site-commit i drift, 25 afvigende filer, `/support/index.html` utilgængelig. **Ét nyt batch-vindue er gået siden T47's måling** (17:30 den 26/9), så tallet står uændret af den rigtige grund. T48's diff rører `site/engine.js` og `site/try.html` (kun `engine.js`-hashen), så den får sin egen `VERIFICÉR DEPLOY`-note når bunken merges, og **intet merges til `main`** indtil et menneske har kigket.
 
@@ -547,6 +567,8 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 ## Prioriteret opgavekø
 
+- 2026-09-27 ca. 23:2x–23:4x CEST: **T83 gennemført på `ceo/release-test-identity` (fra `main`), MERGERET til `main`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret igen, live svarer til INGEN af de 40 seneste site-commits, de samme seks afvigende filer (`/da/privacy/`, `/engine.js`, `/privacy/`, `/site.js`, `/style.css`, `/try.html`). Emnet var **punkt 82's egen slutning og Kvalitetsgate's røde måling: CI har været rød på alle syv seneste pushes, og det var ikke koden.** `test/release.test.mjs` kører det rigtige `scripts/release.mjs` i et temp-repo, `npm version` committer, og en commit kræver en identitet — min maskine har en i `~/.gitconfig`, CI-runneren har ingen (`fatal: empty ident name (for <runner@runnervmlx…>) not allowed`, exit 128, `7 passed, 2 failed`). Fejlen var reproduceret lokalt, ikke læst ud af en log: med maskinens git-config nulstillet *alene* blev testen grøn, fordi macOS' git gætter en identitet ud fra passwd; med `user.useConfigOnly` fik jeg CI's tal præcis. Rettelsen er to linjer (temp-repoets egen `user.name`/`user.email`, samme idiom som `test/deploy.test.mjs:47-48`) plus én env, så release-kørslen sker med maskinens config nulstillet og `user.useConfigOnly` slået til. Én ny test (9 → 10) aflæser hvem release-committen er skrevet af. **Mutationen er målt:** uden de to config-linjer falder nøjagtig de to CI-tests plus den nye (`7 passed, 3 failed`); med dem `10 passed, 0 failed`. Hele `npm test` exit 0 i alle tolv trin, `npm pack --dry-run` 5 filer uændret, ingen site-fil rørt og derfor ingen `VERIFICÉR DEPLOY`-note. Se punkt 83.
+
 - 2026-09-27 ca. 23:3x–23:5x CEST: **T82 gennemført på `ceo/yaml-alias` (fra `main`), commit `34977c1`, MERGERET til `main` som `a19f9bd`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **femoghalvtredsindstyvende** gang i træk, live svarer til INGEN af de 40 seneste site-commits, de samme seks afvigende filer. Emnet var punkt 81's eget næste mål — **en tab før en `#`** — og **målingen sagde først, at det ikke var en opgave**: 24 filer gennem den rigtige binary med PyYAML 6.0.3 som dommer, **24 af 24 var enige**, fordi T81's walk ser tabulatoren inden den ser `#`. Målingen gik derfor videre til den næste flade i samme læser, og den er **den største tilbage i hele YAML-læseren: ankre, referencer og `<<`.** 20 filer, **før: 2 af 20.** Fundet kommer i to former af T68's klasse: **en gyldig fil blev afvist** (`a: &x` over en blok døde med `unexpected indentation`) og **et navn kom ud som værdens egen tekst** (`"&x 1"`, `"*x"`, `{"<<": "*b"}` — exit 0, tom stderr). Det rammer præcis de filer der genbruger en blok: GitHub Actions, compose, Kubernetes. Rettelsen tager navnet af *inden* værdien læses, så en værdi med et navn læses præcis som den samme værdi uden; referencen er en kopi, så to nøgler der deler et anker bliver to værdier i JSON; `<<` kopierer felter ind, og felterne filen skriver selv vinder i begge rækkefølger (målt). Tre nye tests (263 → 266), to af dem røde mod den gamle kode, og kontroltabellen på `2*3`, `x&y`, `a#b: 1`, tab-reglerne og tre runde ture gennem værktøjets egen skriver. **Efter: 17 af 20 og 17 af 24 i opfølgningen**, og de otte tilbage er tags, navne på nøgler og to valgte afvekslinger — alle målt, forståede og skrevet ned som punkt 83. Se punkt 82.
 
 - 2026-09-27 ca. 22:3x–23:2x CEST: **T81 gennemført på `ceo/yaml-tab-token` (fra `main`), commit `aac6515`, MERGERET til `main` som `f86ba56`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **fireoghalvtredsindstyvende** gang i træk, live svarer til INGEN af de 40 seneste site-commits, afvigelserne er de samme seks filer (`/da/privacy/`, `/engine.js`, `/privacy/`, `/site.js`, `/style.css`, `/try.html`). Emnet var T80's eget næste mål ordret: **punkt 79's fire filer, hvor tabulatoren står der hvor et token skal begynde.** 18 håndskrevet YAML gennem den rigtige binary med PyYAML 6.0.3 som dommer: **3 af 18 var enige før, 18 efter.** Fundet er T68's klasse: **PyYAML afviser alle med samme `ScannerError`, værktøjet læste alle med exit 0 og tom stderr.** Og målingen gjorde planens egen forudsigelse om halvdelen forkert — de tre sagde "rene kontroller" var afviste af PyYAML med præcis samme fejl, så **15 af 18 afveg, på fem steder og ikke fire**. Den femte var den mest interessante: `parseYAMLSequence`'s omskrivning af `- key: value` tabte `tabAt` og fjernede dermed *beviset* uden at fjerne tabulatoren. Rettelsen er én regel med PyYAML's egen besked, registreret i `tokenizeYAML`, undtaget af blokskalaren og spurgt én gang i `finishYAML` som hver eneste return går igennem. To nye tests (261 → 263), den første rød mod den gamle kode med de femten målte filer, den anden kontroltabellen på de atten steder PyYAML *accepterer* en tab. Se punkt 81.
@@ -600,6 +622,31 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 - 2026-09-27 ca. 13:4x–14:0x CEST: **T72 gennemført på `ceo/xml-prefix-names` (fra `main`), commits `fa52410` + `3aeac9e`, MERGERET til `main` som `e44a1cf`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **seksoghalvtredsindstyvende** gang i træk, live er `3d90812` og de samme 28 afvigende filer. Emnet var T71's eget næste mål: **de værdier der mangler en hel stavning.** Elle varianter målt på den rigtige binary før koden blev rørt, **med `xml.etree.ElementTree` som dommer** i stedet for værktøjets egen læser. Tre fund: et kolon i et navn er en navnerumsreference, så `{"a:b":1}` skrev `<a:b>` og **filen kunne ikke åbnes** af nogen parser; en tabulator eller et linjeskift i en attributværdi bliver et mellemrum, så værktøjet og en rigtig læser læste samme byte som to forskellige værdier; og `@xmlns` skrev en navnerumserklæring, som en konformer læser ser som nul attributter. `$` i en YAML-nøgle viste sig allerede rettet. Rettelsen er `writesAsXMLName` (skriverens spørgsmål, læserens `XML_NAME` urørt) og `escapeXMLAttr`. Se punkt 72.
 - 2026-09-27 ca. 12:4x–13:2x CEST: **T71 gennemført på `ceo/boolean-truthy` (fra `main`), commit `cf9803c`, MERGERET til `main` som `19b9737`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **femoghalvtredsindstyvende** gang i træk, live er `3d90812`, 2 sider utilgængelige (`/support/`, `/da/support/`) og de samme 28 afvigende filer. Emnet var T70's eget næste mål: **sandhedsværdier på tværs af formaterne.** `{"a":true}` gennem alle seks formater, frem og tilbage gennem dem der kan læses, plus den passage i `docs/cli.md` der siger at `sql` skriver en streng der ligner en boolean som `'true'` og en rigtig boolean som `TRUE` — den passage stod der **uden en eneste kørsel bag sig**, og den er nu kørt ordret: **den er sand.** To veje rene, ét fund der ikke lå i koden men i en påstand: **`reportAbsentFields` sagde "json, yaml and xml keep the difference" om en `null`, og en test låste den påstand — målt er den falsk for `xml`**, fordi `String(null)` er de fire bogstaver `null`, så en fraværende værdi blev en værdi, exit 0, tom stderr. Rettelsen er `reportXMLNulls` (samme idiom som `reportXMLListShape`, talt pr. felt og med hvert steds eget navn), den rettede sætning i `reportAbsentFields`, de to advarselsblokke i `docs/cli.md` der lavede samme fejl, og en ny sektion i dokumentationen. Se punkt 71.
+
+### 83. [x] Gør release-testen hermetisk, så gaten er den samme lokalt og i CI
+
+**Status:** FÆRDIG på `ceo/release-test-identity` (fra `main`), MERGERET til `main`, pushet 2026-09-27 ca. 23:4x CEST. `DEPLOY-MISSING` står uændret (se punkt 1); merges er gjort alligevel med vilje — se T63's måling af hvorfor en merge til `main` ikke kan publicere noget. Iterationen rører **ingen site-fil**, så den får ingen `VERIFICÉR DEPLOY`-note.
+**Mislykkede forsøg:** 0/2
+**Begrundelse:** Kvalitetsgate's egen måling fra T82 stod som en fejl i gaten: *CI er rød på `main` på alle syv seneste kørsler, og det er ikke min kode.* Det er den dyreste slags fejl, fordi den **gør hver af de tre forgangne iterationers "gaten er grøn" til en udsagn om en anden maskine end den, der reelt afgør om koden virker.** Loopet har brugt de lokale kørsler som bevis i 83 iterationer; i syv af dem viste de noget, CI ikke kunne.
+
+**Fejlen er målt, ikke læst ud af en log.** `gh run view --log-failed` på `36350694555` giver præcis to tests, `7 passed, 2 failed`, med `fatal: empty ident name (for <runner@runnervmlx9pb…>) not allowed` og en stack der ender i `scripts/release.mjs:25` → `npm version patch -m "Udgiv v%s"`. De to tests er de to der faktisk *bumper* en version, fordi de er de eneste der kommer forbi `npm version`.
+
+**Årsagen er at `npm version` committer, og en commit skal have en identitet.** Det er ikke en fejl i `scripts/release.mjs`: den skal ikke opfinde en identitet for Mads' repo. Fejlen er at **temp-repoet i testen ikke havde en**, så testen lånte maskinens — og en udviklermaskine altid har en.
+
+**Reproduktionen viste noget, planen ikke havde ventet: én grep var ikke nok.** Først nulstillede jeg maskinens identitet med `HOME` + tom `GIT_CONFIG_GLOBAL` (+ `GIT_CONFIG_SYSTEM`), og testen blev **grøn** — fordi macOS' git *gætter* en identitet ud fra brugerens fulde navn i passwd, så maskinen kan gå uden konfiguration. En container-runner kan ikke: `runner`'s gecos-felt er tomt, og git siger `empty ident name`. Med `user.useConfigOnly=true` (skjuler gættet) fik jeg **CI's tal præcis: `7 passed, 2 failed`**. Samme fejl, samme to tests, lokalt. *Målemetode: når et miljøproblem skal gengives, skal den reproduktion fjerne maskinerne **og** de hensyn den tager til dem — en maskine der ligner CI i én henseende kan stadig skjule den.*
+
+**Rettelsen er to linjer og én env.**
+
+- **Temp-repoet får sin egen identitet** (`git config user.name/user.email`), præcis som `test/deploy.test.mjs:47-48` gør det — og det er derfor *den* fil aldrig har været rød i CI, selv om den har samme slags temp-repos.
+- **Release-kørslen sker i et miljø uden maskinens git-config**: `HOME` peger på en tom temp-mappe, `GIT_CONFIG_GLOBAL` og `GIT_CONFIG_SYSTEM` på en tom fil, og `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true` slår gættet fra. Så testen **kan ikke være grøn ved at låne en udviklers navn**, og den er grøn på min maskine af præcis den grund den er grøn på CI.
+
+**Testene (9 → 10), én ny.** `a release commits as the temp repo, not as the machine it runs on` kører en rigtig release og aflæser `git log -1 --format=%an <%ae>`, der skal være `Release Test <release@example.invalid>`. Den er bevidst formuleret som en *aflæsning* og ikke som "testen skal gå": den siger hvem der skrev, så en fremtidig redaktion der fjerner identiteten får et navngivet symptom i stedet for en exit 128.
+
+**Bevis for at låsen bider (mutation målt, ikke antaget).** De to `git config`-linjer blev fjernet igen efter at rettelsen virkede: `7 passed, 3 failed` — **præcis de to CI-tests plus den nye.** Efter revert: `10 passed, 0 failed`. De ni ældre tests flytter sig ikke, og `test/deploy.test.mjs`/`test/version.test.mjs` røres ikke, fordi de hverken kører `npm version` eller har den samme afhængighed.
+
+**Verifikation:** `npm test` exit 0 med alle tolv trin (266+168+89+6+39+**10**+10+11+24 tests, 4 workflows, **184** kontraktontroller), `npm pack --dry-run` 5 filer uændret, `npm run check:deploy` uændret. Ingen site-fil, intet `site/engine.js`, ingen asset-hash, intet søgeindeks. Ingen publish, ingen tag, ingen release.
+
+**Næste opgave, målt før den skrives: punkt 82's otte tilbage, som er tags og navne på nøgler.** Mål `a: !!str 1`, `a: !!int "1"`, `a: !!bool yes`, `a: !custom v`, `a: !<tag:example.com,2026> v`, et tag på en blokskalar (`a: !!str |` + `  1`) og et tag på en nøgle; mål at `!!str` ikke gør tal til strænge i **alle seks** formater, fordi det er den eneste konstruktion der bevidst ændrer en type. Mål desuden navne på nøgler (`&k b: 2`, `*x: 2`), to navne på én værdi (`b: &y *x`), et navn med et punktum (`&base.image`, hvor PyYAML er strengere end værktøjet) og `- <<: *b` i en sekvens. **Kontroltabellen fra T82 må ikke flytte sig**: `2*3`, `x&y`, `a#b: 1` og tre runde ture gennem værktøjets egen skriver. Den værdi der henviser til sig selv (`a: &r` + `  self: *r`) er *valgt* afvigelse og bliver stående.
 
 ### 80. [x] Ret privatlivssiden så den siger sandheden om skrifter, og bind den til koden
 
@@ -3922,6 +3969,37 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 
 ## Beslutninger og fund
 
+- **En grøn gaten på min maskine er ikke en grøn gaten. Den er en måling af min
+  maskine.** I syv pushes — T79, T80, T81, T82 og deres plan-commits — stod alle
+  tolv trin af `npm test` grønne her, og CI var rød på hver eneste. Årsagen var
+  ikke en regression men en **ikke-hermetisk test**: `test/release.test.mjs` kører
+  det rigtige `scripts/release.mjs`, `npm version` committer, og temp-repoet havde
+  ingen git-identitet, så det lånte maskinens. Tre forskellige filer kører rigtige
+  scripts i temp-repos; kun den ene manglede det, og netop den var rød. *Målemetode:
+  en test der kører et rigtigt script skal køre det i et miljø der ligner CI's —
+  identitet, `HOME`, `npm_config_*`, locale, tidszone. Og en fejl må reproduceres
+  lokalt, fordi reproduktionen kan vise at ens egen maskine skjuler den: macOS' git
+  gætter et navn fra passwd, så kun `user.useConfigOnly` gav CI's `7 passed, 2
+  failed` tilbage her.*
+
+- **Et kørende testparløb skal være grønt af den grund det er grønt i en container.**
+  Rettelsen er derfor ikke bare de to manglende `git config`-linjer (som ville have
+  gjort T83 grøn på min maskine og ladt samme fejl komme tilbage). Release-kørslen
+  sker nu med maskinens git-config nulstillet og `user.useConfigOnly` slået til, så
+  filen er rød overalt, hvis identiteten forsvinder igen — og den nye test aflæser
+  *hvem* release-committen er skrevet af, så et sådan brud får et navngivet symptom
+  i stedet for en exit 128. Samme som de andre låse i denne plan: **en regel der
+  *registrerer* noget, er kun så god som den sted der *glemmer* at føre det med.**
+
+- **Tal i en plan skal kun tælles ét sted.** `DEPLOY-MISSING`'s " måling i træk" stod
+  som 51., 53. og 54. i tre naboliggende noter, fordi hver iteration tæller sin
+  egen række og skriver et nyt tal i en ny linje. Tællingen er nu afskaffet til
+  fordel for den kendsgerning, der holder: `npm run check:deploy` har svaret
+  uændret siden 2026-09-24, og kun `npm run deploy:site` kan ændre den. *Samme
+  slags som de tre `###`-dubletter i punkt 41 og de to konteringslinjer i
+  Kvalitetsgate: to steder der siger det samme tal er ét tal med to muligheder for
+  at være forkert.*
+
 - **To veje til det samme svar skal være én, også når de ser forskellige ud.**
   Blokskalarens indrykning kan siges på to måder: et tal på markøren
   (`|2`, T75) eller ved at læse den første linje (T78). De lå i to brancher med
@@ -4151,7 +4229,7 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
 
    **Det der skal til er én kommando, og den er mergeret til `main` som `6e30434`:**
 
-   **T80 har målt at den *er* kørt, og at den ikke landede.** Du kørte `npm run deploy:site` 27/9 kl. 17. T80's måling kl. 21:4x — efter 21:30-vinduet — viser `DEPLOY-MISSING` for **enoghalvtredsindstyvende** gang, live svarer til INGEN af de 40 seneste site-commits, og senest kendte live-commit er stadig `3d90812` (2026-09-24). Så **hypotesen "den er ikke kørt" er død** — det er reel fremgang, fordi der nu kun er to muligheder tilbage, og de er nemme at skelne: (a) `wrangler` fejlede undervejs, eller (b) **den deployede til en preview og ikke til produktion.** (b) er mest plausibel og har et navn: `tools/deploy_guard.mjs` kalder `wrangler pages deploy site --project-name transmute-run --branch main`, og **hvis Pages-projektets produktionsgren ikke netop er `main`, lægger `--branch main` en preview op under et `*.pages.dev`-navn og lader transmute.run urørt** — mens scriptets egen udskrift `Publishing site/ from main@… to the Pages project transmute-run` ligner en succes. Scriptet fanger det bagefter, fordi det kører `npm run check:deploy` som sit sidste trin, så det lyver ikke om resultatet; **det er din terminal der har svaret.**
+   **T80 har målt at den *er* kørt, og at den ikke landede.** Du kørte `npm run deploy:site` 27/9 kl. 17. T80's måling kl. 21:4x — efter 21:30-vinduet — viser `DEPLOY-MISSING` for **enoghalvtredsindstyvende** gang, live svarer til INGEN af de 40 seneste site-commits, og senest kendte live-commit er stadig `3d90812` (2026-09-24). **T83 målte igen 27/9 kl. 23:2x: uændret, de samme seks afvigende filer.** Så **hypotesen "den er ikke kørt" er død** — det er reel fremgang, fordi der nu kun er to muligheder tilbage, og de er nemme at skelne: (a) `wrangler` fejlede undervejs, eller (b) **den deployede til en preview og ikke til produktion.** (b) er mest plausibel og har et navn: `tools/deploy_guard.mjs` kalder `wrangler pages deploy site --project-name transmute-run --branch main`, og **hvis Pages-projektets produktionsgren ikke netop er `main`, lægger `--branch main` en preview op under et `*.pages.dev`-navn og lader transmute.run urørt** — mens scriptets egen udskrift `Publishing site/ from main@… to the Pages project transmute-run` ligner en succes. Scriptet fanger det bagefter, fordi det kører `npm run check:deploy` som sit sidste trin, så det lyver ikke om resultatet; **det er din terminal der har svaret.**
 
    **Kør kommandoen igen og læs de tre sidste linjer:**
 
