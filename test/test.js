@@ -4187,6 +4187,172 @@ t('a name is a name: anchors and references leave everything else alone', () => 
   }
 });
 
+t('a tag asks for a type, and JSON gets one', () => {
+  // `!!str` is the one thing in YAML that deliberately changes a type, and it
+  // came out as the value's own text: `a: !!str 1` was the string "!!str 1",
+  // not the string "1". A tag over a block refused the file outright, because
+  // `a: !!str` read as a finished line and the block under it was then an
+  // unexpected indentation — thirteen of twenty-seven measured files disagreed
+  // with PyYAML 6.0.3 that way, and Kubernetes manifests, CloudFormation and
+  // Ansible playbooks are full of them.
+  const cases = [
+    ['a: !!str 1\n', [{ a: '1' }]],
+    ['a: !!int "1"\n', [{ a: 1 }]],
+    ['a: !!bool yes\n', [{ a: true }]],
+    ['a: !!bool "off"\n', [{ a: false }]],
+    ['a: !!float "1.5"\n', [{ a: 1.5 }]],
+    ['a: !!null ""\n', [{ a: null }]],
+    // The text is the text: `!!str 01` is two characters, not the number 1
+    // written as "1" and turned back into a string. Going through the value
+    // would lose exactly the digits the tag was written to keep.
+    ['a: !!str 01\n', [{ a: '01' }]],
+    ['a: !!str 1.50\n', [{ a: '1.50' }]],
+    ['a: !!str "1"\n', [{ a: '1' }]],
+    // The full spelling of a tag is the same tag.
+    ['a: !<tag:yaml.org,2002:str> 1\n', [{ a: '1' }]],
+    ['a: !!int 0x10\n', [{ a: 16 }]],
+    ['a: !!int 1_000\n', [{ a: 1000 }]],
+    // Over a block, a tag is a property and the block underneath is the value:
+    // this file was refused before, with "unexpected indentation".
+    ['a: !!str |\n  1\n', [{ a: '1\n' }]],
+    ['a: !!str\n', [{ a: '' }]],
+    // A bare `!` is the non-specific tag: it asks for no type, so it changes
+    // nothing and says nothing. PyYAML reads `a: !` as an empty value too.
+    ['a: !\nb: 1\n', [{ a: null, b: 1 }]],
+    // In a sequence, and in both orders with a name.
+    ['- !!str 1\n- !!int "2"\n', ['1', 2]],
+    ['a: &x !!str 1\nb: *x\n', [{ a: '1', b: '1' }]],
+    ['a: !!str &x 1\nb: *x\n', [{ a: '1', b: '1' }]],
+    ['v: [!!str 1, !!int "2"]\n', [{ v: ['1', 2] }]],
+    // A tag on a key is a property of the key, not part of its name.
+    ['!!str a: 1\n', [{ a: 1 }]],
+    ['!!str a:\n  b: 1\n', [{ a: { b: 1 } }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+    // A tag the file asked for and this file can deliver is not a warning: the
+    // user wrote the type down, and JSON carried it.
+    assert.deepStrictEqual(r.warnings, [], JSON.stringify(text));
+  }
+
+  // A tag that says something else, and a tag with nothing to say. PyYAML
+  // refuses both, this tool names them: the value is what the file wrote, and a
+  // value that changes without a word is the class the warnings exist for.
+  for (const tag of ['!!binary', '!!timestamp', '!custom', '!<tag:example.com,2026>']) {
+    const r = run(`a: ${tag} "1"\n`, 'yaml');
+    assert.ok(!r.error, `${tag} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, [{ a: '1' }], tag);
+    assert.strictEqual(r.warnings.length, 1, `${tag} was dropped in silence: ${JSON.stringify(r.warnings)}`);
+    assert.match(r.warnings[0], /YAML line 1: the tag ".*" is not a type JSON carries/);
+  }
+
+  // A tag with nothing to make of the value is refused in words, with the line.
+  for (const [text, what, line = 1] of [
+    ['a: !!int x\n', 'a whole number'],
+    ['a: !!float x\n', 'a number'],
+    ['a: !!bool maybe\n', 'a yes/no value'],
+    ['a: !!null x\n', 'empty'],
+    ['a: !!float .inf\n', 'infinity'],
+    ['a: !!str\n  b: 1\n', 'a table'],
+    ['a: !!str [1]\n', 'a list'],
+    ['a: !!str !!int 1\n', 'one tag', 1],
+    ['a: &x 1\nb: &y *x\n', 'both named and a reference', 2],
+    ['a: &x 1\n&k *x: 2\n', 'a key both named and a reference', 2]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${what} was read as a value: ${JSON.stringify(r.data)}`);
+    assert.ok(
+      r.error.includes(`YAML line ${line}: `),
+      `${text.trim()} should name line ${line}, not: ${r.error}`
+    );
+  }
+});
+
+t('a name can stand on a key, and a key is still a key', () => {
+  // `&k b: 2` names the field `b` and `!!str a: 1` asks for it to be a string.
+  // Both came out as part of the field name, so the file got a field called
+  // `&k b` and the one it asked for was gone — measured against PyYAML 6.0.3,
+  // which reads the name off the key and leaves the name behind.
+  const cases = [
+    ['a: 1\n&k b: 2\n', [{ a: 1, b: 2 }]],
+    ['a: 1\n&k b:\n  c: 2\n', [{ a: 1, b: { c: 2 } }]],
+    ['a: &x 1\n*x: 2\n', [{ a: 1, 1: 2 }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+    assert.deepStrictEqual(r.warnings, [], JSON.stringify(text));
+  }
+
+  // A name that was given on a key can be used later, which is the point of it.
+  // The name points at the key's own text, which is what a key node is: PyYAML
+  // reads `&k a: 1` + `b: *k` as the field `b` holding the string "a".
+  const used = run('&k a: 1\nb: *k\n', 'yaml');
+  assert.deepStrictEqual(used.data, [{ a: 1, b: 'a' }], 'a name on a key is a name');
+
+  // A field name is text, so a reference to a list or a table is refused instead
+  // of being written as `[object Object]` in a file the user then keys on.
+  assert.match(
+    run('a: &x\n  k: 1\n*x: 2\n', 'yaml').error,
+    /YAML line 3: a field name is text, and a reference to a table is not/
+  );
+  assert.match(run('!!int a: 1\n', 'yaml').error, /YAML line 1: "a" is not a whole number/);
+
+  // A line that opens a list entry is not a mapping entry, whatever else is on
+  // it: `- <<: *b` read as a field called `- <<`, so a file that mixed a mapping
+  // and a list at the same indentation got a field nobody wrote and lost the
+  // list. PyYAML refuses that document; so does this one, with the line.
+  assert.match(
+    run('a: &b\n  k: 1\n- <<: *b\n', 'yaml').error,
+    /YAML line 3: expected "key: value", got "- <<: \*b"/
+  );
+});
+
+t('a tag leaves everything else alone', () => {
+  // The control table, written because the fix reads a tag where there was a
+  // string. A `!` or `*` or `&` inside a value is text, a quoted one is text,
+  // and this tool's own writer and reader still agree — a tag is never invented
+  // on the way out, because a JSON field has no way to ask for a type.
+  const untouched = [
+    ['a: 2*3\n', [{ a: '2*3' }]],
+    ['a: x&y\n', [{ a: 'x&y' }]],
+    ['a#b: 1\n', [{ 'a#b': 1 }]],
+    ['a: "b*c"\n', [{ a: 'b*c' }]],
+    ['a: "b!c"\n', [{ a: 'b!c' }]],
+    ["a: '!custom'\n", [{ a: '!custom' }]],
+    ['a: "!!str 1"\n', [{ a: '!!str 1' }]],
+    ['a: 1 # !!str 2\n', [{ a: 1 }]],
+    ['# !!str\nv: 1\n', [{ v: 1 }]],
+    ['a: hi!\n', [{ a: 'hi!' }]],
+    ['12:30\n', ['12:30']]
+  ];
+  for (const [text, want] of untouched) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // A tag holds across every writer, because a string that reads as a number is
+  // a value that changes on the way out: all six formats, measured on the value
+  // the reader produced.
+  const tagged = run('a: !!str 1\nb: !!str 01\n', 'yaml').data;
+  for (const format of ['json', 'yaml', 'xml', 'csv', 'sql', 'table']) {
+    const text = serializers[format](tagged);
+    assert.ok(
+      !/"a":\s*1\b/.test(text) || /"1"/.test(text),
+      `${format} wrote the tagged string as a number:\n${text}`
+    );
+  }
+  // And the round trip: what the writer wrote, this reader reads back.
+  for (const value of ['a\nb', '1', 'x\n\ty', 'a *b* c', 'a &b c', '!custom']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.deepStrictEqual(run(text, 'yaml').data, [{ v: value }], text);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
