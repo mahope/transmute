@@ -106,6 +106,25 @@ transmute.run produce identical output for every documented example, and that
 `npm run release -- patch` (or `minor`/`major`) bumps the version, commits and pushes the tag.
 CI publishes to npm and creates the GitHub release.
 
+## Publishing the site
+
+transmute.run is a static site in `site/`, and nothing in this repository
+publishes it by itself. `npm run deploy:site` is the one command that does:
+
+```
+git checkout main && git pull
+CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy:site
+```
+
+It refuses, naming the reason, when `HEAD` is not the default branch, when the
+working tree is dirty, or when the credentials are missing — a branch or a
+laptop is not something to publish. Afterwards it runs `npm run check:deploy`,
+which compares the live files against `main`; a 200 on its own proves nothing.
+
+There is deliberately no deploy workflow. `npm test` fails if any workflow under
+`.github/workflows/` can publish, under any trigger, so the site can only go out
+when a person runs the command above.
+
 ## License
 
 MIT (CLI and engine). Transmute Desktop Pro is sold separately via Stripe; its
