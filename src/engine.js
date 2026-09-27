@@ -2579,12 +2579,29 @@ function writeYAMLEntry(prefix, key, value, indent) {
   const head = prefix + formatYAMLKey(key) + ':';
   const pad = ' '.repeat(indent + 2);
 
-  if (typeof value === 'string' && value.includes('\n') && value.trim() !== '') {
+  // A block scalar is the only readable way to keep line breaks, and it has no
+  // escape at all, so it is also the one spelling that cannot hold a carriage
+  // return: YAML normalizes `#x0D#x0A`, `#x0D` and `#x0A` all to a single `#x0A`
+  // in the content of a line break (YAML 1.2 §5.4), and `#x0A` is all a block
+  // scalar can say. A value carrying `\r` therefore loses it in every reader —
+  // measured: `a\r\nb` written as `|-` came back `a\nb` from PyYAML *and* from
+  // this tool's own reader, at exit 0 with empty stderr. The quoted spelling
+  // below already carries it, and this is the path a lone `\r` already takes.
+  if (typeof value === 'string' && value.includes('\n') && !value.includes('\r') && value.trim() !== '') {
     // A block scalar is the only way to keep line breaks. A quoted string
     // would need \n escapes, and hand-folding them is how a value gets
     // quietly rewritten; the marker says what the trailing newline does.
     const marker = value.endsWith('\n\n') ? '|+' : value.endsWith('\n') ? '|' : '|-';
-    return [head + ' ' + marker, ...value.slice(0, -1).split('\n').map(line => pad + line)];
+    // The last character comes off only for the two markers that keep a
+    // trailing line break, because the block's own line breaks put it back.
+    // `|-` tells the reader to *remove* the block's trailing break, so the
+    // lines written below are the whole value — taking one character off them
+    // is not a newline to recover but a character to lose. Measured with
+    // PyYAML, which read `a\nb` written as `|-` back as `a`, and `a\nb\nc\nd`
+    // as `a\nb\nc`: exit 0, empty stderr, and this tool's own reader agreed,
+    // so a round trip through Transmute hid it as completely as any other.
+    const body = marker === '|-' ? value : value.slice(0, -1);
+    return [head + ' ' + marker, ...body.split('\n').map(line => pad + line)];
   }
 
   if (Array.isArray(value)) {
