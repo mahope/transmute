@@ -4416,6 +4416,121 @@ t('a key spelled out in front is a key', () => {
   }
 });
 
+test('a question mark opening a flow collection is a key, not a name', () => {
+  // The rule the block reader got in the test above was never carried into the
+  // flow reader, so the same document had two answers: `? x` + `: 1` over four
+  // lines gave `{x: 1}` and `{? x : 1}` on one line gave a field called `? x` —
+  // an invented name, exit 0, an empty stderr. A `!!set` written on one line,
+  // which is the short way to write one, hit it, and so did every config file
+  // that inlines a mapping.
+  const cases = [
+    // In front of a mapping key, with and without a space, which is how the two
+    // spellings differ in the spec and not in the answer.
+    ['a: {? x : 1}\n', [{ a: { x: 1 } }]],
+    ['a: {?x : 1}\n', [{ a: { x: 1 } }]],
+    ['a: { ? x : 1 }\n', [{ a: { x: 1 } }]],
+    // A quoted key is the text inside its quotes, and a `,` or a `}` inside
+    // them is that text too rather than the end of the collection.
+    ['a: {? "x y" : 1}\n', [{ a: { 'x y': 1 } }]],
+    ['a: {? "a, b" : 1}\n', [{ a: { 'a, b': 1 } }]],
+    // Two of them, and one among plain keys, in a nested mapping and in the
+    // document's own root.
+    ['a: {? x : 1, ? y : 2}\n', [{ a: { x: 1, y: 2 } }]],
+    ['a: {b: 2, ? x : 1}\n', [{ a: { b: 2, x: 1 } }]],
+    ['a: {c: {? x : 1}}\n', [{ a: { c: { x: 1 } } }]],
+    // The value is anything the flow reader already reads, and a key with no
+    // value of its own holds nothing, the same answer `x:` gets.
+    ['a: {? x : {c: 2}}\n', [{ a: { x: { c: 2 } } }]],
+    ['a: {? x : [1, 2]}\n', [{ a: { x: [1, 2] } }]],
+    ['a: {? x : !!str 1}\n', [{ a: { x: '1' } }]],
+    ['a: {? x, b: 2}\n', [{ a: { x: null, b: 2 } }]],
+    ['a: {? x : }\n', [{ a: { x: null } }]],
+    // In front of a sequence entry, where it is a one-field record.
+    ['a: [? x, y]\n', [{ a: [{ x: null }, 'y'] }]],
+    ['a: [? x : 1]\n', [{ a: [{ x: 1 }] }]],
+    ['a: [y, ? x, ? z]\n', [{ a: ['y', { x: null }, { z: null }] }]],
+    // A `!!set` on one line is the same post the four-line one is.
+    ['a: !!set\n  ? x\n  ? y\n', [{ a: { x: null, y: null } }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+  // A set of one tag on one line warns once, like the four-line spelling.
+  assert.strictEqual(run('a: !!set [? x, ? y]\n', 'yaml').warnings.length, 1);
+
+  // A question mark anywhere else is text and stays it — in a quote, in the
+  // middle of a name, and in a value, where PyYAML 6.0.3 refuses the document.
+  // This tool reads those files, which is the trade it has made since the first
+  // flow collection (see the note on `&base.image` in IMPLEMENTATION_PLAN.md).
+  for (const [text, want] of [
+    ['a: {"? x": 1}\n', [{ a: { '? x': 1 } }]],
+    ['a: ["? x", y]\n', [{ a: ['? x', 'y'] }]],
+    ['a: b?c\n', [{ a: 'b?c' }]],
+    ['a: [b, c?x]\n', [{ a: ['b', 'c?x'] }]],
+    ['a: {b: ? x}\n', [{ a: { b: '? x' } }]],
+    ['# ? x\na: 1\n', [{ a: 1 }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
+test('a flow collection reads a key as the name it stands for', () => {
+  // `{&z x : 1}` and `{*z : 2}` are a key that names itself and a key that is
+  // a reference, and the flow reader took both for the text of the line — so an
+  // anchor written on a key never registered, and `*z` below it was refused as
+  // an undefined alias on a file PyYAML 6.0.3 reads. The block reader has asked
+  // these questions about a key since T84; this is the same reader, one syntax
+  // further in.
+  assert.deepStrictEqual(run('a: {&z x : 1}\nb: *z\n', 'yaml').data, [{ a: { x: 1 }, b: 'x' }]);
+  assert.deepStrictEqual(run('y: &z 1\na: {*z : 2}\n', 'yaml').data, [{ y: 1, a: { '1': 2 } }]);
+  // A tag JSON can carry turns the name into that type's text; `!!str 1` is the
+  // field `1`, not the field `!!str 1`.
+  assert.deepStrictEqual(run('a: {!!str x : 1}\n', 'yaml').data, [{ a: { x: 1 } }]);
+
+  // A key with no value of its own is a field holding nothing, and the block
+  // reader has said `null` for that since it read `x:` — so `{b: }` is the one
+  // question the flow reader answered with the empty string, a value no file
+  // wrote. `{b: ""}` is the empty string, and stays it.
+  for (const [text, want] of [
+    ['a: {b: }\n', [{ a: { b: null } }]],
+    ['a: {b:, c: 2}\n', [{ a: { b: null, c: 2 } }]],
+    ['a: {b: {c: }}\n', [{ a: { b: { c: null } } }]],
+    ['a: {b: ""}\n', [{ a: { b: '' } }]],
+    ['a: {b: " "}\n', [{ a: { b: ' ' } }]]
+  ]) {
+    assert.deepStrictEqual(run(text, 'yaml').data, want, JSON.stringify(text));
+  }
+
+  // A comma before the bracket ends the collection instead of opening one more
+  // entry. `[1, ]` is the one element `[1]`; reading the empty tail as a value
+  // put a second element in the list, and in a mapping the same empty tail
+  // failed the whole collection, so `{b: 1, }` came back as the text it was
+  // written with — a valid file read as a string.
+  assert.deepStrictEqual(run('a: [1, 2, ]\n', 'yaml').data, [{ a: [1, 2] }]);
+  assert.deepStrictEqual(run('a: {b: 1, }\n', 'yaml').data, [{ a: { b: 1 } }]);
+  assert.deepStrictEqual(run('a: [1, ]\n', 'yaml').data, [{ a: [1] }]);
+
+  // And everything the flow reader already agreed on is untouched.
+  for (const [text, want] of [
+    ['a: {b: 1}\n', [{ a: { b: 1 } }]],
+    ['a: {b: 1, c: 2}\n', [{ a: { b: 1, c: 2 } }]],
+    ['a: {b: {c: [1, 2]}}\n', [{ a: { b: { c: [1, 2] } } }]],
+    ['a: [1, 2, 3]\n', [{ a: [1, 2, 3] }]],
+    ['a: &z {b: 1}\nc: *z\n', [{ a: { b: 1 }, c: { b: 1 } }]],
+    ['a: {}\n', [{ a: {} }]],
+    ['a: []\n', [{ a: [] }]],
+    ['a: {b: 1, b: 2}\n', [{ a: { b: 2 } }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

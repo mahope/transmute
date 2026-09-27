@@ -3083,15 +3083,129 @@ function parseYAMLFlow(text, ctx) {
     return scalar();
   };
 
+  // A value that is not written is not the empty string. `{b: }` and
+  // `{b: {c: }}` are the two ways a config file leaves a field out, and the
+  // block reader has answered `null` for both all along — `parseYAMLScalar('')`
+  // is that answer in one line — so the flow reader is the only one of the
+  // three that invented `""` for a value the file never carried.
+  const mappingValue = () => {
+    skipSpace();
+    if (i >= text.length || text[i] === ',' || text[i] === '}') return null;
+    return value();
+  };
+
+  /**
+   * One key of a flow collection, as the text it is written with. A quoted key
+   * is read as one run, so a `,` or a `}` inside its quotes is the text the
+   * quotes say it is and not the end of the collection: `{? "a, b" : 1}` is a
+   * key called `a, b`, and reading it as two keys loses a field nobody split.
+   */
+  const readFlowKey = () => {
+    if (text[i] === '"' || text[i] === "'") {
+      const from = i;
+      const quoted = readYAMLQuoted(text, i);
+      if (!quoted) throw new SyntaxError('unclosed quote');
+      i = quoted.end;
+      return text.slice(from, quoted.end);
+    }
+    let raw = '';
+    while (i < text.length && !separators.includes(text[i])) raw += text[i++];
+    return raw.trim();
+  };
+
+  /**
+   * The field name a flow key stands for, asked the same three questions the
+   * block reader asks of one: a quoted key is the text inside its quotes, a key
+   * may name an alias and hand the value over, and a key written as nothing at
+   * all is the empty name rather than a missing one.
+   *
+   * It is the same reader for `{x: 1}` and for `{? x : 1}`, because a flow key is
+   * a flow key — the `?` says how it was written down, not what it is. So
+   * `{&z x : 1}` registers `x` and `*z` later resolves, and `{*z : 2}` takes
+   * the value the anchor holds as the field's name.
+   */
+  const flowKeyName = (keyText) => {
+    const quoted = keyText[0] === '"' || keyText[0] === "'" ? readYAMLQuoted(keyText, 0) : null;
+    const keyProp = keyText ? readYAMLProperties(keyText, ctx.line) : null;
+    const rawName = quoted
+      ? quoted.value
+      : keyText
+        ? (keyProp ? keyProp.rest : keyText)
+        : '';
+    // The alias is asked about first, because an alias *is* the whole key and
+    // leaves no text behind it: `{*z : 2}` is a field named after the value `z`
+    // holds, and testing for the empty name first would call it a field with
+    // no name at all.
+    const name = keyProp && keyProp.alias
+      ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, ctx.line), ctx.line, ctx)
+      : rawName === ''
+        ? ''
+        : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
+          ? String(applyYAMLTag(keyProp.tag, rawName, ctx, ctx.line, keyProp.rest))
+          : keyProp && keyProp.tag
+            ? keyText
+            : rawName;
+    if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
+    return name;
+  };
+
+  /**
+   * A `?` that opens a node is the explicit key — the same indicator
+   * `isYAMLExplicitKey` recognises between the lines, in the same two places: in
+   * front of a mapping key, and in front of a sequence entry. `{? x : 1}` is the
+   * post `{x: 1}` written out, and `[? x, y]` is a list of one-key posts, so a
+   * `!!set` reads the same on one line as it does over four.
+   *
+   * Everywhere else the character is text and stays it: `b?c`, `c?x` and the
+   * quoted `"? x"` all keep it. So does a value — `{b: ? x}` is read here as the
+   * text `? x` and refused by PyYAML, and that leniency is the trade this
+   * reader has made since the first flow collection (see the note on
+   * `&base.image`): a converter's job is to read the files people have.
+   */
+  const isExplicitKey = () => {
+    skipSpace();
+    return text[i] === '?';
+  };
+
+  // The entry after an explicit key: `: v` when the line carries one, and
+  // nothing when it does not. `? x` on a line of its own is a key holding
+  // nothing, which is `null` — the answer `x:` gives, and the one a `!!set` is
+  // written with.
+  const explicitKeyValue = () => {
+    skipSpace();
+    if (text[i] !== ':') return null;
+    i++;
+    return mappingValue();
+  };
+
   const sequence = (ctx) => {
     i++;
     const out = [];
     skipSpace();
     if (text[i] === ']') { i++; return out; }
     for (;;) {
-      out.push(value());
+      if (isExplicitKey()) {
+        i++;
+        skipSpace();
+        const name = flowKeyName(readFlowKey());
+        // An explicit key in a sequence is a one-key post, which is what PyYAML
+        // hands back and what a `!!set` written on one line has to be.
+        const post = {};
+        setField(post, name, explicitKeyValue());
+        out.push(post);
+      } else {
+        out.push(value());
+      }
       skipSpace();
-      if (text[i] === ',') { i++; continue; }
+      if (text[i] === ',') {
+        i++;
+        // A comma before the bracket ends the collection, it does not open one
+        // more entry: `[1, ]` is the one element `[1]`, and reading the empty
+        // tail as a value put a second element in a list the file wrote one.
+        skipSpace();
+        if (text[i] === ']') { i++; return out; }
+        continue;
+      }
       if (text[i] === ']') { i++; return out; }
       throw new SyntaxError('expected , or ] in flow sequence');
     }
@@ -3104,22 +3218,18 @@ function parseYAMLFlow(text, ctx) {
     skipSpace();
     if (text[i] === '}') { i++; return out; }
     for (;;) {
-      skipSpace();
-      let key;
-      if (text[i] === '"' || text[i] === "'") {
-        const quoted = readYAMLQuoted(text, i);
-        if (!quoted) throw new SyntaxError('unclosed quote');
-        key = quoted.value;
-        i = quoted.end;
+      const explicit = isExplicitKey();
+      if (explicit) { i++; skipSpace(); }
+      const key = flowKeyName(readFlowKey());
+      let valueRead;
+      if (explicit) {
+        valueRead = explicitKeyValue();
       } else {
-        let raw = '';
-        while (i < text.length && !separators.includes(text[i])) raw += text[i++];
-        key = raw.trim();
+        skipSpace();
+        if (text[i] !== ':') throw new SyntaxError('expected : in flow mapping');
+        i++;
+        valueRead = mappingValue();
       }
-      skipSpace();
-      if (text[i] !== ':') throw new SyntaxError('expected : in flow mapping');
-      i++;
-      const valueRead = value(ctx);
       // A flow mapping is one fragment of one line, so it has no line number to
       // give; the key and both values are what the reader needs.
       if (seen.has(key)) {
@@ -3129,7 +3239,16 @@ function parseYAMLFlow(text, ctx) {
       }
       setField(out, key, valueRead);
       skipSpace();
-      if (text[i] === ',') { i++; continue; }
+      if (text[i] === ',') {
+        i++;
+        // The same rule as in a flow sequence: a comma before the brace ends the
+        // mapping, it does not open one more entry. `{b: 1, }` is the one field
+        // `{b: 1}`, and reading the empty tail as an entry failed the whole
+        // collection, so a valid line came back as the text it was written with.
+        skipSpace();
+        if (text[i] === '}') { i++; return out; }
+        continue;
+      }
       if (text[i] === '}') { i++; return out; }
       throw new SyntaxError('expected , or } in flow mapping');
     }
