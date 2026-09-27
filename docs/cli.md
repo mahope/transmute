@@ -1732,7 +1732,32 @@ Warning: table: 1 of 6 columns is not in every row: "tier" (1 of 3). Those cells
 
 Both sides have their own `status` in real data, and a join cannot invent a
 third answer for one field. Without a `prefix` the existing name wins and the
-other side's value is dropped. With one, both survive under their own names:
+other side's value is dropped — and the run says so, so you do not have to
+compare the two files to find out:
+
+```bash
+transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","with":[{"customer":"alice","status":"refunded"}]}]' --output json
+```
+
+```text
+Warning: join: a joined field is already a field in the left records — "status" (1 of 1). The value that would have gone there is not in the output.
+[
+  {
+    "id": 1,
+    "customer": "alice",
+    "status": "paid",
+    "items": [
+      {
+        "sku": "a-1",
+        "qty": 2
+      }
+    ],
+    "total": 120
+  }
+]
+```
+
+With a `prefix` both survive under their own names:
 
 ```bash
 transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","prefix":"was_","with":[{"customer":"alice","status":"refunded"}]}]' --output json
@@ -1757,8 +1782,28 @@ transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","prefi
 ```
 
 A `prefix` only helps when the prefixed name is itself free. If the left record
-already has `was_status`, that field is dropped the same way, and the join says
-nothing about it — pick a prefix that is not already in use.
+already has `x_name`, that field is dropped the same way, and the warning leads
+with the prefix, because "pick a prefix that is not already in use" is advice you
+cannot act on without reading every left row:
+
+```bash
+printf '[{"id":1,"name":"outer","x_name":"already"}]' \
+  | transmute --pipe '[{"op":"join","on":"id","prefix":"x_","with":[{"id":1,"name":"inner"}]}]' --output table
+```
+
+```text
+Warning: join: with prefix "x_", a joined field is already a field in the left records — "x_name" (1 of 1). The value that would have gone there is not in the output.
++----+-------+---------+
+| id | name  | x_name  |
++----+-------+---------+
+| 1  | outer | already |
++----+-------+---------+
+(1 rows, 3 columns)
+```
+
+Two cases lose nothing and stay silent, so a join that works does not cry wolf: a
+joined field named after the join key itself, and a joined value *equal* to the
+one already there.
 
 A join key that only **one** side has cannot match anything at all, and which
 side it is missing from is the whole difference between two different typos in a

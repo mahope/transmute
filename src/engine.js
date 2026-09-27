@@ -2922,6 +2922,82 @@ function reportFlattenCollisions(data, step, warnings) {
   );
 }
 
+/**
+ * A joined field the left row already has a name for is dropped.
+ *
+ * `join` writes a right-hand field only when `!hasField(merged, target)`, so the
+ * left row's value stays and the joined value is simply not in the output. That
+ * was true of every join the tool has ever run, and nothing said so: exit 0,
+ * empty stderr, and a file that looks like the join the user asked for. It is
+ * the same class `reportRenameCollisions` and `reportFlattenCollisions` close,
+ * on the one remaining path that *reads a name on one side and writes it on the
+ * other*. `docs/cli.md` and the join guide both promise the behaviour in prose
+ * — "the existing name wins and the other side's value is dropped" — so the
+ * user is not misinformed, they are simply never told on the run that it
+ * happened. `pick`, `omit`, `sort`, `unique` and `group` are measured clean on
+ * this same axis, so `join` and `add` were the two left, and `add` overwrites
+ * on purpose: the user named the field they wanted written.
+ *
+ * A `prefix` is the documented way out, and it is the case that matters most
+ * here: `prefix: "x_"` on a left row that already has `x_name` drops the value
+ * just the same. The docs say "pick a prefix that is not already in use", which
+ * is advice the user cannot act on without reading every left row, so the
+ * message names the prefixed name that was taken.
+ *
+ * Two controls keep this from being too broad. A right-hand field named after
+ * the join key is skipped on purpose and loses nothing — the left row already
+ * holds that value under the same name by definition of the match. And a right
+ * value *equal* to the left one loses nothing either, which is the same reason
+ * `{a: b, b: a}` does not warn in `reportRenameCollisions`.
+ *
+ * A warning and not an error, by T26's line: whether a join collides depends on
+ * the data, and the same pipeline against the next file may not collide at all.
+ */
+function reportJoinCollisions(data, step, warnings) {
+  if (!Array.isArray(warnings) || step.op !== 'join') return;
+  const rows = Array.isArray(step.with) ? step.with.filter(isPlainObject) : [];
+  if (rows.length === 0) return;
+  const on = step.on;
+  const prefix = typeof step.prefix === 'string' ? step.prefix : '';
+  const key = row => {
+    const value = readField(row, on);
+    return value === undefined ? undefined : String(value);
+  };
+  const index = new Map();
+  for (const row of rows) {
+    const k = key(row);
+    if (k !== undefined && !index.has(k)) index.set(k, row);
+  }
+  const hits = new Map();
+  let matched = 0;
+  for (const item of data) {
+    if (!isPlainObject(item)) continue;
+    const own = key(item);
+    if (own === undefined) continue;
+    const match = index.get(own);
+    if (!match) continue;
+    matched++;
+    const seen = new Set();
+    for (const [k, v] of Object.entries(match)) {
+      const target = prefix + k;
+      if (k === on || !hasField(item, target)) continue;
+      if (stableKey(item[target]) === stableKey(v)) continue;
+      seen.add(target);
+      hits.set(target, (hits.get(target) ?? 0) + 1);
+    }
+  }
+  if (hits.size === 0) return;
+  const names = [...hits.keys()];
+  const one = names.length === 1;
+  const shown = names.map(n => `"${n}" (${hits.get(n)} of ${matched})`);
+  warnings.push(
+    (prefix ? `join: with prefix "${prefix}", ` : 'join: ') +
+    `${one ? 'a joined field is' : `${names.length} joined fields are`} already a field in the ` +
+    `left records — ${shown.join(one ? '' : ', ')}. ` +
+    `The value${one ? '' : 's'} that would have gone there ${one ? 'is' : 'are'} not in the output.`
+  );
+}
+
 // ─── Rows that are not records ───────────────────────────────────────────
 
 /**
@@ -3030,6 +3106,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
       reportMissingFields(data, step, warnings);
       reportRenameCollisions(data, step, warnings);
       reportFlattenCollisions(data, step, warnings);
+      reportJoinCollisions(data, step, warnings);
       data = operations[step.op](data, step);
       if (!Array.isArray(data)) data = [data];
     }
