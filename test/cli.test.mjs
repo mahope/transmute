@@ -1871,5 +1871,52 @@ test('a JSON file that starts with a byte order mark is read, not refused', () =
   }
 });
 
+test('a YAML file that starts with a directive is read, not counted as a document', () => {
+  // Measured on the real binary before the rule existed: "%YAML 1.2", `---` and
+  // a two-field mapping came out as the one record "%YAML 1.2", exit 0, with a
+  // "2 documents in file" warning pointing at a second document the file did not
+  // have. Kubernetes manifests, Ansible playbooks and a lot of CI config start
+  // this way, so the whole file was replaced by its own first line.
+  const dir = mkdtempSync(join(tmpdir(), 't69-'));
+  try {
+    const path = join(dir, 'rows.yaml');
+    // A sequence of two records, because a mapping holds one document — a second
+    // `id:` in the same mapping would be the duplicate-key rule, not this one.
+    writeFileSync(path, '%YAML 1.2\n---\n- id: 1\n  name: Ada\n- id: 2\n  name: Bob\n', 'utf-8');
+    // All six outputs, because the data is only fixed if it survives the whole
+    // way out — the value the reader lost was the input, not a formatting quirk.
+    for (const format of ['json', 'csv', 'yaml', 'sql', 'table', 'xml']) {
+      const r = spawnSync(process.execPath, [cli, path, '-o', format], { encoding: 'utf-8' });
+      assert.equal(r.status, 0, `${format}: expected exit 0, got ${r.status}: ${r.stderr}`);
+      assert.ok(r.stdout.includes('Ada'), `${format}: the data must be there: ${r.stdout}`);
+      assert.ok(r.stdout.includes('Bob'), `${format}: the data must be there: ${r.stdout}`);
+      // And the warning that named a document which does not exist is gone with
+      // the bug. A warning that points at the wrong thing is the T57 class.
+      assert.ok(!/documents in file/.test(r.stderr), `${format}: ${r.stderr}`);
+    }
+    const toJson = spawnSync(process.execPath, [cli, path, '-f', 'yaml', '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(toJson.status, 0, toJson.stderr);
+    assert.deepEqual(JSON.parse(toJson.stdout), [{ id: 1, name: 'Ada' }, { id: 2, name: 'Bob' }]);
+    // And through a pipe, which is a different read.
+    const piped = spawnSync(process.execPath, [cli, '-f', 'yaml', '-o', 'csv'], {
+      encoding: 'utf-8',
+      input: readFileSync(path),
+    });
+    assert.equal(piped.status, 0, piped.stderr);
+    assert.strictEqual(piped.stdout.trim(), 'id,name\n1,Ada\n2,Bob', piped.stdout);
+    // A directive inside the document is not a value to keep, and in a sequence
+    // it used to end the document silently: "b" below was gone, exit 0, no
+    // stderr at all. It is exit 3 with a message that names the line.
+    const inside = join(dir, 'inside.yaml');
+    writeFileSync(inside, '- a\n%YAML 1.2\n- b\n', 'utf-8');
+    const mid = spawnSync(process.execPath, [cli, inside, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(mid.status, 3, mid.stdout);
+    assert.equal(mid.stdout, '', 'stdout stays empty on error');
+    assert.match(mid.stderr, /YAML line 2/, mid.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

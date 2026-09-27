@@ -1825,12 +1825,39 @@ function parseYAML(text, opts) {
 
   const lines = tokenizeYAML(text);
 
+  // A directive line starts with `%` in the first column — `%YAML 1.2`,
+  // `%TAG !e! tag:example.com,2000:`. Kubernetes manifests, Ansible playbooks
+  // and a good deal of CI config open with one, and a plain scalar can never
+  // begin with `%` because it is a YAML indicator, so a line like that is only
+  // ever a directive. The reader counted it as the document instead, so
+  // everything under it was never read: `%YAML 1.2`, `---`, a mapping came out
+  // as the one string "%YAML 1.2", and the "2 documents" warning pointed at a
+  // second document the file does not have.
+  let start = skipYAMLBlanks(lines, 0);
+  while (start < lines.length && isYAMLDirective(lines[start])) {
+    start = skipYAMLBlanks(lines, start + 1);
+  }
+
   // `---` opens the document; anything before it that is not a document is
   // not read at all, and every further one is a document this tool does not
   // read. Saying so beats silently using the first half of the file.
-  let start = skipYAMLBlanks(lines, 0);
   if (start < lines.length && lines[start].content === '---') {
     start = skipYAMLBlanks(lines, start + 1);
+  }
+
+  // A directive is only allowed *before* the document, so one that stands
+  // after data is not a value to keep. In a mapping it already failed loudly,
+  // but in a sequence it ended the document and took the rest of the file with
+  // it: `- a`, `%YAML 1.2`, `- b` read as the single record "a", exit 0, empty
+  // stderr. One check, so every shape of document says the same thing, and it
+  // stops at the first document's own end marker — a directive in a *later*
+  // document is not this tool's business, it is not read either way.
+  for (let i = start; i < lines.length; i++) {
+    if (lines[i].blank || isYAMLComment(lines[i].content)) continue;
+    if (lines[i].indent === 0 && (lines[i].content === '---' || lines[i].content === '...')) break;
+    if (isYAMLDirective(lines[i])) {
+      throw new SyntaxError(`YAML line ${lines[i].no}: a directive ("${lines[i].content}") is only allowed before the document, not inside it`);
+    }
   }
   const extra = lines.slice(start)
     .filter(l => !l.blank && l.indent === 0 && (l.content === '---' || l.content === '...')).length;
@@ -1903,6 +1930,16 @@ function tokenizeYAML(text) {
 
 function isYAMLComment(content) {
   return content.startsWith('#');
+}
+
+/**
+ * A directive line: `%` in the first column. `%` is a YAML indicator, so no
+ * plain scalar starts with one and an indented `%` belongs to whatever block
+ * holds it (a `|` scalar carrying a shell snippet, a `100% off` value), which is
+ * why this is the one place that asks for the indentation.
+ */
+function isYAMLDirective(line) {
+  return line.indent === 0 && line.content.startsWith('%');
 }
 
 /** Advance past blank lines and comment-only lines. */
