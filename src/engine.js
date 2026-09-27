@@ -2200,22 +2200,33 @@ function isYAMLSequenceEntry(content) {
  * follows it, which is what keeps `12:30` and `a:b` the plain scalars they
  * look like.
  */
-function splitYAMLKey(content) {
+function splitYAMLKey(content, no) {
   if (!content || content === '-' || isYAMLComment(content)) return null;
+  // A line that opens a sequence entry is not a mapping entry, whatever else is
+  // on it. `- <<: *b` read as a field called `- <<` gave a file a field nobody
+  // wrote and lost the list the line was opening.
+  if (isYAMLSequenceEntry(content)) return null;
   if (content[0] === '"' || content[0] === "'") {
     const quoted = readYAMLQuoted(content, 0);
     if (!quoted) return null;
     const after = content.slice(quoted.end).replace(/^[ \t]*/, '');
     if (!after.startsWith(':')) return null;
-    return { key: quoted.value, rest: after.slice(1).replace(/^[ \t]+/, '') };
+    return { key: quoted.value, rawKey: quoted.value, rest: after.slice(1).replace(/^[ \t]+/, ''), keyProp: null };
   }
   for (let i = 0; i < content.length; i++) {
     const ch = content[i];
     if (ch === '#' && i > 0 && /\s/.test(content[i - 1])) return null;
     if (ch === ':' && (i === content.length - 1 || /\s/.test(content[i + 1]))) {
+      // A key carries the same properties a value does: `&k b: 2` names the
+      // field `b` and `!!str a: 1` asks for it to be a string, so they are
+      // handed back with the key instead of ending up inside its name.
+      const raw = content.slice(0, i).trim();
+      const keyProp = readYAMLProperties(raw, no);
       return {
-        key: content.slice(0, i).trim(),
-        rest: content.slice(i + 1).replace(/^[ \t]+/, '')
+        key: keyProp ? keyProp.rest : raw,
+        rawKey: raw,
+        rest: content.slice(i + 1).replace(/^[ \t]+/, ''),
+        keyProp
       };
     }
   }
@@ -2223,27 +2234,156 @@ function splitYAMLKey(content) {
 }
 
 /**
- * `&name` and `*name` are properties of the value they stand in front of, not
- * the value itself. PyYAML reads `a: &x 1` as the number 1 with a name attached
- * to it, and `b: *x` as that same 1 written a second time. Here both came out as
- * the value's own text — `&x 1` and `*x`, two strings, exit 0, an empty stderr —
- * and a file whose anchor sat above a block was refused outright, because
- * `a: &x` reads as a finished line and the block under it was then an
- * unexpected indentation. Eighteen of twenty measured files disagreed with
- * PyYAML that way.
+ * `&name`, `*name` and `!tag` are properties of the node they stand in front of,
+ * not the node itself. PyYAML reads `a: &x 1` as the number 1 with a name
+ * attached to it, `b: *x` as that same 1 written a second time, and `a: !!str 1`
+ * as the *string* "1" — a tag is the one thing in YAML that deliberately changes
+ * a type. Here all three came out as the value's own text — `&x 1`, `*x` and
+ * `!!str 1`, three strings, exit 0, an empty stderr — and a file whose anchor or
+ * tag sat above a block was refused outright, because `a: &x` reads as a
+ * finished line and the block under it was then an unexpected indentation.
+ * Eighteen of twenty measured files disagreed with PyYAML that way, and the
+ * tags alone were wrong in thirteen of twenty-seven.
  *
- * A plain scalar never starts with `&` or `*`, so a name in this position always
- * means what it means in YAML. The name runs to the first space, comment or flow
- * indicator, and what is left of the line is the value the name was put on.
+ * A plain scalar never starts with `&`, `*` or `!`, so a property in this
+ * position always means what it means in YAML. Each name runs to the first
+ * space, comment or flow indicator, and what is left of the line is the node the
+ * property was put on. They may stand in any order and more than one of them may
+ * be there — `&x !!str 1` and `!!str &x 1` are the same node — so this reads
+ * them off in a loop instead of once.
  */
-function readYAMLProperty(raw) {
-  const m = /^([&*])([^\s#[\]{},]+)(?:[ \t]+(.*))?$/.exec(raw);
-  if (!m) return null;
-  return {
-    anchor: m[1] === '&',
-    name: m[2],
-    rest: (m[3] || '').replace(/^[ \t]+/, '')
-  };
+function readYAMLProperties(raw, no) {
+  const where = no ? `YAML line ${no}: ` : '';
+  let rest = raw;
+  let anchor = null;
+  let alias = null;
+  let tag = null;
+  let m;
+  while ((m = /^([&*])([^\s#[\]{},]+)(?:[ \t]+(.*))?$/.exec(rest) ||
+             /^(!)(<[^>\s]*>|[^\s#[\]{},]+)?(?:[ \t]+(.*))?$/.exec(rest))) {
+    // The tag is kept with its `!` so a warning can name it the way the file
+    // wrote it: `!custom` and `!<tag:example.com,2026>` are both one tag.
+    const name = m[1] === '!' ? (m[2] ? `!${m[2]}` : '!') : m[2];
+    if (m[1] === '&') {
+      if (anchor || alias) {
+        throw new SyntaxError(`${where}one node can only be named once, but "${rest}" names it twice`);
+      }
+      anchor = name;
+    } else if (m[1] === '*') {
+      if (alias || anchor) {
+        throw new SyntaxError(`${where}one node cannot be both named and be a reference, but "${rest}" is both`);
+      }
+      alias = name;
+    } else {
+      if (tag) {
+        throw new SyntaxError(`${where}a value can only carry one tag, but "${rest}" carries two`);
+      }
+      tag = name;
+    }
+    rest = (m[3] || '').replace(/^[ \t]+/, '');
+  }
+  if (!anchor && !alias && !tag) return null;
+  return { anchor, alias, tag, rest };
+}
+
+/**
+ * The short name of a tag: `!!str` and `!<tag:yaml.org,2002:str>` are both `str`.
+ * Anything else has no name JSON knows, and is dropped with a word about it.
+ */
+function yamlTagName(tag) {
+  const short = /^!+(?:<)?(?:tag:yaml\.org,2002:)?([A-Za-z]+)>?$/.exec(tag);
+  return short ? short[1].toLowerCase() : null;
+}
+
+// `y` and `n` are not in this set on purpose: YAML 1.1 once had them, but the
+// core schema left them out because a Norwegian county code reads the same, and
+// PyYAML's own resolver agrees — `!!bool y` is an error there, not a `true`.
+/** The tags whose result is a JSON scalar — the ones that are applied. */
+const CARRIED_YAML_TAGS = new Set(['str', 'int', 'float', 'bool', 'null']);
+const YAML_TRUE = new Set(['yes', 'true', 'on']);
+const YAML_FALSE = new Set(['no', 'false', 'off']);
+
+/**
+ * What a tag asks of a value. The five tags whose result is a JSON scalar are
+ * applied, because that is the type the file wrote down and JSON can carry it —
+ * a tag that changes a type is the one thing in YAML that means to. Every other
+ * tag (`!!binary`, `!!timestamp`, `!!set`, `!something` of an application's own)
+ * is read as it was written and *named on stderr*, because a type the file
+ * promised and this file cannot deliver is a value that changes without a word.
+ */
+function applyYAMLTag(tag, value, ctx, no, raw) {
+  const where = no ? `YAML line ${no}: ` : '';
+  const name = yamlTagName(tag);
+  // A bare `!` is the non-specific tag: it asks for no type at all, so there is
+  // nothing to carry and nothing to say. PyYAML reads `a: !` as an empty value.
+  if (tag === '!') return value;
+  if (!CARRIED_YAML_TAGS.has(name)) {
+    if (ctx && Array.isArray(ctx.warnings)) {
+      ctx.warnings.push(
+        `${where}the tag "${tag}" is not a type JSON carries, so the value was read ` +
+        `as it was written${name ? '' : ' and the tag is gone'}; something that reads ` +
+        'this file with that tag will not get the same value'
+      );
+    }
+    return value;
+  }
+  if (value !== null && typeof value === 'object') {
+    throw new SyntaxError(
+      `${where}a "${tag}" tag can only stand on one value, not on a ${Array.isArray(value) ? 'list' : 'table'}`
+    );
+  }
+  // `!!str` asks for the text, so the text is what is read: `!!str 01` is the two
+  // characters "01", not the number 1 written as "1" and turned back into a
+  // string. Going through the value would lose exactly the digits and the
+  // leading zeros the tag was written to keep — and every other tag needs the
+  // same text, since `!!int "1"` is a number the file wrote in quotes.
+  const written = raw === undefined || raw === null ? null : stripYAMLComment(raw).trim();
+  let text;
+  if (written && !blockScalarHeader(written) && written[0] !== '[' && written[0] !== '{') {
+    if (written[0] === '"' || written[0] === "'") {
+      const quoted = readYAMLQuoted(written, 0);
+      text = quoted ? quoted.value : written;
+    } else {
+      text = written;
+    }
+  } else {
+    text = value === null ? '' : String(value);
+  }
+  if (name === 'str') return text;
+  if (name === 'bool') {
+    const low = text.toLowerCase();
+    if (YAML_TRUE.has(low)) return true;
+    if (YAML_FALSE.has(low)) return false;
+    throw new SyntaxError(`${where}"${text}" is not a yes/no value, so "!!bool" has nothing to make of it`);
+  }
+  if (name === 'null') {
+    if (text === '' || text === '~' || text.toLowerCase() === 'null') return null;
+    throw new SyntaxError(`${where}"${text}" is not empty, so "!!null" has nothing to make of it`);
+  }
+  const digits = text.replace(/_/g, '');
+  if (name === 'int') {
+    const int = /^[-+]?(0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+|\d+)$/.exec(digits);
+    if (!int) {
+      throw new SyntaxError(`${where}"${text}" is not a whole number, so "!!int" has nothing to make of it`);
+    }
+    const body = digits.replace(/^[-+]/, '');
+    const radix = /^0b/.test(body) ? 2 : /^0o/.test(body) ? 8 : /^0x/.test(body) ? 16 : 10;
+    const cut = radix === 10 ? body : body.slice(2);
+    const num = Number((digits[0] === '-' ? '-' : '') + parseInt(cut, radix));
+    if (ctx) collectLostPrecision(ctx.warnings, 'YAML', digits);
+    return num;
+  }
+  if (digits === '' || !/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(digits)) {
+    throw new SyntaxError(`${where}"${text}" is not a number, so "!!float" has nothing to make of it`);
+  }
+  const num = Number(digits);
+  if (!isFinite(num)) {
+    throw new SyntaxError(
+      `${where}"!!float" asked for a number JSON cannot hold, and JSON has no way to write infinity or NaN`
+    );
+  }
+  if (ctx) collectLostPrecision(ctx.warnings, 'YAML', digits);
+  return num;
 }
 
 /**
@@ -2307,14 +2447,28 @@ function readYAMLMerge(text, ctx, no) {
     }
     return fields;
   }
-  const prop = readYAMLProperty(body);
-  if (!prop || prop.anchor || prop.rest !== '') {
+  const prop = readYAMLProperties(body, no);
+  if (!prop || prop.anchor || !prop.alias || prop.tag || prop.rest !== '') {
     throw new SyntaxError(
       `YAML line ${no}: a merge key ("<<") takes a reference or a list of them, not "${body}"`
     );
   }
-  take(readYAMLAlias(prop.name, ctx, no));
+  take(readYAMLAlias(prop.alias, ctx, no));
   return fields;
+}
+
+/**
+ * A field name that came from a reference: a JSON key is a string, so a name that
+ * is a table or a list is refused here instead of being written as `[object
+ * Object]` in a file the user then keys on.
+ */
+function scalarKeyName(value, no, ctx) {
+  if (value !== null && typeof value === 'object') {
+    throw new SyntaxError(
+      `YAML line ${no}: a field name is text, and a reference to a ${Array.isArray(value) ? 'list' : 'table'} is not`
+    );
+  }
+  return value === null ? 'null' : String(value);
 }
 
 /**
@@ -2326,7 +2480,7 @@ function parseYAMLBlock(lines, start, indent, ctx) {
   if (i >= lines.length || lines[i].indent < indent) return { value: null, end: i };
   const content = lines[i].content;
   if (isYAMLSequenceEntry(content)) return parseYAMLSequence(lines, i, lines[i].indent, ctx);
-  if (splitYAMLKey(content)) return parseYAMLMapping(lines, i, lines[i].indent, ctx);
+  if (splitYAMLKey(content, lines[i].no)) return parseYAMLMapping(lines, i, lines[i].indent, ctx);
   return parseYAMLFoldedScalar(lines, i, lines[i].indent);
 }
 
@@ -2357,13 +2511,32 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     if (lines[i].indent > indent) {
       throw new SyntaxError(`YAML line ${lines[i].no}: unexpected indentation`);
     }
-    const split = splitYAMLKey(lines[i].content);
+    const split = splitYAMLKey(lines[i].content, lines[i].no);
     if (!split) {
       throw new SyntaxError(`YAML line ${lines[i].no}: expected "key: value", got "${lines[i].content}"`);
     }
-    const { key } = split;
+    const { key, keyProp } = split;
+    let name = key;
+    if (keyProp) {
+      // A name can stand on the key too: `&k b: 2` names the field `b`, and
+      // `*x: 2` takes the field name from the value it points at. A JSON field
+      // name is a string, so a key that is not one is refused here.
+      //
+      // A tag is the other half, and a key is the one node a tag cannot change:
+      // `!!str a: 1` asks for a field called `a`, while a tag this tool cannot
+      // resolve stays inside the name it was written in. That is T69's measured
+      // decision for a `%TAG` handle, and it holds here — splitting `!e!foo`
+      // into a namespace and a local name would invent a shape nobody wrote.
+      name = keyProp.alias
+        ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, lines[i].no), lines[i].no, ctx)
+        : keyProp.tag ? (CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
+          ? String(applyYAMLTag(keyProp.tag, key, ctx, lines[i].no))
+          : split.rawKey)
+        : key;
+      if (keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
+    }
 
-    if (key === '<<') {
+    if (name === '<<') {
       const fields = readYAMLMerge(split.rest, ctx, lines[i].no);
       for (const field of Object.keys(fields)) {
         if (seen.has(field) || merged.has(field)) continue;
@@ -2374,23 +2547,25 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       continue;
     }
 
-    // The value may carry a name: `&name` names it, `*name` stands in for one
-    // named before. Either way the name comes off first, so the value itself is
-    // read exactly as it is without one.
-    const prop = readYAMLProperty(split.rest);
-    if (prop && !prop.anchor) {
-      set(key, readYAMLAlias(prop.name, ctx, lines[i].no), lines[i].no);
+    // The value may carry properties: `&name` names it, `*name` stands in for
+    // one named before, `!!str` asks for a type. Either way they come off first,
+    // so the value itself is read exactly as it is without them.
+    const prop = readYAMLProperties(split.rest, lines[i].no);
+    if (prop && prop.alias) {
+      const aliased = readYAMLAlias(prop.alias, ctx, lines[i].no);
+      set(name, prop.tag ? applyYAMLTag(prop.tag, aliased, ctx, lines[i].no) : aliased, lines[i].no);
       i++;
       continue;
     }
-    if (prop) ctx.pending.add(prop.name);
+    if (prop && prop.anchor) ctx.pending.add(prop.anchor);
     const rest = prop ? prop.rest : split.rest;
     const named = value => {
-      if (prop) {
-        ctx.anchors.set(prop.name, value);
-        ctx.pending.delete(prop.name);
+      const tagged = prop && prop.tag ? applyYAMLTag(prop.tag, value, ctx, lines[i].no, rest) : value;
+      if (prop && prop.anchor) {
+        ctx.anchors.set(prop.anchor, tagged);
+        ctx.pending.delete(prop.anchor);
       }
-      return value;
+      return tagged;
     };
 
     if (rest === '' || isYAMLComment(rest)) {
@@ -2398,7 +2573,7 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       const j = skipYAMLBlanks(lines, i + 1);
       if (j < lines.length && lines[j].indent > indent) {
         const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
-        set(key, named(child.value), lines[i].no);
+        set(name, named(child.value), lines[i].no);
         i = child.end;
         continue;
       }
@@ -2406,11 +2581,11 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       // which is how most hand-written config files are written.
       if (j < lines.length && lines[j].indent === indent && isYAMLSequenceEntry(lines[j].content)) {
         const child = parseYAMLSequence(lines, j, indent, ctx);
-        set(key, named(child.value), lines[i].no);
+        set(name, named(child.value), lines[i].no);
         i = child.end;
         continue;
       }
-      set(key, named(null), lines[i].no);
+      set(name, named(null), lines[i].no);
       i++;
       continue;
     }
@@ -2418,13 +2593,13 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     const block = blockScalarHeader(rest);
     if (block) {
       const child = readYAMLBlockScalar(lines, i + 1, indent, block);
-      set(key, named(child.value), lines[i].no);
+      set(name, named(child.value), lines[i].no);
       i = child.end;
       continue;
     }
 
     ctx.line = lines[i].no;
-    set(key, named(parseYAMLScalar(rest, ctx)), lines[i].no);
+    set(name, named(parseYAMLScalar(rest, ctx)), lines[i].no);
     i++;
   }
   return { value: map, end: i };
@@ -2446,23 +2621,26 @@ function parseYAMLSequence(lines, start, indent, ctx) {
     const lead = after.length - after.trimStart().length;
     const inner = after.trimStart();
 
-    // `- &name a` and `- *name` name the entry, they are not it. The name comes
-    // off before anything else, so an entry that carries one is read exactly as
-    // it is without one — including the bare `- &name` that owns the block below.
-    const prop = readYAMLProperty(inner);
-    if (prop && !prop.anchor) {
-      arr.push(readYAMLAlias(prop.name, ctx, lines[i].no));
+    // `- &name a` and `- *name` name the entry, they are not it, and `!!str`
+    // asks for a type. The properties come off before anything else, so an
+    // entry that carries one is read exactly as it is without it — including the
+    // bare `- &name` that owns the block below.
+    const prop = readYAMLProperties(inner, lines[i].no);
+    if (prop && prop.alias) {
+      const aliased = readYAMLAlias(prop.alias, ctx, lines[i].no);
+      arr.push(prop.tag ? applyYAMLTag(prop.tag, aliased, ctx, lines[i].no) : aliased);
       i++;
       continue;
     }
-    if (prop) ctx.pending.add(prop.name);
+    if (prop && prop.anchor) ctx.pending.add(prop.anchor);
     const body = prop ? prop.rest : inner;
     const named = value => {
-      if (prop) {
-        ctx.anchors.set(prop.name, value);
-        ctx.pending.delete(prop.name);
+      const tagged = prop && prop.tag ? applyYAMLTag(prop.tag, value, ctx, lines[i].no, body) : value;
+      if (prop && prop.anchor) {
+        ctx.anchors.set(prop.anchor, tagged);
+        ctx.pending.delete(prop.anchor);
       }
-      return value;
+      return tagged;
     };
 
     if (body === '' || isYAMLComment(body)) {
@@ -2778,14 +2956,16 @@ function parseYAMLFlow(text, ctx) {
     const body = raw.trim();
     // A flow item may name itself too — `[*a, *b]` is how a file shares one list
     // between two keys, and reading `*a` as the three characters `*a` puts a
-    // name where the list was. The name is taken off before the item is read,
-    // and an alias standing alone *is* the item.
-    const prop = readYAMLProperty(body);
+    // name where the list was. The properties are taken off before the item is
+    // read, and an alias standing alone *is* the item.
+    const prop = readYAMLProperties(body, ctx.line);
     if (prop) {
-      if (!prop.anchor && prop.rest === '') return readYAMLAlias(prop.name, ctx, ctx.line);
-      const value = prop.rest === '' ? null : parseYAMLValue(prop.rest, ctx);
-      if (prop.anchor) ctx.anchors.set(prop.name, value);
-      return value;
+      const value = prop.alias
+        ? readYAMLAlias(prop.alias, ctx, ctx.line)
+        : prop.rest === '' ? null : parseYAMLValue(prop.rest, ctx);
+      const tagged = prop.tag ? applyYAMLTag(prop.tag, value, ctx, ctx.line, prop.rest) : value;
+      if (prop.anchor) ctx.anchors.set(prop.anchor, tagged);
+      return tagged;
     }
     return parseYAMLValue(body, ctx);
   };

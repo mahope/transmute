@@ -636,6 +636,82 @@ itself. `a: &r` + `self: *r` is a structure JSON cannot carry, so it is refused
 in words rather than answered with something that would not survive the
 conversion.
 
+### Tags: `!!str` and what else a type can be
+
+`!tag` is a property of the node in front of it, in the same place `&name` and
+`*name` stand, and it may be written first, last, or both: `&x !!str 1` and
+`!!str &x 1` are the same node. A tag is the one thing in YAML that *deliberately
+changes a type*, so it is the one thing a conversion may not quietly drop — and
+before this rule, `a: !!str 1` came out as the string `"!!str 1"`, and a tag
+above a block was refused outright because `a: !!str` read as a finished line and
+the block under it was then an unexpected indentation.
+
+The five tags whose result is a JSON value are applied, because that is the type
+the file wrote down: `!!str`, `!!int`, `!!float`, `!!bool` and `!!null`, in the
+short spelling and in the full `!<tag:yaml.org,2002:str>` one.
+
+```bash
+printf 'name: !!str 7\nport: !!int "80"\ndebug: !!bool off\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "name": "7",
+    "port": 80,
+    "debug": false
+  }
+]
+```
+
+`!!str` is the *text*, not the value the text would otherwise become: `!!str 01`
+is the two characters `01`, and `!!str 1.50` keeps its trailing zero, because
+going through the number would lose exactly the digits the tag was written to
+keep. `!!int` reads `0x10` as 16 and `1_000` as 1000; `!!bool` is the YAML 1.1
+set `yes`/`no`/`true`/`false`/`on`/`off` and not `y`/`n`, which a Norwegian
+county code would otherwise be; a bare `!` is the non-specific tag and asks for
+no type at all.
+
+Every other tag is a type this file cannot deliver — `!!binary`,
+`!!timestamp`, `!!set`, and an application's own `!Ref` or `!GetAtt`. The value
+is read as the file wrote it and the tag is *named*, because a value that
+changes without a word is the one thing a conversion must never do quietly:
+
+```bash
+printf 'raw: !<tag:example.com,2026> hello\n' | transmute --format yaml --output json
+```
+
+```
+Warning: YAML line 1: the tag "!<tag:example.com,2026>" is not a type JSON carries, so the value was read as it was written and the tag is gone; something that reads this file with that tag will not get the same value
+```
+
+```json
+[
+  {
+    "raw": "hello"
+  }
+]
+```
+
+A tag that has nothing to make of the value is refused in words, with the line,
+rather than guessed at — `!!int x`, `!!bool maybe`, `!!null x`, a tag on a table
+or a list, `!!float .inf` (JSON has no way to write infinity or NaN), and two
+tags on one value:
+
+```bash
+printf 'a: !!int x\n' | transmute --format yaml --output json
+```
+
+```
+Error: Could not parse input as yaml: YAML line 1: "x" is not a whole number, so "!!int" has nothing to make of it
+```
+
+A **field name** is the one node a tag cannot change, so a tag on a key behaves
+differently on purpose: `!!str a: 1` is the field `a`, while a tag this tool
+cannot resolve stays inside the name it was written in — `%TAG !e! …` plus
+`!e!foo: bar` is still the field `!e!foo`, because splitting it into a namespace
+and a local name would invent a shape nobody wrote.
+
 ### A cell that cannot be shown: `table` and `sql`
 
 The refusals above are about a character **no** file can hold. This is the other
