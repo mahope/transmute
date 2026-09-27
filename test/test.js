@@ -3430,6 +3430,70 @@ t('the csv type warning names sql, which is the format that does change the type
   assert.ok(text.includes("('true')"), text);
 });
 
+// ─── YAML block scalars, judged by a reader that is not this one ──────────
+//
+// Every other YAML test in this file reads a block scalar or writes a plain
+// one, and not one of them wrote a *multi-line value* and read it back — so the
+// shape a value with a line break in it is written in had no test at all. These
+// five are the measured cases: `|-` dropped the value's last character, and a
+// value carrying a carriage return was written as a block scalar, which cannot
+// hold one. Both were silent, at exit 0, and this tool's own reader agreed with
+// the wrong answer, so a round trip through Transmute hid them completely.
+
+t('a block scalar written with |- keeps its last character', () => {
+  // The marker says "remove the block's own trailing line break", so the lines
+  // written are the whole value. Taking one character off them — the newline
+  // the marker gives back for `|` and `|+` — is not a newline to recover.
+  // `a\n ` — a last line that is one space — is left out on purpose: the writer
+  // now puts it in the file faithfully, but this tool's *reader* trims every
+  // line of a block scalar (tokenizeYAML strips trailing whitespace from all of
+  // them, where a block scalar's is data), so the round trip below still loses
+  // it. That is a reader bug of its own, measured and written up in the plan,
+  // and it is not what this rule is about.
+  const shapes = [
+    ['a\nb', '|-'],
+    ['a\nb\nc\nd', '|-'],
+    ['a\n\nb', '|-'],
+    ['a\nb\n', '|'],
+    ['a\nb\n\n', '|+'],
+    ['a\n\nb\n', '|'],
+    ['a\n', '|'],
+    ['a\n\n', '|+'],
+    ['a\n\n\n', '|+'],
+  ];
+  for (const [value, marker] of shapes) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.ok(text.includes(`v: ${marker}`), `${JSON.stringify(value)} -> ${text}`);
+    // Read back by this tool's reader, which is the same one that hid the loss,
+    // so a match here is the claim the bug contradicted.
+    assert.strictEqual(run(text, 'yaml').data[0].v, value, text);
+  }
+});
+
+t('a value with a carriage return is quoted, because a block scalar cannot hold one', () => {
+  // YAML normalizes #x0D#x0A, #x0D and #x0A all to a single #x0A in the
+  // content of a line break, and a block scalar has no escape to say otherwise.
+  for (const value of ['a\r\nb', 'a\r\nb\r\nc', 'a\nb\rc', '\ra\nb', 'a\nb\r']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.ok(!/v: \|/.test(text), `${JSON.stringify(value)} -> ${text}`);
+    assert.strictEqual(run(text, 'yaml').data[0].v, value, text);
+  }
+  // And a lone carriage return already took this path before this rule, so it
+  // is a control rather than a new behaviour: it has no line break to make a
+  // block scalar out of.
+  assert.ok(serializers.yaml([{ v: 'a\rb' }]).includes('"a\\rb"'));
+});
+
+t('a multi-line value survives all four readers it is written for', () => {
+  // json, csv, sql and the three flat formats carry the line break as data; the
+  // block scalar is the only place YAML can keep one without escaping it.
+  const value = 'first\nsecond';
+  assert.strictEqual(serializers.json([{ v: value }]).includes('first\\nsecond'), true);
+  assert.deepStrictEqual(run(serializers.csv([{ v: value }]), 'csv').data, [{ v: value }]);
+  const sql = serializers.sql([{ v: value }]);
+  assert.ok(sql.includes("'first\nsecond'"), sql);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
