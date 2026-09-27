@@ -1657,6 +1657,28 @@ id,sku,qty
 3,c-1,5
 ```
 
+**A list member that carries a name the record already had writes over it.** The
+member gets the last word, so the record's own value is gone from the output. Like
+`rename` above, whether that happens depends on the data rather than on the
+pipeline, so the run succeeds and writes its output and stderr says which value is
+missing from it. The member's name is the one that survives, which is why the `id`
+below is the item's and not the record's:
+
+```bash
+printf '[{"id":1,"customer":"alice","items":[{"id":"a-1","sku":"a-1","qty":2}]}]' | transmute --pipe '[{"op":"flatten","field":"items"}]' --output csv
+```
+
+```
+Warning: flatten: a list member is already a field in the records — "id" (1 of 1) from the "items" list. The value that was in that field is not in the output.
+id,customer,items,sku,qty
+a-1,alice,,a-1,2
+```
+
+A member named after the list field itself is not a collision: the list is what
+`flatten` removes, so that member replaces a value the step was asked to take away
+and nothing the record held is lost. A list of scalars cannot collide either, since
+there are no names in it to collide.
+
 ### add
 
 Add computed fields without rewriting the record. An expression that throws on a

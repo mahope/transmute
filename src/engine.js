@@ -2863,6 +2863,65 @@ function reportRenameCollisions(data, step, warnings) {
   );
 }
 
+/**
+ * A list member that carries a name the row already had writes over it.
+ *
+ * `flatten` builds each expanded row as `{ ...item, [field]: undefined, ...sub }`,
+ * so the member gets the last word on every name it shares with the row, and
+ * the row's own value is gone from the output. Nothing said so: exit 0, empty
+ * stderr, and an output that looked complete — worse, the *other* warning this
+ * step's output can trigger made it look more complete, because it names the
+ * columns that are missing from some rows and not the one that was overwritten
+ * in all of them. `{id: 1, name: "outer", tags: [{name: "inner", weight: 10}]}`
+ * came out as `name: "inner"`, and the warning said `weight` was in 2 of 3
+ * rows, which is true and says nothing about the value that was lost.
+ *
+ * A member named after `field` itself is the control that keeps this rule from
+ * being too broad. The list is what `flatten` removes, so a member that carries
+ * the list's own name replaces a value the step was asked to take away, and
+ * nothing the row held is lost. That is the same reason `{a: b, b: a}` does not
+ * warn in `reportRenameCollisions`: a step doing the only thing it can do with a
+ * name is not a collision.
+ *
+ * A warning and not an error, by T26's line: whether a member collides depends
+ * on the data, and the next file may not collide at all. So the run succeeds and
+ * writes its output, and one line on stderr says which value is not in it.
+ */
+function reportFlattenCollisions(data, step, warnings) {
+  if (!Array.isArray(warnings) || step.op !== 'flatten' || typeof step.field !== 'string') return;
+  const field = step.field;
+  const hits = new Map();
+  let records = 0;
+  for (const item of data) {
+    if (!isPlainObject(item)) continue;
+    records++;
+    const list = readField(item, field);
+    if (!Array.isArray(list)) continue;
+    // Counted per record, not per member: the denominator is records, and a row
+    // whose list carries `sku` three times still has one `sku` to lose. Counting
+    // members there printed `(3 of 1)`, which is a number no reader can place.
+    const seen = new Set();
+    for (const member of list) {
+      if (!isPlainObject(member)) continue;
+      for (const name of Object.keys(member)) {
+        if (name === field || !hasField(item, name) || seen.has(name)) continue;
+        seen.add(name);
+        hits.set(name, (hits.get(name) ?? 0) + 1);
+      }
+    }
+  }
+  if (hits.size === 0) return;
+  const names = [...hits.keys()];
+  const one = names.length === 1;
+  const shown = names.map((n) => `"${n}" (${hits.get(n)} of ${records})`);
+  warnings.push(
+    `flatten: ${one ? 'a list member is' : `${names.length} list members are`} already a field in the ` +
+    `records — ${shown.join(one ? '' : ', ')} from the "${field}" list. ` +
+    `The value${one ? '' : 's'} that ${one ? 'was' : 'were'} in ` +
+    `${one ? 'that field' : 'those fields'} ${one ? 'is' : 'are'} not in the output.`
+  );
+}
+
 // ─── Rows that are not records ───────────────────────────────────────────
 
 /**
@@ -2970,6 +3029,7 @@ function run(inputText, inputFormat, pipeline = [], outputFormat = 'json', opts 
       requireRecords(data, step, index);
       reportMissingFields(data, step, warnings);
       reportRenameCollisions(data, step, warnings);
+      reportFlattenCollisions(data, step, warnings);
       data = operations[step.op](data, step);
       if (!Array.isArray(data)) data = [data];
     }
