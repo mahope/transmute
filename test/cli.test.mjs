@@ -1692,5 +1692,27 @@ test('a rename onto a name the records have says which value is gone', () => {
   }
 });
 
+test('a flatten member that carries a name the record has says which value is gone', () => {
+  // On the real binary, and through json rather than csv, because a nested
+  // object is the whole point: a CSV cell holds the text of one, so `items`
+  // there is a string and there is nothing for a member to collide with. The
+  // item carries the order's own `id`, so the id in the output is the item's and
+  // the order's is gone. Exit 0, the file written, one line on stderr that says so.
+  const dir = mkdtempSync(join(tmpdir(), 't64-'));
+  try {
+    const path = join(dir, 'orders.json');
+    writeFileSync(path, '[{"id":1,"customer":"alice","items":[{"id":"a-1","qty":2}]}]');
+    const r = spawnSync(process.execPath, [cli, path, '-o', 'csv', '-p',
+      '[{"op":"flatten","field":"items"}]'], { encoding: 'utf-8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^id,customer,items,qty$/m, r.stdout);
+    assert.match(r.stdout, /^a-1,alice,,2$/m, r.stdout);
+    assert.match(r.stderr, /"id" \(1 of 1\) from the "items" list/, r.stderr);
+    assert.match(r.stderr, /not in the output/, r.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

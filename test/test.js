@@ -2789,6 +2789,59 @@ test('a rename that loses no value says nothing', () => {
   assert.match(r.warnings[0], /"town" → "city" \(1 of 1\)/, r.warnings[0]);
 });
 
+test('a list member that carries a name the record has says which value is gone', () => {
+  // `{ ...item, [field]: undefined, ...sub }` gives the member the last word on
+  // every name it shares with the record, so the record's own value is gone from
+  // the output. The run succeeds — the next file may not collide — and the
+  // missing value is named instead of vanishing.
+  const r = run('[{"id":1,"customer":"alice","items":[{"id":"a-1","sku":"a-1","qty":2}]}]',
+    'json', [{ op: 'flatten', field: 'items' }], 'json');
+  assert.strictEqual(r.error, undefined, r.error);
+  assert.match(r.text, /"id": "a-1"/, r.text);
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /"id" \(1 of 1\) from the "items" list/, r.warnings[0]);
+  assert.match(r.warnings[0], /not in the output/, r.warnings[0]);
+});
+
+test('every colliding name is named, and the row count is the denominator', () => {
+  // Two members lose two different values, and one record out of three collides.
+  // A warning that named only the first would leave the other value just as gone
+  // as it was, and `(1 of 3)` is what says the pipeline is fine for the other two.
+  const r = run('[{"a":1,"b":2,"items":[{"a":9,"b":8}]},{"a":3,"items":[{"a":7}]}]',
+    'json', [{ op: 'flatten', field: 'items' }], 'json');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /2 list members are/, r.warnings[0]);
+  assert.match(r.warnings[0], /"a" \(2 of 2\), "b" \(1 of 2\)/, r.warnings[0]);
+  assert.match(r.warnings[0], /values that were in those fields are not in the output/, r.warnings[0]);
+  // The count is records on both sides of the slash, so a row whose list carries
+  // the same name three times is one row that lost a value, not three.
+  const repeated = run('[{"sku":"keep","items":[{"sku":"a"},{"sku":"b"},{"sku":"c"}]}]',
+    'json', [{ op: 'flatten', field: 'items' }], 'json');
+  assert.match(repeated.warnings[0], /"sku" \(1 of 1\)/, repeated.warnings[0]);
+});
+
+test('a flatten that loses no value says nothing', () => {
+  // The control that keeps the rule from being too broad, in three shapes. A
+  // member named after the list field replaces a value the step was asked to
+  // take away, so nothing the record held is lost. A member sharing no name with
+  // the record is the ordinary case. And a list of scalars has no names in it to
+  // collide, which is the path that writes the member under the list's name.
+  assert.deepStrictEqual(warningsFor([{ op: 'flatten', field: 'items' }],
+    '[{"items":[{"items":"inner"}]}]'), []);
+  assert.deepStrictEqual(warningsFor([{ op: 'flatten', field: 'items' }],
+    '[{"id":1,"items":[{"sku":"a-1","qty":2}]}]'), []);
+  assert.deepStrictEqual(warningsFor([{ op: 'flatten', field: 'items' }],
+    '[{"id":1,"items":["a","b"]}]'), []);
+  // A prototype name in the member is a name like any other, written as an own
+  // field — it must not be mistaken for a collision with an inherited member.
+  assert.deepStrictEqual(warningsFor([{ op: 'flatten', field: 'items' }],
+    '[{"id":1,"items":[{"toString":"x"}]}]'), []);
+  // And the rule before it still fires, so the two do not swallow each other.
+  const missing = run('[{"id":1}]', 'json', [{ op: 'flatten', field: 'items' }], 'json');
+  assert.strictEqual(missing.warnings.length, 1, JSON.stringify(missing.warnings));
+  assert.match(missing.warnings[0], /no record has a field named "items"/, missing.warnings[0]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
