@@ -2342,14 +2342,35 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
     // line after it adds none — but a line of nothing but spaces is content
     // (PyYAML: `a`, ` `, `b` is `a\n \nb`, not `a   b`), so it spends a break
     // and carries its spaces.
+    //
+    // A line indented *deeper* than the block is content the format keeps
+    // whole, and it keeps the break on both sides of it: a break next to one is
+    // a line break, not the space prose folds to. Measured with PyYAML, which
+    // read `v: >` / `    a` / `      b` as 'a\n  b\n' where this read 'a   b\n'
+    // — a line break replaced by a space, in a value that says it is folded, so
+    // nothing in the file said so. The test is the dedented line's own leading
+    // space, because that is exactly "more indented than this block", and it is
+    // the same question the indicator answers from the other direction.
+    const moreIndented = s => s.startsWith(' ');
     text = '';
     for (let k = 0; k < dedented.length; k++) {
       const line = dedented[k];
       if (k === 0) { text = line; continue; }
       const prev = dedented[k - 1];
       if (prev === '') { text += line; continue; }
-      if (line === '') { text += '\n'; continue; }
-      text += (line.trim() === '' || prev.trim() === '' ? '\n' : ' ') + line;
+      if (line === '') {
+        // An empty line spends the fold of the break before it and carries one
+        // break of its own. After a deeper line that break is not a fold, so
+        // both are there (PyYAML: `b`, ``, `c` is 'b\nc', but `b` deeper and
+        // the same two lines after it is 'b\n\nc'). The file's own trailing
+        // newline is not an empty line inside the block but the break that ends
+        // the last one, so it is counted once either way.
+        text += moreIndented(prev) && collected[k] !== lines[lines.length - 1] ? '\n\n' : '\n';
+        continue;
+      }
+      const literal = moreIndented(prev) || moreIndented(line) ||
+        line.trim() === '' || prev.trim() === '';
+      text += (literal ? '\n' : ' ') + line;
     }
   } else {
     text = dedented.join('\n');
