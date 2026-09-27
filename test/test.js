@@ -3933,6 +3933,67 @@ t('a line at the block its first line opened is still read, and is not this rule
   assert.strictEqual(seq.data[1].b, 1, JSON.stringify(seq.data));
 });
 
+t('a tab cannot open a line, because YAML has no tab indentation', () => {
+  // `tokenizeYAML` read a tab as one space of indentation, so a file PyYAML
+  // refuses — "found character '\t' that cannot start any token" — came out
+  // here as a value, exit 0, empty stderr. Nine of the thirty measured files
+  // were this one rule, through every block marker and in a sequence item.
+  const cases = [
+    ['v: |\n\ta\n\tb\n', 'a tab under a literal block'],
+    ['v: >\n\ta\n\tb\n', 'a tab under a folded block'],
+    ['v: |-\n\ta\n\tb\n', 'a tab under a stripped block'],
+    ['v: >+\n\ta\n\tb\n', 'a tab under a kept block'],
+    ['v: |2\n\ta\n\tb\n', 'a tab under a block that names its indentation'],
+    ['- v: |\n\ta\n\tb\n', 'a tab under a block in a sequence item'],
+    ['v: |\n  a\n\tb\n', 'a tab in the second line of a block'],
+    ['\ta\n', 'a tab opening a plain scalar'],
+    ['v: 1\n\t\nw: 2\n', 'a line that is nothing but a tab'],
+  ];
+  for (const [text, what] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${what} was read as a value: ${JSON.stringify(r.data)}`);
+    assert.match(r.error, /tab character cannot start a line/, `${what}: ${r.error}`);
+  }
+  // The line number is what the user has to look at, and it is the file's own
+  // line, not the line inside the block.
+  const r = run('v: |\n  a\n\tb\n', 'yaml');
+  assert.match(r.error, /YAML line 3/, r.error);
+});
+
+t('a tab inside a block scalar is content, and comes back as a tab', () => {
+  // The other half of the same character, and the one that cost data instead of
+  // refusing a file: the tab *is* the content once the indentation has begun,
+  // but the tokenizer ate it as indentation, so the dedent was handed a column
+  // that was not there. This tool's own writer produced the file and this
+  // tool's own reader lost the tab — `x\n\ty` came back as `x\n y`.
+  for (const value of ['x\n\ty', 'x\n\t\ny', 'a\n\tb\nc', '\ta\n\tb', 'a\n\t\n\nb']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.strictEqual(run(text, 'yaml').data[0].v, value, text);
+  }
+  // Measured, not guessed: a line whose only content is a tab *below* the
+  // block's first line is content like any other, PyYAML reads it as '\t',
+  // and the same file written by hand says the same thing.
+  assert.strictEqual(run('v: |\n  a\n  \t\n  b\n', 'yaml').data[0].v, 'a\n\t\nb\n');
+  // A tab *before* the block's own lines is the rule above and not this one.
+  const bad = run('v: |\n  a\n\tb\n', 'yaml');
+  assert.ok(bad.error, 'a tab at column 0 is indentation, not content');
+
+  // The controls, and the reason the rule is safe: a tab is legal inside a
+  // quoted scalar and inside a comment, and a line of nothing but spaces is
+  // still an empty line rather than a tab that survived.
+  const quoted = ['"a\tb": 1\n', 'v: "a\tb"\n', "v: 'a\tb'\n", '# a\tb\nv: 1\n'];
+  for (const text of quoted) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+  }
+  const spaced = run('v: |\n  a\n  \n  b\n', 'yaml');
+  assert.strictEqual(spaced.data[0].v, 'a\n\nb\n', JSON.stringify(spaced.data));
+  // One space deeper than the block, so one space of it is content: PyYAML
+  // reads 'a\n \nb' here, and the line is not empty just because it is blank.
+  const padded = run('v: |\n  a\n   \n  b\n', 'yaml');
+  assert.strictEqual(padded.data[0].v, 'a\n \nb\n', JSON.stringify(padded.data));
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
