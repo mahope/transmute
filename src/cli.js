@@ -12,7 +12,21 @@
 const fs = require('fs');
 const { isUtf8 } = require('node:buffer');
 const { run, parsers, validatePipeline, detectFormat } = require('./engine');
-const { version } = require('../package.json');
+const { version, repository } = require('../package.json');
+
+/**
+ * Where the full reference actually is, derived from the repository field the
+ * package already carries — so the address has one source and not two.
+ *
+ * This used to be printed as the relative path `docs/cli.md`, at the foot of
+ * every preview, which is the default path of every run. The published tarball
+ * is five files — LICENSE, README, package.json, src/cli.js, src/engine.js —
+ * and no docs directory is among them, so for everyone who installed the CLI
+ * the file that name pointed at was never on their machine, and a relative path
+ * resolves against whatever directory they happened to be standing in. A user
+ * who followed it got `cat: docs/cli.md: No such file or directory`.
+ */
+const DOCS_URL = `${repository.url.replace(/^git\+/, '').replace(/\.git$/, '')}/blob/main/docs/cli.md`;
 
 const INPUT_FORMATS = ['json', 'csv', 'yaml', 'xml'];
 const OUTPUT_FORMATS = ['json', 'csv', 'yaml', 'xml', 'table', 'sql'];
@@ -359,7 +373,7 @@ function showPreview(text, format, delimiter) {
   console.log('  cat data.csv | transmute --pipe \'[{"op":"count"}]\'');
   console.log('  transmute data.yaml --pipe \'[{"op":"pick","fields":["name","email"]}]\'');
   console.log('');
-  console.log('Docs: docs/cli.md — every operation with a fixture and a runnable example');
+  console.log(`Docs: ${DOCS_URL} — every operation with a fixture and a runnable example`);
   console.log('');
 }
 

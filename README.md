@@ -57,7 +57,7 @@ Exit codes: `0` success, `1` the transformation failed, `2` usage error, `3`
 input error (missing or unparseable file). Errors go to stderr; stdout stays
 empty on failure, so redirects never leave half-written files behind.
 
-**Full reference: [docs/cli.md](docs/cli.md)** — every operation with a fixture
+**Full reference: [the CLI reference in the repository](https://github.com/mahope/transmute/blob/main/docs/cli.md)** — every operation with a fixture
 and its exact output, the coercion rules, and script examples. The examples
 are executed by `npm test`, so the docs cannot drift from the code.
 

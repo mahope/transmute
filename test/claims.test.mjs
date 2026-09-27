@@ -320,5 +320,87 @@ test('a sitemap that lists another address is refused', () => {
   assert.match(output, /site\/sitemap\.xml lists https:\/\/gammel-transmute\.example\//);
 });
 
+test('the CLI handing a user a path its own package does not contain is refused', () => {
+  // The measured fund, on the packed tarball rather than in a clone. The footer
+  // the default path prints named `docs/cli.md`; the tarball is five files and
+  // none of them is under docs/, so for everyone who installed the CLI the path
+  // led nowhere — and being relative it resolved against whatever directory the
+  // user was standing in, so it never did.
+  const dir = repo();
+  const file = join(dir, 'src', 'cli.js');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('`Docs: ${DOCS_URL}', "'Docs: docs/cli.md"));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a path that no install contains must not pass');
+  assert.match(output, /the preview footer in src\/cli\.js must print the derived address/);
+});
+
+test('a README that links the reference relatively is refused, because npm renders it', () => {
+  // The same link is correct in a clone and dead on npmjs.com, which renders the
+  // README against the package URL rather than the tree — so the one place the
+  // link is most often followed is the one place it 404s.
+  const dir = repo();
+  const file = join(dir, 'README.md');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('[the CLI reference in the repository](https://github.com/mahope/transmute/blob/main/docs/cli.md)', '[docs/cli.md](docs/cli.md)'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /README\.md links to the relative path docs\/cli\.md/);
+});
+
+test('a cheat sheet that stops linking the full reference is refused', () => {
+  // Three surfaces state this address, so the two halves can drift apart without
+  // either noticing. The cheat sheet had the one link that already worked.
+  const dir = repo();
+  const file = join(dir, 'site', 'cheatsheet', 'index.html');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('href="https://github.com/mahope/transmute/blob/main/docs/cli.md"', 'href="docs/cli.md"'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /site\/cheatsheet\/index\.html does not link the full reference at/);
+});
+
+test('restating the docs address in the CLI is refused, so it has one source', () => {
+  // Deriving it is the point: a second copy of the address is a claim that can
+  // drift away from the repository field it is supposed to come from. Written out
+  // in full — even the right address, which is the tempting version of this
+  // change — it is a second source, and the rule says so.
+  const dir = repo();
+  const file = join(dir, 'src', 'cli.js');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace(/const DOCS_URL = `[^`]*`;/, "const DOCS_URL = 'https://github.com/mahope/transmute/blob/main/docs/cli.md';"));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /src\/cli\.js writes the docs address .* out in full; derive it from the repository field/);
+});
+
+test('a CLI that prints some other repository as its reference is refused', () => {
+  // The other half: an address that is absolute, spelled out and plausible still
+  // has to be the one the repository field derives, or the derivation is
+  // decorative and the user is sent to a fork.
+  const dir = repo();
+  const file = join(dir, 'src', 'cli.js');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace(/const DOCS_URL = `[^`]*`;/, "const DOCS_URL = 'https://github.com/mahope/transmute-fork/blob/main/docs/cli.md';"));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /src\/cli\.js must derive the docs address from package\.json's repository field/);
+});
+
+test('deleting the derivation is refused, so the rule is not satisfied by absence', () => {
+  // En regel der bare forbyder den hårdkodede adresse kan passes ved at slette
+  // afledningen, og så er der ingen kilde tilbage. Derfor fjerner mutationen her
+  // bindingen i stedet for at efterlade den. Den matcher formen af bindingen og
+  // ikke ordet `repository`, fordi kommentaren der forklarer afledningen også
+  // nævner det — og det holdt en substring-test grøn, mens det den beskriver var
+  // slettet.
+  const dir = repo();
+  const file = join(dir, 'src', 'cli.js');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace("const { version, repository } = require('../package.json');", "const { version } = require('../package.json');"));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /src\/cli\.js must bind `repository` from package\.json/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

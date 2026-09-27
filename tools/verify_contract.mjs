@@ -402,6 +402,71 @@ check('the tools that name the site take the address from the contract', () => {
   }
 });
 
+check('every address the product hands a user is absolute', () => {
+  // Measured 2026-09-27, on the packed tarball of this repository, before this
+  // rule. `transmute people.csv` — the default path, and the first command the
+  // README shows — ended in `Docs: docs/cli.md`, and the tarball is five files
+  // with no docs directory among them. Every user who installed the CLI was
+  // handed a path to a file that was not on their machine, and a relative path
+  // resolves against the directory they happened to be standing in, so it never
+  // did. The same link in the README works on GitHub and 404s on npmjs.com,
+  // which renders that README against the package URL rather than the tree.
+  //
+  // The address is derived from the `repository` field the package already
+  // carries, so there is no second constant to keep in step: `cli.repository` is
+  // locked above and read by its own rules, and a rule here checks that the
+  // surfaces state the address that field derives.
+  const repo = String(contract.cli?.repository ?? '').replace(/\/+$/, '');
+  assert(/^https:\/\/github\.com\/[^\s/]+\/[^\s/]+$/.test(repo),
+    `contract.cli.repository is ${JSON.stringify(contract.cli?.repository)}, which is not a bare https GitHub repository`);
+  const docs = `${repo}/blob/main/docs/cli.md`;
+
+  // A markdown link with a relative target is the exact shape of the npm 404:
+  // correct in a clone, dead everywhere the README is actually read. Prose that
+  // merely names the file is left alone — a contributor in a cloned tree can
+  // find docs/cli.md, and that sentence is telling them so.
+  for (const [, , target] of readFileSync(join(root, 'README.md'), 'utf8')
+    .matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+    assert(/^(?:https?:|#|mailto:)/.test(target),
+      `README.md links to the relative path ${target}, which resolves against the directory the reader is in — npmjs.com renders this README and that link 404s; use ${docs}`);
+  }
+
+  // The CLI is shipped code, so it may not restate the address either: it derives
+  // it, and the derivation has to survive someone deleting the source it reads.
+  // The shape is matched rather than the word, because a comment that explains
+  // the derivation mentions `repository` too — and that satisfied a substring
+  // test while the binding it described had been deleted.
+  const cli = readFileSync(join(root, 'src', 'cli.js'), 'utf8');
+  const binds = new RegExp(`const\\s*\\{[^}]*\\brepository\\b[^}]*\\}\\s*=\\s*require\\('\\.\\./package\\.json'\\)`);
+  assert(binds.test(cli),
+    'src/cli.js must bind `repository` from package.json, or deleting that field leaves no source for the docs address at all');
+  assert(!cli.includes(docs),
+    `src/cli.js writes the docs address ${docs} out in full; derive it from the repository field in package.json, so the address has one source and not two`);
+  // And the derivation has to produce the address the other surfaces state, or
+  // the two halves drift apart without either one noticing.
+  assert(docs.endsWith('/docs/cli.md') && new RegExp(`DOCS_URL\\s*=[^;]*repository`).test(cli),
+    `src/cli.js must derive the docs address from package.json's repository field, which gives ${docs}`);
+  // Deriving it is not the same as printing it. A footer that went back to the
+  // bare path while the derivation sat unused above it kept every one of these
+  // assertions true and reintroduced the exact bug this rule was written for, so
+  // the line the user reads has to be built from the derived value itself.
+  const footer = cli.match(/console\.log\((.*Docs:.*)\);/);
+  assert(footer && /\$\{DOCS_URL\}/.test(footer[1]),
+    `the preview footer in src/cli.js must print the derived address as \`Docs: \${DOCS_URL}\`, so the path a user follows is the one that exists; use ${docs}`);
+  assert(!/href="docs\/cli\.md"/.test(cli), 'src/cli.js links the relative path docs/cli.md, which is dead for anyone outside a clone');
+
+  // The browser cheat sheet already linked the one address that works, and it is
+  // held to it here so the three surfaces cannot disagree.
+  const cheatsheet = join(root, 'site', 'cheatsheet', 'index.html');
+  if (existsSync(cheatsheet)) {
+    const source = readFileSync(cheatsheet, 'utf8');
+    assert(source.includes(docs),
+      `site/cheatsheet/index.html does not link the full reference at ${docs}`);
+    assert(!/href="docs\/cli\.md"/.test(source),
+      'site/cheatsheet/index.html links the relative path docs/cli.md, which is dead on the site; use the absolute address');
+  }
+});
+
 check('the paid product is named the way the contract locks it', () => {
   // product_name was in the contract of record and no rule could contradict it, so
   // a page was free to invent "Transmute Desktop Premium" and sell a tier that
