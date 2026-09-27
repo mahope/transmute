@@ -1089,6 +1089,43 @@ comments. Anchors, aliases and multi-document files are not supported; a file
 with more than one document is read as its first document and says so on
 stderr.
 
+#### A directive is the file naming its YAML version, not a document
+
+A file may open with one or more directives — `%YAML 1.2` names the version,
+`%TAG !e! tag:example.com,2000:` names a tag prefix. Kubernetes manifests,
+Ansible playbooks and a good deal of CI config start this way, and the
+directive is metadata, not data: the document is whatever follows it.
+
+```bash
+printf '%%YAML 1.2\n---\n- id: 1\n  name: Ada\n- id: 2\n  name: Bob\n' | transmute --format yaml --output csv
+```
+```
+id,name
+1,Ada
+2,Bob
+```
+
+A directive is only allowed *before* the document, so one that stands inside
+one is refused rather than read, with a message that names the line:
+
+```bash
+printf -- '- a\n%%YAML 1.2\n- b\n' | transmute --format yaml --output json
+```
+```
+Error: Could not parse input as yaml: YAML line 2: a directive ("%YAML 1.2") is only allowed before the document, not inside it
+```
+
+`%` in the first column is what makes a line a directive, because a plain
+scalar can never begin with a YAML indicator. A `%` anywhere else is ordinary
+data and is left alone — a `100% off` value, or a `|` block scalar carrying a
+shell script, are both read as themselves.
+
+A tag prefix in a key is not resolved, and the handle is kept whole:
+`%TAG !e! tag:example.com,2000:app/` with `!e!foo: bar` gives the field
+`"!e!foo"`, so nothing about the name is lost. A tagged *value*
+(`id: !e!thing 1`) is read as the text `!e!thing 1`, like an anchor or an
+alias — this tool does not resolve tags.
+
 A top-level mapping is one record, the way a key-value document is one row:
 
 ```bash

@@ -3170,6 +3170,86 @@ t('a byte order mark is the file saying what it is, not the file saying somethin
   assert.match(both.warnings[0], /^JSON: 123456789012345678\.5 /, both.warnings[0]);
 });
 
+t('a directive is the file naming its YAML version, not a document of its own', () => {
+  // Measured on the real binary before this rule existed. A directive line is
+  // `%` in the first column, and Kubernetes manifests, Ansible playbooks and a
+  // good deal of CI config open with one. `%` is a YAML indicator, so no plain
+  // scalar can begin with one and such a line is only ever a directive — but
+  // the reader counted it as the document, so everything under it was never
+  // read. The mapping came out as the one string "%YAML 1.2" and the
+  // "2 documents" warning pointed at a second document the file did not have.
+  const mapping = run('%YAML 1.2\n---\nid: 1\nname: Ada\n', 'yaml', [], 'json');
+  assert.ok(!mapping.error, mapping.error);
+  assert.deepStrictEqual(mapping.data, [{ id: 1, name: 'Ada' }]);
+  // The warning went with the bug: the file has one document, and saying two
+  // sent the user looking for a second one that was never there.
+  assert.deepStrictEqual(mapping.warnings, [], JSON.stringify(mapping.warnings));
+  assert.deepStrictEqual(run('%YAML 1.1\n---\n- a\n- b\n', 'yaml', [], 'json').data, ['a', 'b']);
+  // A %TAG directive, and both directives over each other. The `%TAG` one was
+  // worse than a lost document: it read as a record whose only field was the
+  // directive's own text, mapped to null.
+  assert.deepStrictEqual(run('%TAG !e! tag:example.com,2000:\n---\nid: 1\n', 'yaml', [], 'json').data, [{ id: 1 }]);
+  assert.deepStrictEqual(
+    run('%YAML 1.2\n%TAG !e! tag:example.com,2000:\n---\nid: 1\n', 'yaml', [], 'json').data, [{ id: 1 }]);
+  // Without a `---` the lines under the directive are the document, so the
+  // directive is skipped and what follows is read. This one was the silent
+  // half of the bug: the same file with a `---` warned, this one said nothing
+  // at all and still lost the mapping.
+  const noMarker = run('%YAML 1.2\nid: 1\nname: Ada\n', 'yaml', [], 'json');
+  assert.deepStrictEqual(noMarker.data, [{ id: 1, name: 'Ada' }]);
+  assert.deepStrictEqual(noMarker.warnings, [], JSON.stringify(noMarker.warnings));
+  // A tag handle in a key is data this tool does not resolve, and it keeps the
+  // handle whole: neither split into a namespace and a local name, which would
+  // invent a shape nobody wrote, nor refused, which would break files that
+  // convert today.
+  assert.deepStrictEqual(
+    run('%TAG !e! tag:example.com,2000:app/\n---\n!e!foo: bar\n', 'yaml', [], 'json').data,
+    [{ '!e!foo': 'bar' }]);
+
+  // Controls. `---` on its own is not a directive and not an error, and it did
+  // not warn before this rule either.
+  const bare = run('---\nid: 1\n', 'yaml', [], 'json');
+  assert.deepStrictEqual(bare.data, [{ id: 1 }]);
+  assert.deepStrictEqual(bare.warnings, [], JSON.stringify(bare.warnings));
+  // Two real documents still say only the first was read — the rule must not be
+  // able to swallow that, which is why the directive check stops at the first
+  // document's own end marker.
+  const two = run('a: 1\n---\nb: 2\n', 'yaml', [], 'json');
+  assert.deepStrictEqual(two.data, [{ a: 1 }]);
+  assert.ok(/only the first was read/.test(two.warnings[0]), JSON.stringify(two.warnings));
+  const later = run('a: 1\n---\n%YAML 1.2\nb: 2\n', 'yaml', [], 'json');
+  assert.deepStrictEqual(later.data, [{ a: 1 }]);
+  assert.ok(/only the first was read/.test(later.warnings[0]), JSON.stringify(later.warnings));
+  // A `%` that is not in the first column is not a directive: it belongs to the
+  // block that holds it. A `|` scalar carrying a shell snippet and a percentage
+  // in a value are both measured clean, and a rule that fired on them would
+  // make every config file an error.
+  const script = run('script: |\n  %YAML not a directive\nid: 1\n', 'yaml', [], 'json');
+  assert.deepStrictEqual(script.data, [{ script: '%YAML not a directive\n', id: 1 }]);
+  assert.deepStrictEqual(run('id: 1\nnote: 100% off\n', 'yaml', [], 'json').data,
+    [{ id: 1, note: '100% off' }]);
+  // Indented further than its key is an indentation error, and stays one.
+  assert.match(run('id: 1\n  %YAML 1.2\n', 'yaml', [], 'json').error, /unexpected indentation/);
+
+  // A directive stands *before* a document, so one that stands inside one is
+  // not a value to keep. In a mapping it already failed loudly, but in a
+  // sequence it ended the document and took the rest of the file with it:
+  // `- a`, `%YAML 1.2`, `- b` read as the single record "a", exit 0, empty
+  // stderr. One check for every shape of document, so they all say the same
+  // thing, and the message names the line and the line's own text.
+  for (const [text, needle] of [
+    ['- a\n%YAML 1.2\n- b\n', 'YAML line 2'],
+    ['id: 1\n%YAML 1.2\nname: Ada\n', 'YAML line 2'],
+    ['alpha\n%YAML 1.2\nbeta\n', 'YAML line 2'],
+    ['items:\n  - a\n%YAML 1.2\n', 'YAML line 3'],
+  ]) {
+    const r = run(text, 'yaml', [], 'json');
+    assert.ok(r.error, `a directive inside a document must not be read: ${JSON.stringify(r)}`);
+    assert.match(r.error, new RegExp(needle), r.error);
+    assert.match(r.error, /only allowed before the document/, r.error);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
