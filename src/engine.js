@@ -997,12 +997,18 @@ const serializers = {
   yaml: (data) => {
     if (!Array.isArray(data)) data = [data];
     assertWritable(data, 'yaml');
+    // A YAML document ends with a line break, and here it is not a nicety: for
+    // a value ending in one, the block scalar's last line break *is* the last
+    // byte of the file, and a file without it reads back without it. Measured
+    // with PyYAML: `- v: |\n    a\n    b` is `a\nb` and `- v: |\n    a
+    // b\n` is `a\nb\n`, so a writer that ends the document anywhere else loses
+    // the last character of every value that ends in a line break.
     return data.map(item => {
       // A record is a mapping; the dash carries the first line and the keys
       // sit in the column the reader will look for them in.
       if (!isYAMLPlainObject(item)) return `- ${formatYAMLValue(item)}`;
       return writeYAMLMapping(Object.entries(item), 2, '- ').join('\n');
-    }).join('\n');
+    }).join('\n') + '\n';
   },
   xml: (data, opts = {}) => {
     if (!Array.isArray(data)) data = [data];
@@ -2055,7 +2061,11 @@ function parseYAML(text, opts) {
  * Split a document into lines that remember their indentation, their source
  * line number and whether they are blank. Comments are deliberately *not*
  * stripped here: a `#` inside a block scalar is data, and stripping it early
- * would quietly rewrite every shell snippet a config file carries.
+ * would quietly rewrite every shell snippet a config file carries. Trailing
+ * whitespace is trimmed for the same reason and on the same rule — it is not
+ * whitespace inside a block scalar — but it is kept as `raw`, because the only
+ * reader of `raw` is the block scalar path and a fixed-width column, a padded
+ * shell snippet and a `- <TAB>` recipe all live there.
  */
 function tokenizeYAML(text) {
   return text.split(/\r\n|\n|\r/).map((line, i) => {
@@ -2064,6 +2074,7 @@ function tokenizeYAML(text) {
     return {
       indent: lead.length,
       content: content.replace(/\s+$/, ''),
+      raw: content,
       blank: content.trim() === '',
       no: i + 1
     };
@@ -2276,30 +2287,57 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
     collected.push(lines[i]);
     i++;
   }
-  // Trailing blank lines are the chomping rules' business, not the value's.
-  let last = collected.length;
-  while (last > 0 && collected[last - 1].blank) last--;
-  const body = collected.slice(0, last);
-  const trailing = collected.length - last;
 
-  const shared = body.reduce((min, l) => (l.blank ? min : Math.min(min, l.indent)), Infinity);
-  const dedented = body.map(l => (l.blank ? '' : ' '.repeat(l.indent - shared) + l.content));
+  // The block is one piece of text first and a value second, because that is
+  // the order the format works in: chomping is defined on the trailing line
+  // breaks of the text, and a line of nothing but spaces is *content* inside a
+  // literal block (`a`, ` `, `b` is three lines) while it is still a line of
+  // nothing but spaces here — so `raw` decides, and `content` never gets a vote.
+  const shared = collected.reduce(
+    (min, l) => (l.raw.trim() === '' ? min : Math.min(min, l.indent)),
+    Infinity
+  );
+  const dedented = collected.map(l => {
+    if (l.blank && l.indent <= shared) return '';
+    return ' '.repeat(Math.max(0, l.indent - shared)) + l.raw;
+  });
 
   let text;
   if (header.style === '>') {
+    // Folding is about the *break*, not the line: a single break between two
+    // lines that both have content becomes a space, and every other break
+    // stays. An empty line is where the break of a run of them is spent, so the
+    // line after it adds none — but a line of nothing but spaces is content
+    // (PyYAML: `a`, ` `, `b` is `a\n \nb`, not `a   b`), so it spends a break
+    // and carries its spaces.
     text = '';
-    for (const line of dedented) {
+    for (let k = 0; k < dedented.length; k++) {
+      const line = dedented[k];
+      if (k === 0) { text = line; continue; }
+      const prev = dedented[k - 1];
+      if (prev === '') { text += line; continue; }
       if (line === '') { text += '\n'; continue; }
-      text += (text === '' || text.endsWith('\n')) ? line : ' ' + line;
+      text += (line.trim() === '' || prev.trim() === '' ? '\n' : ' ') + line;
     }
   } else {
     text = dedented.join('\n');
   }
 
+  // The break that ends the block's last line belongs to the block, so it is
+  // there unless that line is also the last line of the file: a block at the
+  // end of a file with no trailing newline has no final break to keep.
+  if (collected.length > 0 && collected[collected.length - 1] !== lines[lines.length - 1]) {
+    text += '\n';
+  }
+
+  // strip drops every trailing break, clip keeps the one the file has (and
+  // invents none), keep keeps them all. The `+` used to add a break of its own,
+  // so `|+` ended up with one line break more than the file it was reading, on
+  // a file with no trailing whitespace at all.
   const stripped = text.replace(/\n+$/, '');
   if (header.chomp === '-') text = stripped;
-  else if (header.chomp === '+') text = stripped + '\n'.repeat(trailing + (stripped ? 1 : 0));
-  else text = stripped ? stripped + '\n' : '';
+  else if (header.chomp === '+') return { value: text, end: i };
+  else text = stripped ? stripped + (text.endsWith('\n') ? '\n' : '') : '';
 
   return { value: text, end: i };
 }
