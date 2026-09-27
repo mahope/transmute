@@ -992,6 +992,7 @@ const serializers = {
     }
     xml += `</${rootName}>`;
     reportXMLListShape(data, opts.warnings);
+    reportXMLNulls(data, opts.warnings);
     return xml;
   },
   table: (data, opts = {}) => {
@@ -1415,7 +1416,7 @@ function reportAbsentFields(data, headers, format, warnings) {
     );
   }
   warnings.push(
-    `${format}: ${facts.join('; ')}. ${readBack} sql writes NULL instead; json, yaml and xml keep the difference.`
+    `${format}: ${facts.join('; ')}. ${readBack} sql writes NULL instead; json and yaml keep the difference, xml writes the text null and names the columns on its own.`
   );
 }
 
@@ -1573,6 +1574,68 @@ function reportXMLListShape(data, warnings) {
       'which only this tool reads back, and not as the list it was.'
     );
   }
+}
+
+/**
+ * A `null` in the data, counted per field and named on stderr by the `xml`
+ * writer, because XML has no spelling for a value that is not there.
+ *
+ * The other five formats all have one, and each of them was measured on the file
+ * it writes rather than on what it is supposed to do. `json` and `yaml` keep the
+ * difference: an absent key is absent, and a null is a key holding null.
+ * `sql` writes `NULL`, which is SQL's own word for it. `csv` and `table` write an
+ * empty cell that reads back as `""`, and `reportAbsentFields` says so with the
+ * same trade. **`xml` is the one that said nothing, and what it does is worse than
+ * an empty cell**: `String(null)` is the four letters `null`, so
+ * `{"nul":null}` became `<nul>null</nul>` and came back as `{"nul":"null"}` — an
+ * absence turned into a value, exit 0, empty stderr. A file that a downstream
+ * job reads as "this field has the text null in it" is not a file with a blank
+ * in it; the difference is the whole point of having a null.
+ *
+ * There is no spelling that fixes it. `<nul/>` is what an empty string is, and
+ * leaving the element out is what a field the record does not have is — both
+ * are already other values in the same file, and `xsi:nil` is a convention every
+ * reader would have to know before the file meant anything. So the file keeps
+ * the shape XML has and the loss is said here, once per run, the way
+ * `reportXMLListShape` says its three: the values are not lost *silently*, which
+ * is the part that was wrong.
+ *
+ * An attribute and the element's own text are the other two places a null can
+ * sit, and they are counted under the name they carry (`@id`, `#text`) because
+ * that is the name they come back with. A null row has no field around it, so
+ * it is counted as `item` — the tag it was written under, and the field the
+ * reader hands back.
+ */
+function reportXMLNulls(data, warnings) {
+  if (!Array.isArray(warnings)) return;
+  const nulls = new Map();
+  const note = (field) => nulls.set(field, (nulls.get(field) || 0) + 1);
+  const walk = (value, field) => {
+    if (value === null) {
+      note(field === null ? 'item' : field);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const member of value) walk(member, field);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    for (const [name, member] of Object.entries(value)) {
+      if (member === null) {
+        note(name);
+        continue;
+      }
+      walk(member, name);
+    }
+  };
+  walk(data, null);
+  if (nulls.size === 0) return;
+  const list = [...nulls].map(([field, n]) => `"${field}" (${n})`).join(', ');
+  warnings.push(
+    `xml: ${nulls.size} field(s) hold an explicit null, which XML has no spelling for: ${list}. ` +
+    'Each was written as text and reads back as a string — the element "null", an attribute "" — ' +
+    'so a value stands where the file had an absence. json and yaml keep the difference; no spelling in this format can.'
+  );
 }
 
 /** Delimiters recognised when the caller does not force one. `,` wins a tie. */

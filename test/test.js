@@ -2709,8 +2709,8 @@ test('sql is not named, because the file says NULL out loud', () => {
   assert.match(r.text, /\(1, NULL\),\n  \(2, NULL\);/);
 });
 
-test('json, yaml and xml keep the difference and are not warned about either', () => {
-  for (const format of ['json', 'yaml', 'xml']) {
+test('json and yaml keep the difference and are not warned about either', () => {
+  for (const format of ['json', 'yaml']) {
     const r = run('[{"a":1,"b":null},{"a":2}]', 'json', [], format);
     assert.deepStrictEqual(r.warnings, [], `${format}: ${JSON.stringify(r.warnings)}`);
   }
@@ -2722,6 +2722,48 @@ test('json, yaml and xml keep the difference and are not warned about either', (
   const rows = JSON.parse(back.text);
   assert.ok('b' in rows[0], JSON.stringify(rows));
   assert.ok(!('b' in rows[1]), JSON.stringify(rows));
+});
+
+test('xml names the field whose null comes back as the text "null"', () => {
+  const r = run('[{"a":1,"b":null},{"a":2}]', 'json', [], 'xml');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(/xml: 1 field\(s\) hold an explicit null, which XML has no spelling for: "b" \(1\)/.test(r.warnings[0]), r.warnings[0]);
+  // The file is still written, and it is the loss the warning names: the null is
+  // the four letters `null`, and reading that back gives a string.
+  assert.match(r.text, /<b>null<\/b>/, r.text);
+  const back = run(r.text, 'xml', [], 'json');
+  assert.strictEqual(JSON.parse(back.text)[0].b, 'null', back.text);
+});
+
+test('every place a null can sit in xml is named, and each by its own name', () => {
+  const r = run('[{"a":{"b":null},"c":[1,null],"@d":null},[null]]', 'json', [], 'xml');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  // Nested under a key of its own, a list member under the field that holds it,
+  // an attribute under the name it carries, and a null row under the tag it was
+  // written as. Counted per field, so a file with 40 000 rows says each once.
+  for (const field of ['"b" (1)', '"c" (1)', '"@d" (1)', '"item" (1)']) {
+    assert.ok(r.warnings[0].includes(field), `${field} not in ${r.warnings[0]}`);
+  }
+  assert.ok(r.warnings[0].includes('4 field(s)'), r.warnings[0]);
+});
+
+test('the same null counted once per place, not once per row', () => {
+  const rows = JSON.stringify(Array.from({ length: 25 }, (_, i) => ({ a: i, b: null })));
+  const r = run(rows, 'json', [], 'xml');
+  assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.ok(r.warnings[0].includes('"b" (25)'), r.warnings[0]);
+});
+
+test('a string that spells "null" is not a null and is not named', () => {
+  for (const value of ['"null"', '""', '"~"', '"NULL"']) {
+    const r = run(`[{"a":${value}}]`, 'json', [], 'xml');
+    assert.deepStrictEqual(r.warnings, [], `${value}: ${JSON.stringify(r.warnings)}`);
+  }
+});
+
+test('a file with no null in it is not warned about', () => {
+  const r = run('[{"a":1,"b":{"c":"x","d":[1,2]}},{"a":2,"e":"y","f":[3,4]}]', 'json', [], 'xml');
+  assert.deepStrictEqual(r.warnings, [], JSON.stringify(r.warnings));
 });
 
 test('the table names what the screen cannot show either', () => {
