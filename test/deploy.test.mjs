@@ -16,28 +16,22 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'node:http';
-import { defaultBranch, inspectDeploy, pagesProject, siteUrl, verifyPublished } from '../tools/deploy_guard.mjs';
+import { defaultBranch, inspectDeploy, pagesProject } from '../tools/deploy_guard.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 let passed = 0;
 let failed = 0;
 
-const queue = [];
-
-/** Tests run in order, one at a time, so a local port never collides. */
 function test(name, fn) {
-  queue.push(async () => {
-    try {
-      await fn();
-      passed++;
-      console.log(`  ✅ ${name}`);
-    } catch (error) {
-      failed++;
-      console.error(`  ❌ ${name}: ${error.message}`);
-    }
-  });
+  try {
+    fn();
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } catch (error) {
+    failed++;
+    console.error(`  ❌ ${name}: ${error.message}`);
+  }
 }
 
 const git = (repo, ...args) =>
@@ -174,69 +168,6 @@ test('no committed workflow names a Cloudflare credential', () => {
   }
   assert.equal(String(matched).trim(), '', '.github/ names a Cloudflare credential, so a workflow could publish without a human');
 });
-
-test('reads the address from the contract when it pins one, and from the page when it does not', () => {
-  const { repo, cleanup } = scratch();
-  try {
-    writeFileSync(join(repo, 'tools/product-contract.json'), JSON.stringify({ site_url: 'https://transmute.run' }));
-    assert.equal(siteUrl(repo), 'https://transmute.run');
-
-    writeFileSync(join(repo, 'tools/product-contract.json'), JSON.stringify({ amount: 19 }));
-    writeFileSync(join(repo, 'site', 'index.html'), '<!doctype html><link rel="canonical" href="https://transmute.run/">');
-    assert.equal(siteUrl(repo), 'https://transmute.run/');
-
-    writeFileSync(join(repo, 'site', 'index.html'), '<!doctype html><title>no address here</title>');
-    assert.equal(siteUrl(repo), '');
-  } finally {
-    cleanup();
-  }
-});
-
-test('calls a live page stale when it is missing, not published or wrong', async () => {
-  // A local server, so "the live site" is a real socket answering 200, 404 and
-  // wrong bytes. These pages have answered 200 while serving three-day-old
-  // files, which is why a status code is not a deploy check.
-  const server = createServer((request, response) => {
-    if (request.url === '/fresh') {
-      response.writeHead(200, { 'content-type': 'text/html' });
-      response.end('<p>ny</p>');
-      return;
-    }
-    if (request.url === '/gone') {
-      response.writeHead(200, { 'content-type': 'text/html' });
-      response.end('<p>findes ikke lokalt</p>');
-      return;
-    }
-    if (request.url === '/stale') {
-      response.writeHead(200, { 'content-type': 'text/html' });
-      response.end('<p>gammel</p>');
-      return;
-    }
-    response.writeHead(404);
-    response.end('Not Found');
-  });
-
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address();
-  const base = `http://127.0.0.1:${port}`;
-  const { repo, cleanup } = scratch();
-  writeFileSync(join(repo, 'site', 'fresh'), '<p>ny</p>');
-  writeFileSync(join(repo, 'site', 'stale'), '<p>ny</p>');
-
-  try {
-    assert.deepEqual(await verifyPublished(join(repo, 'site'), base, ['fresh']), []);
-    assert.deepEqual(await verifyPublished(join(repo, 'site'), base, ['missing']), ['missing: not in site/']);
-    assert.deepEqual(await verifyPublished(join(repo, 'site'), base, ['gone']), ['gone: not in site/']);
-    assert.deepEqual(await verifyPublished(join(repo, 'site'), base, ['stale']), ['stale: live is 13 bytes, site/ has 9']);
-  } finally {
-    cleanup();
-    await new Promise(resolve => server.close(resolve));
-  }
-});
-
-for (const run of queue) {
-  await run();
-}
 
 console.log(`\n  deploy: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

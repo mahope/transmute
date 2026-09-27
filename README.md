@@ -38,15 +38,26 @@ Options:
 - `-f, --format <type>` — input format: json, csv, yaml, xml (auto-detected)
 - `-p, --pipe <json>` — transformation pipeline as a JSON array
 - `-o, --output <type>` — output format: json, csv, yaml, xml, table, sql (default: table)
-- `--out <file>` — write the output to a file instead of stdout
-- `--table <name>` — table name for SQL output (default `my_table`)
+- `--out <file>` — write the output to a file instead of stdout (needs `--output`)
+- `--table <name>` — table name for SQL output (default `my_table`, needs `-o sql`)
+- `--delimiter <d>` — CSV/TSV field delimiter: `,` `;` `tab` or `|` (detected
+  from the header line when omitted, so Excel's Danish `;` export works)
 - `-v, --version`, `-h, --help`
+
+Each option is given once, and an option that cannot do its job is a usage
+error rather than a silent no-op: `--out` needs `--output` (`--out out.json`
+alone used to print a preview and write no file at all), `--table` needs
+`--output sql`, and `--delimiter` needs a CSV input, since the CSV writer always
+writes a comma.
+
+CSV is read per RFC 4180: a quoted field may contain the delimiter, escaped
+quotes and line breaks, and whitespace inside quotes is kept as data.
 
 Exit codes: `0` success, `1` the transformation failed, `2` usage error, `3`
 input error (missing or unparseable file). Errors go to stderr; stdout stays
 empty on failure, so redirects never leave half-written files behind.
 
-**Full reference: [docs/cli.md](docs/cli.md)** — every operation with a fixture
+**Full reference: [the CLI reference in the repository](https://github.com/mahope/transmute/blob/main/docs/cli.md)** — every operation with a fixture
 and its exact output, the coercion rules, and script examples. The examples
 are executed by `npm test`, so the docs cannot drift from the code.
 
@@ -103,8 +114,37 @@ transmute.run produce identical output for every documented example, and that
 
 ## Releasing
 
-`npm run release -- patch` (or `minor`/`major`) bumps the version, commits and pushes the tag.
-CI publishes to npm and creates the GitHub release.
+`npm run release -- patch` (or `minor`/`major`, or an explicit `x.y.z`) bumps the
+version, commits and pushes the tag. CI publishes to npm and creates the GitHub release.
+
+The release refuses to run, with a message naming the reason, when the working
+tree is dirty, when `HEAD` is not on the default branch, or when `package.json`'s
+version no longer describes `src/` — the last one is what `npm run check:release`
+reports, and a tag is never pushed for a version that does not describe the code
+it ships. An explicit version that `package.json` already carries is tagged as it
+is, so a hand-written bump does not have to be repeated.
+
+Nothing here publishes, tags or releases by itself: the loop cannot run
+`npm run release`, and a version tag only publishes from a commit on `main`.
+
+## Publishing the site
+
+transmute.run is a static site in `site/`, and nothing in this repository
+publishes it by itself. `npm run deploy:site` is the one command that does:
+
+```
+git checkout main && git pull
+CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy:site
+```
+
+It refuses, naming the reason, when `HEAD` is not the default branch, when the
+working tree is dirty, or when the credentials are missing — a branch or a
+laptop is not something to publish. Afterwards it runs `npm run check:deploy`,
+which compares the live files against `main`; a 200 on its own proves nothing.
+
+There is deliberately no deploy workflow. `npm test` fails if any workflow under
+`.github/workflows/` can publish, under any trigger, so the site can only go out
+when a person runs the command above.
 
 ## Publishing the site
 

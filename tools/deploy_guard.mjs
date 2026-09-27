@@ -33,7 +33,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 export const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -67,29 +67,8 @@ export function defaultBranch(repo = repoRoot) {
   return head.replace(/^origin\//, '') || 'main';
 }
 
-/**
- * The site's own address, never written out here. The contract pins it when it
- * has a site_url; before it did, the page's own canonical link was the only
- * place the address existed, and reading it from there keeps one source for it
- * in both revisions instead of a constant that only one of them has.
- */
 export function siteUrl(repo = repoRoot) {
-  try {
-    const contract = JSON.parse(readFileSync(join(repo, 'tools/product-contract.json'), 'utf8'));
-    if (contract.site_url) {
-      return contract.site_url;
-    }
-  } catch {
-    // No contract, or no site_url in it: fall through to the page.
-  }
-
-  try {
-    const canonical = readFileSync(join(repo, 'site/index.html'), 'utf8')
-      .match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i);
-    return canonical?.[1] ?? '';
-  } catch {
-    return '';
-  }
+  return JSON.parse(readFileSync(`${repo}/tools/product-contract.json`, 'utf8')).site_url;
 }
 
 /**
@@ -109,10 +88,6 @@ export function inspectDeploy(repo = repoRoot, env = process.env) {
     problems.push(
       `HEAD is on ${branch || 'no branch'}, not ${main}. Publishing a branch publishes something ${main} has never held, which is the bug that put v0.3.1 on a branch in tools/release_guard.mjs. Check out ${main} and pull first.`,
     );
-  }
-
-  if (!siteUrl(repo)) {
-    problems.push('Neither tools/product-contract.json nor site/index.html names the site address, so there is nothing to check the deploy against.');
   }
 
   if (!existsSync(`${repo}/site`)) {
@@ -142,55 +117,10 @@ export function inspectDeploy(repo = repoRoot, env = process.env) {
     }
   }
 
-  const url = siteUrl(repo);
-
-  return { branch, commit, url, project: url ? pagesProject(url) : '', problems };
+  return { branch, commit, project: pagesProject(siteUrl(repo)), problems };
 }
 
-/**
- * Prove the live site now serves what is on disk. A 200 proves nothing — these
- * pages have answered 200 while serving three-day-old files — so this compares
- * bytes, the same way npm run check:deploy does, and it works on a clone of
- * main where that script does not exist yet.
- */
-export async function verifyPublished(localRoot, liveUrl, paths) {
-  const stale = [];
-
-  for (const path of paths) {
-    let local;
-
-    try {
-      local = readFileSync(join(localRoot, path));
-    } catch {
-      stale.push(`${path}: not in site/`);
-      continue;
-    }
-
-    let live;
-
-    try {
-      const response = await fetch(new URL(path, liveUrl), { redirect: 'follow' });
-      if (!response.ok) {
-        stale.push(`${path}: HTTP ${response.status}`);
-        continue;
-      }
-      live = Buffer.from(await response.arrayBuffer());
-    } catch (error) {
-      stale.push(`${path}: ${error.message}`);
-      continue;
-    }
-
-    if (!local.equals(live)) {
-      stale.push(`${path}: live is ${live.length} bytes, site/ has ${local.length}`);
-    }
-  }
-
-  return stale;
-}
-
-const PROBE = ['index.html', 'cheatsheet/index.html', 'support/index.html'];
-
-async function main() {
+function main() {
   const state = inspectDeploy();
 
   if (state.problems.length > 0) {
@@ -210,21 +140,14 @@ async function main() {
   }
 
   console.log('\nNow proving the live site actually changed — a 200 on its own does not.');
-  const stale = await verifyPublished(join(repoRoot, 'site'), siteUrl(), PROBE);
-
-  if (stale.length > 0) {
-    console.error(`\nDEPLOY-MISSING. ${siteUrl()} does not serve what site/ holds:`);
-    for (const line of stale) {
-      console.error(`  ${line}`);
-    }
-    return 1;
-  }
-
-  console.log(`DEPLOY OK. ${siteUrl()} serves ${PROBE.length} files byte for byte from site/.`);
-  return 0;
+  // The freshness check is npm run check:deploy's command, not a second copy of
+  // it: two spellings of one check is how the site address drifted out of five
+  // tools in the first place (see tools/verify_contract.mjs).
+  const check = spawnSync('npm', ['run', 'check:deploy'], { stdio: 'inherit' });
+  return check.status ?? 1;
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
-  process.exit(await main());
+  process.exit(main());
 }

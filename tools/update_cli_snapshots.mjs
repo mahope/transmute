@@ -21,7 +21,7 @@ const out = {};
 
 for (const testCase of CASES) {
   const result = run(
-    fixtureText(testCase.fixture),
+    fixtureText(testCase.fixture, testCase.file),
     testCase.fixture,
     testCase.pipeline,
     testCase.outputFormat,

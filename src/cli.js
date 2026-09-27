@@ -10,23 +10,94 @@
  */
 
 const fs = require('fs');
-const { run, parsers, operations, detectFormat } = require('./engine');
-const { version } = require('../package.json');
+const { isUtf8 } = require('node:buffer');
+const { run, parsers, validatePipeline, detectFormat } = require('./engine');
+const { version, repository } = require('../package.json');
+
+/**
+ * Where the full reference actually is, derived from the repository field the
+ * package already carries — so the address has one source and not two.
+ *
+ * This used to be printed as the relative path `docs/cli.md`, at the foot of
+ * every preview, which is the default path of every run. The published tarball
+ * is five files — LICENSE, README, package.json, src/cli.js, src/engine.js —
+ * and no docs directory is among them, so for everyone who installed the CLI
+ * the file that name pointed at was never on their machine, and a relative path
+ * resolves against whatever directory they happened to be standing in. A user
+ * who followed it got `cat: docs/cli.md: No such file or directory`.
+ */
+const DOCS_URL = `${repository.url.replace(/^git\+/, '').replace(/\.git$/, '')}/blob/main/docs/cli.md`;
 
 const INPUT_FORMATS = ['json', 'csv', 'yaml', 'xml'];
 const OUTPUT_FORMATS = ['json', 'csv', 'yaml', 'xml', 'table', 'sql'];
+
+/** Delimiters accepted by --delimiter. `tab` is a name because a literal tab in a shell argument is a trap. */
+const DELIMITERS = { ',': ',', ';': ';', 'tab': '\t', '|': '|' };
 
 /**
  * Exit codes — stable and documented in docs/cli.md so scripts can branch on them.
  *   0  success
  *   1  the pipeline ran but the transformation failed
  *   2  usage error (unknown flag, bad flag value, invalid pipeline)
- *   3  input error (file missing, unreadable, or unparseable as the input format)
+ *   3  input error (file missing, unreadable, unparseable, or not UTF-8)
  */
 const EXIT = { ok: 0, transform: 1, usage: 2, input: 3 };
 
 class UsageError extends Error {}
 class InputError extends Error {}
+
+/**
+ * Every option carries one value, and a second one used to be answered with the
+ * last — silently, exit 0 and an empty stderr, so a command that was not the
+ * command the user wrote produced output that looked like what they had asked
+ * for. Two `--pipe` flags is the natural way to hit it, because the help text
+ * shows several steps in *one* `--pipe`. A short alias is the same flag as its
+ * long name, so `-p` and `--pipe` are counted together.
+ *
+ * Repeating `--pipe` could be *merged* into one pipeline instead of refused,
+ * but then the order of the flags would decide the order of the steps, and no
+ * other option has a merge that means anything — so this would be the one flag
+ * with a hidden rule, which is the thing being removed here.
+ */
+const OPTION_HINTS = {
+  '--pipe': 'Put every step in one --pipe, as a JSON array.',
+};
+
+/** Every accepted option, mapped to the one name it is counted under. */
+const OPTION_NAMES = {
+  '-p': '--pipe', '--pipe': '--pipe',
+  '-f': '--format', '--format': '--format',
+  '-o': '--output', '--output': '--output',
+  '--out': '--out',
+  '--table': '--table',
+  '--delimiter': '--delimiter',
+};
+
+/** How often each option appears anywhere on the command line. */
+function countOptions(args) {
+  const counts = new Map();
+  for (const arg of args) {
+    const name = OPTION_NAMES[arg];
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Claim an option once, so the parser below stays a plain list of assignments
+ * and every repeated flag is refused the same way. The count comes from the
+ * whole command line, not from the claims so far: the parser stops at the first
+ * repeat, and a command with three `--delimiter` flags is told three, not two.
+ */
+function takeOption(seen, counts, name) {
+  if (seen.has(name)) {
+    throw new UsageError(
+      `${name} was given ${counts.get(name)} times, and only the last one would have been used. ` +
+      (OPTION_HINTS[name] || 'Give each option once.')
+    );
+  }
+  seen.add(name);
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -36,27 +107,42 @@ async function main() {
   let pipeline = null;
   let outputFormat = null;
   let outFile = null;
-  let tableName = 'my_table';
+  let tableName = null;
+  let delimiter = null;
+  const seenOptions = new Set();
+  const optionCounts = countOptions(args);
 
   // Parse args
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--pipe' || arg === '-p') {
+      takeOption(seenOptions, optionCounts, '--pipe');
       pipeline = parsePipeline(flagValue(args, ++i, '--pipe'));
     } else if (arg === '--format' || arg === '-f') {
+      takeOption(seenOptions, optionCounts, '--format');
       inputFormat = flagValue(args, ++i, '--format');
       if (!INPUT_FORMATS.includes(inputFormat)) {
         throw new UsageError(`Unknown input format: ${inputFormat} (expected ${INPUT_FORMATS.join(', ')})`);
       }
     } else if (arg === '--output' || arg === '-o') {
+      takeOption(seenOptions, optionCounts, '--output');
       outputFormat = flagValue(args, ++i, '--output');
       if (!OUTPUT_FORMATS.includes(outputFormat)) {
         throw new UsageError(`Unknown output format: ${outputFormat} (expected ${OUTPUT_FORMATS.join(', ')})`);
       }
     } else if (arg === '--out') {
+      takeOption(seenOptions, optionCounts, '--out');
       outFile = flagValue(args, ++i, '--out');
     } else if (arg === '--table') {
+      takeOption(seenOptions, optionCounts, '--table');
       tableName = flagValue(args, ++i, '--table');
+    } else if (arg === '--delimiter') {
+      takeOption(seenOptions, optionCounts, '--delimiter');
+      const raw = flagValue(args, ++i, '--delimiter');
+      if (!Object.prototype.hasOwnProperty.call(DELIMITERS, raw)) {
+        throw new UsageError(`Unknown delimiter: ${raw} (expected , ; tab or |)`);
+      }
+      delimiter = DELIMITERS[raw];
     } else if (arg === '--version' || arg === '-v') {
       console.log(version);
       return;
@@ -72,28 +158,67 @@ async function main() {
     }
   }
 
-  // Read input
+  // An option the CLI accepts but cannot honour is the same silence as one that
+  // was given twice: exit 0, an empty stderr, and output that is not what the
+  // command asked for. These two are known from the flags alone, so they are
+  // answered before the input is touched — a typo should not have to wait for a
+  // file it was never going to be used with.
+  //
+  // `--out` is the sharpest of them: it was accepted, the preview ran, and the
+  // file was never written, so the user asked for a file and got a table on the
+  // screen instead. `--table` names a table that only SQL output has.
+  if (outFile !== null && outputFormat === null) {
+    throw new UsageError(
+      '--out needs --output: without it Transmute prints a preview and writes no file. ' +
+      'Say what the file should hold with --output json, csv, yaml, xml, table or sql.'
+    );
+  }
+  if (tableName !== null && outputFormat !== 'sql') {
+    const output = outputFormat === null ? 'a preview' : outputFormat;
+    throw new UsageError(
+      `--table names the table in SQL output only, but the output here is ${output}. ` +
+      'Use --output sql, or drop --table.'
+    );
+  }
+
+  // Read input. Both a file and a pipe are read as bytes, because the encoding
+  // is decided before the text exists — see decodeText.
   if (inputFile !== null) {
     if (inputFile === '-') {
-      inputText = await readStdin();
+      inputText = decodeText(await readStdin(), 'stdin');
     } else if (!fs.existsSync(inputFile)) {
       throw new InputError(`File not found: ${inputFile}`);
     } else {
+      let buffer;
       try {
-        inputText = fs.readFileSync(inputFile, 'utf-8');
+        buffer = fs.readFileSync(inputFile);
       } catch (err) {
         throw new InputError(`Could not read ${inputFile}: ${err.message}`);
       }
+      inputText = decodeText(buffer, inputFile);
     }
     if (!inputFormat) inputFormat = detectFormat(inputFile, inputText);
   } else {
     // Read from stdin (pipe)
-    inputText = await readStdin();
-    if (inputText === '' && process.stdin.isTTY) {
+    const buffer = await readStdin();
+    if (buffer.length === 0 && process.stdin.isTTY) {
       showHelp(process.stderr);
       throw new UsageError('No input. Pass a file or pipe data on stdin.');
     }
+    inputText = decodeText(buffer, 'stdin');
     if (!inputFormat) inputFormat = detectFormat(null, inputText);
+  }
+
+  // `--delimiter` is a claim about how a CSV file is *read*, and the reader is
+  // the only thing that uses it: the CSV writer always writes a comma and quotes
+  // a field that contains another one, so `--output csv` cannot be steered by
+  // this flag. It is therefore dead unless the input is CSV, which is checked
+  // here rather than above because it needs the detected input format.
+  if (delimiter !== null && inputFormat !== 'csv') {
+    throw new UsageError(
+      `--delimiter applies to CSV input, and this input is ${inputFormat}. ` +
+      'Drop it, or read the file as CSV with --format csv.'
+    );
   }
 
   // Validate the input up front so a parse failure is an input error, not a
@@ -102,24 +227,37 @@ async function main() {
     throw new UsageError(`Unknown input format: ${inputFormat} (expected ${INPUT_FORMATS.join(', ')})`);
   }
   try {
-    parsers[inputFormat](inputText);
+    parsers[inputFormat](inputText, { delimiter });
   } catch (err) {
     throw new InputError(`Could not parse input as ${inputFormat}: ${err.message}`);
   }
 
   // Preview only when the user gave neither --pipe nor --output.
   if (pipeline === null && outputFormat === null) {
-    showPreview(inputText, inputFormat);
+    showPreview(inputText, inputFormat, delimiter);
     return;
   }
   if (outputFormat === null) outputFormat = 'table';
   if (pipeline === null) pipeline = [];
 
-  // Run pipeline
-  const result = run(inputText, inputFormat, pipeline, outputFormat, { tableName });
+  // Run pipeline. The table name is only resolved here, so a `--table` that was
+  // never given is the documented default rather than a value the parser made.
+  const result = run(inputText, inputFormat, pipeline, outputFormat, {
+    tableName: tableName === null ? 'my_table' : tableName,
+    delimiter,
+  });
   if (result.error) {
     console.error(`Error: ${result.error}`);
-    process.exit(EXIT.transform);
+    // A bad argument in the pipeline — an expression that is not valid
+    // JavaScript — is what the user typed, so it is a usage error, not a
+    // transformation that failed. Both leave stdout empty.
+    process.exit(result.usage ? EXIT.usage : EXIT.transform);
+  }
+  // Warnings go to stderr so stdout stays exactly the data, pipeable and
+  // redirectable. A CSV row with more fields than the header still succeeds —
+  // the values are kept, and the user is told which column they landed in.
+  for (const warning of result.warnings) {
+    console.error(`Warning: ${warning}`);
   }
 
   if (outFile && outFile !== '-') {
@@ -139,6 +277,39 @@ function flagValue(args, index, name) {
   return value;
 }
 
+/**
+ * Text is UTF-8, and reading anything else as UTF-8 does not fail — every byte
+ * sequence that is not valid UTF-8 decodes to U+FFFD, one per bad sequence. So a
+ * Windows-1252 export came out as `M?ller` and a UTF-16 export as a field name
+ * of replacement characters, both with exit 0, an empty stderr, and the mangled
+ * text written to the output file where it looked perfectly healthy. That is the
+ * same silence the other tasks remove, and this is the one that costs data: the
+ * characters are gone, and nothing in the output says so.
+ *
+ * The bytes are therefore checked before they are decoded, and input that is not
+ * UTF-8 is an input error (exit 3) — T27's line: a value that cannot be read at
+ * all is an error, not a warning, and here not even the file is readable. There
+ * is no guessing and no repair, because every wrong guess would rewrite the
+ * user's bytes; the message says how to convert instead.
+ *
+ * A valid UTF-8 file that happens to contain U+FFFD is left alone — the check is
+ * on the bytes, never on the decoded text, so the only U+FFFD that can reach the
+ * output is one the file really has.
+ */
+function decodeText(buffer, source) {
+  if (isUtf8(buffer)) return buffer.toString('utf-8');
+  // Reached only on the failing path. The offset is a character position in the
+  // decoded text, which is where the user has to look; `isUtf8` says nothing
+  // about where, and every invalid sequence is guaranteed to produce a U+FFFD.
+  const at = buffer.toString('utf-8').indexOf('\uFFFD');
+  const where = at === -1 ? '' : ` (first invalid character at position ${at})`;
+  throw new InputError(
+    `${source} is not valid UTF-8${where}. Transmute reads text as UTF-8, so every non-ASCII ` +
+    'character would be replaced with U+FFFD and the result written out as if it were correct. ' +
+    'Convert the input to UTF-8 first, for example with: iconv -f iso-8859-1 -t utf-8 FILE > FILE-utf8'
+  );
+}
+
 function parsePipeline(raw) {
   let parsed;
   try {
@@ -146,26 +317,36 @@ function parsePipeline(raw) {
   } catch (err) {
     throw new UsageError(`--pipe is not valid JSON: ${err.message}`);
   }
-  if (!Array.isArray(parsed)) {
-    throw new UsageError('--pipe must be a JSON array of steps, e.g. \'[{"op":"head","n":5}]\'');
+  // The rules for what a step needs live in the engine, so the browser
+  // playground refuses the same pipelines this does. Here they run before the
+  // input is even read: a step that cannot do its job is the user's own typo,
+  // and it should not wait behind an unreadable file.
+  try {
+    return validatePipeline(parsed);
+  } catch (err) {
+    throw new UsageError(err.message);
   }
-  for (const step of parsed) {
-    if (!step || typeof step !== 'object' || Array.isArray(step)) {
-      throw new UsageError('--pipe steps must be objects with an "op" key');
-    }
-    if (!operations[step.op]) {
-      throw new UsageError(`Unknown operation: ${step.op} (see \`transmute --help\`)`);
-    }
-  }
-  return parsed;
 }
 
-function showPreview(text, format) {
+function showPreview(text, format, delimiter) {
   const { serializers } = require('./engine');
-  const result = run(text, format, []);
+  // The preview is the same run the user would get, so it has to read with the
+  // same delimiter. It used to call `run` without the flag, which made
+  // `--delimiter` validated, accepted and thrown away whenever no `--output`
+  // was given: the same command showed three columns in the preview and one in
+  // the real export.
+  const result = run(text, format, [], 'table', { delimiter });
   if (result.error) {
     console.error(`Error: ${result.error}`);
     process.exit(EXIT.transform);
+  }
+  // The preview is the run most users see and it kept none of the warnings:
+  // `transmute ragged.csv` with no flags showed the recovered `column4` and
+  // said nothing about the row it came from, while the same file with
+  // `--output json` named it. Every warning the tool has written since T14 died
+  // here, on the default path. stderr again, so the box on stdout stays data.
+  for (const warning of result.warnings) {
+    console.error(`Warning: ${warning}`);
   }
 
   console.log('\n╔════════════════════════════════════╗');
@@ -181,14 +362,18 @@ function showPreview(text, format) {
   console.log('  --format json|csv|yaml|xml (input format)');
   console.log('  --output json|csv|yaml|xml|table|sql (output format)');
   console.log('  --out <file> (write the output to a file instead of stdout)');
+  console.log('  --delimiter ,|;|tab   (CSV delimiter; detected from the header line when omitted)');
   console.log('  transmute users.csv --output sql --table users   # CSV to SQL INSERT statements');
+  console.log('  Every option is given once — a repeated --pipe or --output is a usage error, not a merge.');
+  console.log('  An option that cannot apply is a usage error: --out needs --output,');
+  console.log('  --table needs --output sql, and --delimiter needs CSV input.');
   console.log('');
   console.log('Examples:');
   console.log('  transmute data.json --pipe \'[{"op":"head","n":5}]\' --output csv');
   console.log('  cat data.csv | transmute --pipe \'[{"op":"count"}]\'');
   console.log('  transmute data.yaml --pipe \'[{"op":"pick","fields":["name","email"]}]\'');
   console.log('');
-  console.log('Docs: docs/cli.md — every operation with a fixture and a runnable example');
+  console.log(`Docs: ${DOCS_URL} — every operation with a fixture and a runnable example`);
   console.log('');
 }
 
@@ -208,9 +393,19 @@ function showHelp(stream = process.stdout) {
   log('  -o, --output <type>    Output format (json, csv, yaml, xml, table, sql). Default: table');
   log('      --out <file>       Write the output to <file> instead of stdout');
   log('      --table <name>     Table name for SQL output (default: my_table)');
+  log('      --delimiter <d>    CSV/TSV delimiter: , ; tab or | (default: detected from the header line)');
   log('  -v, --version          Print the version');
   log('  -h, --help             Show this help');
   log();
+  log('Give each option once. Repeating one is a usage error: two --pipe flags');
+  log('are not two sets of steps, so put every step in a single --pipe.');
+  log('');
+  log('An option that cannot do its job is a usage error as well:');
+  log('  --out needs --output, or the output is a preview and no file is written');
+  log('  --table needs --output sql, the only output that has a table name');
+  log('  --delimiter needs CSV input, since only the reader uses it');
+  log('Each of the three used to be accepted, and dropped without a word.');
+  log('');
   log('Pipeline operations:');
   log('  filter   {"op":"filter","expr":"item.age > 18"}');
   log('  map      {"op":"map","expr":"({...item, active: true})"}');
@@ -229,7 +424,10 @@ function showHelp(stream = process.stdout) {
   log();
   log('Exit codes:');
   log('  0  success                 2  usage error (bad flag or pipeline)');
-  log('  1  transformation failed   3  input error (missing or unparseable input)');
+  log('  1  transformation failed   3  input error (missing, unparseable, not UTF-8)');
+  log('     exit 1 also covers --output holding something that format cannot');
+  log('     represent: XML 1.0 Char, YAML c-printable, a NUL or a lone surrogate');
+  log('     anywhere, or a number that is not finite in any format (1/0, 1e400).');
   log();
   log('Examples:');
   log('  transmute data.json -p \'[{"op":"filter","expr":"item.status === \\"active\\""}]\'');
@@ -238,14 +436,19 @@ function showHelp(stream = process.stdout) {
   log();
 }
 
+/**
+ * stdin arrives as bytes, not as text. Decoding here with `setEncoding('utf-8')`
+ * is what made a piped latin-1 file come out mangled exactly like a piped file:
+ * the encoding is checked in decodeText, where a file is checked too.
+ */
 function readStdin() {
   return new Promise((resolve) => {
-    if (process.stdin.isTTY) return resolve('');
-    let data = '';
-    process.stdin.setEncoding('utf-8');
-    process.stdin.on('data', chunk => data += chunk);
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', () => resolve(data));
+    if (process.stdin.isTTY) return resolve(Buffer.alloc(0));
+    const chunks = [];
+    const done = () => resolve(Buffer.concat(chunks));
+    process.stdin.on('data', chunk => chunks.push(chunk));
+    process.stdin.on('end', done);
+    process.stdin.on('error', done);
   });
 }
 

@@ -27,7 +27,7 @@ export const FIXTURES = {
   xml: join(here, 'users.xml')
 };
 
-export const fixtureText = (format) => readFileSync(FIXTURES[format], 'utf-8');
+export const fixtureText = (format, file) => readFileSync(file || FIXTURES[format], 'utf-8');
 
 /** A 50-record JSON payload, used to prove the free CLI has no run limits. */
 export function bigDataset(records = 50) {
@@ -171,6 +171,10 @@ export const CASES = [
       ]
     }],
     outputFormat: 'table',
+    // `keep: "left"` is the documented way to keep a row with no match, and
+    // the row that has no match has no `tier` field. A flat format writes that
+    // as an empty cell, so the run says which column and in how many rows.
+    warns: true,
     command: `transmute test/fixtures/orders.json --pipe '[{"op":"join","on":"customer","keep":"left","with":[{"customer":"alice","tier":"gold"},{"customer":"bob","tier":"silver"}]}]' --output table`
   },
   {
@@ -181,6 +185,15 @@ export const CASES = [
     pipeline: [],
     outputFormat: 'json',
     command: `transmute test/fixtures/people.csv --output json`
+  },
+  {
+    name: 'nested-values-to-csv',
+    docOutput: '1,alice,paid,"[{""sku"":""a-1"",""qty"":2}]",120',
+    op: null,
+    fixture: 'json',
+    pipeline: [],
+    outputFormat: 'csv',
+    command: `transmute test/fixtures/orders.json --output csv`
   },
   {
     name: 'yaml-to-csv',
@@ -236,5 +249,78 @@ export const CASES = [
     pipeline: [{ op: 'filter', expr: 'item.status === "paid"' }, { op: 'pick', fields: ['id', 'total'] }],
     outputFormat: 'csv',
     command: `cat test/fixtures/orders.json | transmute --pipe '[{"op":"filter","expr":"item.status === \\"paid\\""},{"op":"pick","fields":["id","total"]}]' --output csv`
+  },
+  {
+    name: 'csv-semicolon',
+    docOutput: '"navn": "Mette",',
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'european.csv'),
+    pipeline: [{ op: 'sort', by: 'antal', dir: 'desc' }],
+    outputFormat: 'json',
+    command: `transmute test/fixtures/european.csv --pipe '[{"op":"sort","by":"antal","dir":"desc"}]' --output json`
+  },
+  {
+    name: 'csv-extra-fields',
+    docOutput: '"column4": "follow-up"',
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'ragged.csv'),
+    pipeline: [],
+    outputFormat: 'json',
+    // The run succeeds and stdout is exactly the documented JSON; the parser
+    // also prints one warning on stderr, which is part of the contract.
+    warns: true,
+    command: `transmute test/fixtures/ragged.csv --output json`
+  },
+  {
+    name: 'csv-quoting',
+    docOutput: 'a-1,"semi; colon"',
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'tricky.csv'),
+    pipeline: [],
+    outputFormat: 'csv',
+    // A value holding any delimiter the reader recognises, plus escaped quotes,
+    // is written quoted — so the output survives being read back.
+    command: `transmute test/fixtures/tricky.csv --output csv`
+  },
+  {
+    name: 'xml-entities',
+    docOutput: '"name": "Tom & Jerry"',
+    op: null,
+    fixture: 'xml',
+    file: join(here, 'entities.xml'),
+    pipeline: [],
+    outputFormat: 'json',
+    // The five predefined entities and numeric references are decoded on the
+    // way in, so the escape never compounds across a round trip.
+    command: `transmute test/fixtures/entities.xml --output json`
+  },
+  {
+    name: 'yaml-nested',
+    docOutput: '"rpm": 600',
+    op: null,
+    fixture: 'yaml',
+    file: join(here, 'nested.yaml'),
+    pipeline: [],
+    outputFormat: 'json',
+    // Three levels of mappings and sequences, a block scalar and a quoted
+    // string. A line-for-line reader kept only the two top-level lists, so
+    // the whole `service` block was missing from a run that exited 0.
+    command: `transmute test/fixtures/nested.yaml --output json`
+  },
+  {
+    name: 'sql-empty-string',
+    docOutput: "('Alice', '', '0074', 30)",
+    op: null,
+    fixture: 'csv',
+    file: join(here, 'sql-empty.csv'),
+    pipeline: [],
+    outputFormat: 'sql',
+    // A blank CSV field and a postal code that starts with a zero. The writer
+    // used to turn the blank field into NULL and the 0074 into 74, so both
+    // values were wrong in the database after a clean, silent import.
+    command: `transmute test/fixtures/sql-empty.csv --output sql`
   }
 ];

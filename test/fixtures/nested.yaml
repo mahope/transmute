@@ -1,0 +1,28 @@
+# A config file, the shape every hand-written one has: mappings, sequences
+# and a block scalar, nested three levels deep. The line-for-line reader this
+# replaces dropped everything under an indented block and still exited 0.
+service:
+  name: billing
+  replicas: 3
+  labels:
+    team: payments
+    tier: critical
+  routes:
+    - path: /invoices
+      methods: [GET, POST]
+      limits:
+        rpm: 600
+    - path: /refunds
+      methods: [POST]
+      limits:
+        rpm: 60
+  changelog: |
+    2026-09-01 first release
+    2026-09-20 added refunds
+  note: "quoted: with a colon # and a hash"
+tags:
+- fast
+- audited
+feature_flags:
+  new_pricing: false
+  beta: null

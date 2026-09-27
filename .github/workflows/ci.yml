@@ -15,11 +15,22 @@ jobs:
       matrix:
         node: [22, 24]
     steps:
+      # fetch-depth: 0, not the default of 1: the release checks read tags and the
+      # committed version, and a depth-1 clone reports neither — it reported this
+      # repo's version as introduced by HEAD and its three tags as none, so the
+      # checks would have been green while measuring nothing. tools/release_check.mjs
+      # fails loudly on a shallow clone rather than skipping, so this line and that
+      # rule stand and fall together. publish.yml already checked out with depth 0.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
       - run: npm ci
       - run: npm test
+      # The offline half of the version check is already in npm test. This adds the
+      # one rule that needs the registry, which npm test must not depend on.
+      - run: node tools/release_check.mjs --published
       - run: npm pack --dry-run

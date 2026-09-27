@@ -14,6 +14,7 @@
  * Mads' decision and not the loop's.
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 /** The contract of record. Changing a value here requires Mads' decision. */
 const LOCKED = {
   product_key: 'transmute-desktop',
+  product_name: 'Transmute Desktop Pro',
   amount: 19,
   currency: 'USD',
   billing: 'one_time',
@@ -30,16 +32,51 @@ const LOCKED = {
   licence_cache_days: 7,
   order_email: 'orders@mahoje.dk',
   donation_link: 'https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c',
+  site_url: 'https://transmute.run',
 };
 
 const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, en: 1, to: 2, tre: 3, fire: 4, fem: 5, seks: 6, syv: 7, otte: 8, ni: 9, ti: 10 };
 const COUNT = `(?:\\d+|${Object.keys(NUMBER_WORDS).join('|')})`;
 const SECRET_PATTERN = /\b(?:sk|rk|pk|whsec)_[A-Za-z0-9]{8,}|\bBearer\s+[A-Za-z0-9._-]{12,}/;
-const RECURRING_CLAIM = /\b(?:per month|monthly|per year|yearly|annually|subscription fee|per month or year)\b|\b(?:pr\. måned|månedlig|per år|årlig)\b/i;
+// \b is ASCII-only in JavaScript, so it fires between "d" and "år" in "dårlig" and a Danish
+// page saying a licence server had "en dårlig eftermiddag" would be read as a recurring-billing
+// claim. The Danish half therefore uses explicit Unicode letter lookarounds instead.
+const WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
+const WORD_AFTER = '(?![\\p{L}\\p{N}_])';
+const RECURRING_CLAIM = new RegExp(`${WORD_BEFORE}(?:per month|monthly|per year|yearly|annually|subscription fee|per month or year)${WORD_AFTER}|${WORD_BEFORE}(?:pr\\. måned|månedlig|per år|årlig)${WORD_AFTER}`, 'iu');
 /** Anything that promises a desktop build this repository does not publish. */
 const PUBLIC_DOWNLOAD_CLAIM = /github\.com\/mahope\/transmute\/releases/i;
 const DESKTOP_LABEL = /desktop[-\s]?app|desktopapp|macos,? windows/i;
 const PRIVATE_REPO = /github\.com\/mahope\/(?:transmute-desktop|paid-products)|mahope\/(?:transmute-desktop|paid-products)\b/i;
+
+/** The files that write the public pages, where a stale claim reaches everyone. */
+const GENERATORS = ['tools/site_chrome.py', 'tools/make_og.py'];
+
+/**
+ * The tools that name the site's own address: the generator that writes the
+ * canonical into every page, the checker that decides whether the site is
+ * deployed, and the ones that fetch the live site. None of them is read by the
+ * checks below, so before this list was bound to the contract a domain change
+ * left the gate green.
+ *
+ * `layout_check.py` was on this list and is not: measuring it showed no code of
+ * its names the site — it serves site/ from an ephemeral 127.0.0.1 port and takes
+ * `--base` from the caller — so a rule it cannot fail is a rule that only costs a
+ * reader. Its usage line did name the address in prose and now says
+ * `[--base URL]`, like the others. The selftests stay out for the other reason:
+ * their fixtures pin the address on purpose, because a checker proved against a
+ * derived value proves nothing.
+ */
+const SITE_TOOLS = [
+  'tools/site_chrome.py',
+  'tools/make_og.py',
+  'tools/seo_check.py',
+  'tools/verify_live.py',
+  'tools/check_deploy_freshness.py',
+];
+
+/** The pages' own statements of where they live, in the attributes SEO reads. */
+const PAGE_ADDRESS = /(?:rel="canonical"\s+href|property="og:url"\s+content)="([^"]+)"/g;
 
 const failures = [];
 let checks = 0;
@@ -59,6 +96,15 @@ function assert(condition, message) {
   }
 }
 
+/** The SPDX id a `license` field names, so it can be looked for in LICENSE. */
+function licenseId(value) {
+  return String(value ?? '').replace(/^\(|\)$/g, '').split(/\s+OR\s+/)[0].trim();
+}
+
+function escapeFor(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function collect(dir, extensions) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -74,6 +120,29 @@ function collect(dir, extensions) {
 
 function label(text) {
   return relative(root, text).split('\\').join('/');
+}
+
+/**
+ * The files that are both committed and covered by a .gitignore rule, which is
+ * the one state neither tool wants: ignored files are meant to stay out of the
+ * index, and indexed files are meant to be readable. `git ls-files -c -i` asks
+ * git for the intersection directly rather than asking this script to reimplement
+ * gitignore. Returns null outside a repository, where there is no index to read.
+ */
+function committedAndIgnored() {
+  try {
+    return execFileSync('git', ['-C', root, 'ls-files', '-c', '-i', '--exclude-standard'], {
+      encoding: 'utf8',
+      // git writes its own complaint to stderr when there is no repository, and
+      // `npm test` runs this script in a temporary directory that has none.
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return null;
+  }
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -213,6 +282,271 @@ check('npm, the CLI and the site agree on the version', () => {
   assert(contractVersion === null || contractVersion === version, `tools/product-contract.json pins version ${contractVersion}, package.json is ${version}`);
 });
 
+check("the contract's claims about this repository are what the committed code says", () => {
+  // Measured 2026-09-26, on this repository, before these rules existed.
+  //
+  //   1. Rewriting `name` in package.json *and* package-lock.json — so the tree
+  //      agreed with itself — left all 174 checks green while thirty public files
+  //      still told users `npm i -g @mahope/transmute`. The package a stranger
+  //      installs is the one claim here nobody had bound to the code.
+  //   2. `tools/product-contract.json`'s own `cli` block was read by no rule at
+  //      all: a wrong package name, `GPL-3.0` as the licence and a foreign
+  //      repository URL, all three wrong together, produced zero failures.
+  //
+  // Same failure form as T52's version lie: the lock compared claims with claims,
+  // so a claim that drifts together with the thing it describes cannot be seen.
+  // These are the rules that cannot be satisfied by agreeing with yourself.
+  const cli = contract.cli ?? {};
+  for (const key of ['package', 'license', 'repository']) {
+    assert(key in cli, `contract.cli.${key} is gone, so the contract of record no longer states what this repository is`);
+  }
+
+  assert(cli.package === packageJson.name,
+    `contract.cli.package is ${JSON.stringify(cli.package)}, the published package.json is ${JSON.stringify(packageJson.name)}`);
+  assert(cli.license === packageJson.license,
+    `contract.cli.license is ${JSON.stringify(cli.license)}, package.json declares ${JSON.stringify(packageJson.license)}`);
+
+  const licenceFile = readFileSync(join(root, 'LICENSE'), 'utf8').split('\n', 1)[0];
+  assert(new RegExp(`\\b${escapeFor(licenseId(packageJson.license))}\\b`).test(licenceFile),
+    `package.json declares the licence ${JSON.stringify(licenseId(packageJson.license))}, but LICENSE starts "${licenceFile}"`);
+
+  const repository = String(packageJson.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  assert(cli.repository === repository,
+    `contract.cli.repository is ${JSON.stringify(cli.repository)}, package.json's repository is ${JSON.stringify(repository)}`);
+});
+
+check('every public file quotes the package npm actually publishes', () => {
+  // The measured failure above: package.json and the lockfile renamed together,
+  // thirty install instructions left behind, gate green. The install line is the
+  // promise, and it is only true if it names the committed package.
+  const published = packageJson.name;
+  for (const file of claimed) {
+    // Any scope, not just ours: a package renamed to a scope we do not own is
+    // exactly the case this rule exists for. The trailing strip keeps a
+    // sentence-ending dot in "…/package/@mahope/transmute." out of the name.
+    for (const [, raw] of readFileSync(file, 'utf8').matchAll(/(@[a-z][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)/gi)) {
+      const name = raw.replace(/[._-]+$/, '');
+      assert(name === published,
+        `${label(file)} tells readers to install ${name}, but npm serves this repository as ${published}`);
+    }
+  }
+});
+
+check('the site generators take the package and the repository from package.json', () => {
+  // Measured 2026-09-26, on this repository, before this rule: pointing the
+  // generator's three npm links at a package that does not exist left all 178
+  // checks green. The rule above reads the *rendered* pages, and the generator is
+  // what writes them, so a stale template is invisible until somebody
+  // regenerates the site — and then one stale literal reaches every page, the
+  // nav, the footer and the JSON-LD at once. In make_og.py the same literal is
+  // drawn into a PNG, which no text rule can read at all.
+  const repository = String(packageJson.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  for (const file of GENERATORS) {
+    const path = join(root, file);
+    const source = readFileSync(path, 'utf8');
+    assert(/package\.json/.test(source),
+      `${label(path)} must read package.json, so the package name has one source and not two`);
+    for (const [, raw] of source.matchAll(/(@[a-z][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)/gi)) {
+      const name = raw.replace(/[._-]+$/, '');
+      assert(name === packageJson.name,
+        `${label(path)} installs ${name}, but npm serves this repository as ${packageJson.name}; derive it from package.json`);
+    }
+    for (const [raw] of source.matchAll(/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+/g)) {
+      assert(raw === repository,
+        `${label(path)} points at ${raw}, but package.json's repository is ${repository}`);
+    }
+  }
+});
+
+check('every page states the address the contract locks, and no other', () => {
+  // Measured 2026-09-27, on this repository, before this rule. Pointing the
+  // canonical of one page at a domain that does not exist left all 180 checks
+  // green. The site's own address is the one claim here that no rule could
+  // contradict: nineteen pages state it, a sitemap lists it, and a canonical
+  // pointing somewhere else is the failure a search engine acts on — silently,
+  // and long after the commit that caused it.
+  const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
+  assert(/^https:\/\/[^\s/]+$/.test(locked),
+    `contract.site_url is ${JSON.stringify(contract.site_url)}, which is not a bare https origin`);
+
+  for (const file of collect(join(root, 'site'), ['.html', '.txt', '.xml'])) {
+    for (const [, url] of readFileSync(file, 'utf8').matchAll(PAGE_ADDRESS)) {
+      assert(url.startsWith(`${locked}/`),
+        `${label(file)} states its address as ${url}, but the contract locks the site to ${locked}`);
+    }
+    // A sitemap is a list of addresses, written as <loc>, and it is what a
+    // crawler reads first — so a page that drifts is still submitted correctly.
+    for (const [, url] of readFileSync(file, 'utf8').matchAll(/<loc>([^<]+)<\/loc>/g)) {
+      assert(url.startsWith(`${locked}/`),
+        `${label(file)} lists ${url}, but the contract locks the site to ${locked}`);
+    }
+  }
+});
+
+check('the tools that name the site take the address from the contract', () => {
+  // The other half of the measurement above: pointing all five checkers and the
+  // generator at a domain that does not exist was equally invisible, because the
+  // rules read the rendered pages, not the code that fetches and writes them.
+  // `check_deploy_freshness.py` is the sharp one — it decides whether the site is
+  // deployed, so a wrong address there reports a verdict about a site nobody
+  // serves, and does it every run without saying so. In make_og.py the address
+  // is drawn into a PNG, which no text rule can read at all.
+  const locked = String(contract.site_url ?? '');
+  for (const file of SITE_TOOLS) {
+    const path = join(root, file);
+    const source = readFileSync(path, 'utf8');
+    assert(!source.includes(locked),
+      `${label(path)} writes the site address ${locked} out in full; take it from tools/product-contract.json, so the address has one source and not two`);
+    assert(/product-contract\.json/.test(source),
+      `${label(path)} must read tools/product-contract.json, or deleting the address above leaves no source at all`);
+  }
+});
+
+check('every address the product hands a user is absolute', () => {
+  // Measured 2026-09-27, on the packed tarball of this repository, before this
+  // rule. `transmute people.csv` — the default path, and the first command the
+  // README shows — ended in `Docs: docs/cli.md`, and the tarball is five files
+  // with no docs directory among them. Every user who installed the CLI was
+  // handed a path to a file that was not on their machine, and a relative path
+  // resolves against the directory they happened to be standing in, so it never
+  // did. The same link in the README works on GitHub and 404s on npmjs.com,
+  // which renders that README against the package URL rather than the tree.
+  //
+  // The address is derived from the `repository` field the package already
+  // carries, so there is no second constant to keep in step: `cli.repository` is
+  // locked above and read by its own rules, and a rule here checks that the
+  // surfaces state the address that field derives.
+  const repo = String(contract.cli?.repository ?? '').replace(/\/+$/, '');
+  assert(/^https:\/\/github\.com\/[^\s/]+\/[^\s/]+$/.test(repo),
+    `contract.cli.repository is ${JSON.stringify(contract.cli?.repository)}, which is not a bare https GitHub repository`);
+  const docs = `${repo}/blob/main/docs/cli.md`;
+
+  // A markdown link with a relative target is the exact shape of the npm 404:
+  // correct in a clone, dead everywhere the README is actually read. Prose that
+  // merely names the file is left alone — a contributor in a cloned tree can
+  // find docs/cli.md, and that sentence is telling them so.
+  for (const [, , target] of readFileSync(join(root, 'README.md'), 'utf8')
+    .matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+    assert(/^(?:https?:|#|mailto:)/.test(target),
+      `README.md links to the relative path ${target}, which resolves against the directory the reader is in — npmjs.com renders this README and that link 404s; use ${docs}`);
+  }
+
+  // The CLI is shipped code, so it may not restate the address either: it derives
+  // it, and the derivation has to survive someone deleting the source it reads.
+  // The shape is matched rather than the word, because a comment that explains
+  // the derivation mentions `repository` too — and that satisfied a substring
+  // test while the binding it described had been deleted.
+  const cli = readFileSync(join(root, 'src', 'cli.js'), 'utf8');
+  const binds = new RegExp(`const\\s*\\{[^}]*\\brepository\\b[^}]*\\}\\s*=\\s*require\\('\\.\\./package\\.json'\\)`);
+  assert(binds.test(cli),
+    'src/cli.js must bind `repository` from package.json, or deleting that field leaves no source for the docs address at all');
+  assert(!cli.includes(docs),
+    `src/cli.js writes the docs address ${docs} out in full; derive it from the repository field in package.json, so the address has one source and not two`);
+  // And the derivation has to produce the address the other surfaces state, or
+  // the two halves drift apart without either one noticing.
+  assert(docs.endsWith('/docs/cli.md') && new RegExp(`DOCS_URL\\s*=[^;]*repository`).test(cli),
+    `src/cli.js must derive the docs address from package.json's repository field, which gives ${docs}`);
+  // Deriving it is not the same as printing it. A footer that went back to the
+  // bare path while the derivation sat unused above it kept every one of these
+  // assertions true and reintroduced the exact bug this rule was written for, so
+  // the line the user reads has to be built from the derived value itself.
+  const footer = cli.match(/console\.log\((.*Docs:.*)\);/);
+  assert(footer && /\$\{DOCS_URL\}/.test(footer[1]),
+    `the preview footer in src/cli.js must print the derived address as \`Docs: \${DOCS_URL}\`, so the path a user follows is the one that exists; use ${docs}`);
+  assert(!/href="docs\/cli\.md"/.test(cli), 'src/cli.js links the relative path docs/cli.md, which is dead for anyone outside a clone');
+
+  // The browser cheat sheet already linked the one address that works, and it is
+  // held to it here so the three surfaces cannot disagree.
+  const cheatsheet = join(root, 'site', 'cheatsheet', 'index.html');
+  if (existsSync(cheatsheet)) {
+    const source = readFileSync(cheatsheet, 'utf8');
+    assert(source.includes(docs),
+      `site/cheatsheet/index.html does not link the full reference at ${docs}`);
+    assert(!/href="docs\/cli\.md"/.test(source),
+      'site/cheatsheet/index.html links the relative path docs/cli.md, which is dead on the site; use the absolute address');
+  }
+});
+
+check('the paid product is named the way the contract locks it', () => {
+  // product_name was in the contract of record and no rule could contradict it, so
+  // a page was free to invent "Transmute Desktop Premium" and sell a tier that
+  // does not exist. Only a capitalised word after the product is a tier claim;
+  // "Transmute Desktop is the paid app" is prose, not a second product.
+  const locked = pro.product_name;
+  for (const file of claimed) {
+    for (const [, raw] of readFileSync(file, 'utf8').matchAll(/Transmute Desktop\s+([A-Z][\w.+-]*)/g)) {
+      const tier = raw.replace(/[.,:;!?]+$/, '');
+      assert(locked.endsWith(` ${tier}`),
+        `${label(file)} calls the paid product "Transmute Desktop ${tier}", but the contract locks it as "${locked}"`);
+    }
+  }
+});
+
+check('every claim in the contract is one a rule can contradict', () => {
+  // A claim nothing reads is a claim nothing can catch, and this file had three of
+  // them. So the contract may not grow a key that no rule below is able to
+  // contradict: add it to LOCKED (Mads' Stripe contract) with a rule that reads
+  // it, or derive it from committed code under `cli`.
+
+  const containers = new Set(['cli', 'desktop_pro']);
+  const read = new Set([
+    ...Object.keys(LOCKED),
+    'free_tier_transformations_per_launch',
+    'source_repository_private',
+  ]);
+  for (const [key, value] of Object.entries(contract)) {
+    if (containers.has(key)) {
+      assert(value && typeof value === 'object' && !Array.isArray(value), `contract.${key} must be an object of claims`);
+      continue;
+    }
+    if (key === '$comment' || key === 'allowed_desktop_link_targets') {
+      continue;
+    }
+    assert(read.has(key), `contract.${key} is a claim no rule can contradict: add it to LOCKED with a rule that reads it, or derive it from committed code under cli`);
+  }
+  for (const key of Object.keys(pro)) {
+    assert(read.has(key), `contract.desktop_pro.${key} is a claim no rule can contradict: add it to LOCKED with a rule that reads it, or derive it from committed code under cli`);
+  }
+});
+
+check('only a version that describes the code and sits on the default branch can be published', () => {
+  // Three of these were measured missing on 2026-09-26: the release script
+  // tagged a feature branch, `npm run release -- <committed version>` died in an
+  // npm error, and nothing asked whether the version still described src/ — which
+  // is how 39 commits of fixes reached no user behind 0.2.1. See
+  // tools/release_guard.mjs and test/release.test.mjs.
+  const script = readFileSync(join(root, 'scripts', 'release.mjs'), 'utf8');
+  assert(script.includes('inspectRelease'), 'scripts/release.mjs no longer asks tools/release_guard.mjs whether the release may happen, so the three guards are gone');
+
+  const publish = readFileSync(join(root, '.github', 'workflows', 'publish.yml'), 'utf8');
+  assert(/merge-base --is-ancestor/.test(publish), 'publish.yml publishes any v* tag whose number matches package.json, so a tag on an unmerged branch reaches npm and cannot be taken back');
+  assert(/fetch-depth:\s*0/.test(publish), 'publish.yml checks out a shallow clone, which cannot answer whether the tagged commit is on the default branch');
+
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert(readme.includes('npm run check:release'), 'README.md no longer mentions npm run check:release, so the drift report has no documented place in the checklist');
+});
+
+check('the Danish support page says what the English one says', () => {
+  const en = readFileSync(join(root, 'site', 'support', 'index.html'), 'utf8');
+  const da = readFileSync(join(root, 'site', 'da', 'support', 'index.html'), 'utf8');
+  const sections = text => [...text.matchAll(/<h[23] id="([^"]+)"/g)].map(m => m[1].length);
+  const stripe = text => [...new Set([...text.matchAll(/https:\/\/(?:buy|donate)\.stripe\.com\/[A-Za-z0-9]+/g)].map(m => m[0]))].sort();
+  assert(sections(da).length === sections(en).length,
+    `the Danish support page has ${sections(da).length} sections, the English one has ${sections(en).length}: a section must be translated, not dropped`);
+  assert(stripe(da).join() === stripe(en).join(),
+    `the Danish support page links ${stripe(da).join(', ')}, the English one links ${stripe(en).join(', ')}: both languages must sell and donate through the same links`);
+  const machines = text => [...new Set([...text.matchAll(new RegExp(`\\b(?:${COUNT}|\\d+)\\s+(?:machines|maskiner)`, 'gi'))]
+    .map(m => NUMBER_WORDS[m[0].split(/\s+/)[0].toLowerCase()] ?? Number(m[0].split(/\s+/)[0])))].sort();
+  assert(machines(da).join() === machines(en).join() && machines(en).length > 0,
+    `the Danish support page quotes the machine limit as ${machines(da).join(', ') || '(never)'}, the English one as ${machines(en).join(', ') || '(never)'}: both must state the same limit`);
+  const words = text => text.replace(/<(script|style)[\s\S]*?<\/\1>/g, ' ').replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+  assert(words(da) >= Math.round(words(en) * 0.6),
+    `the Danish support page has ${words(da)} words against ${words(en)} in the English one, so it reads as a stub rather than a translation`);
+  for (const page of [['site/support/index.html', en], ['site/da/support/index.html', da]]) {
+    assert(page[1].includes(`<link rel="alternate" hreflang="${page[1] === da ? 'en' : 'da'}"`), `${page[0]} has no hreflang link to its translated counterpart`);
+  }
+});
+
 check('the desktop app is not built or published from this repository', () => {
   for (const path of ['desktop', 'src-tauri', 'Cargo.toml', 'Cargo.lock', 'tauri.conf.json']) {
     assert(!existsSync(join(root, path)), `${path} is back in the public repository; the desktop app is built from the private repository`);
@@ -228,6 +562,32 @@ check('the desktop app is not built or published from this repository', () => {
     assert(!entry.includes('desktop') && !entry.includes('tauri'), `package.json would ship ${entry}; paid code does not belong in the public package`);
   }
   assert(published.includes('src'), 'the CLI is the published package');
+});
+
+check('no committed file is one the repository ignores', () => {
+  // The measurement that wrote this rule, on this repository on 2026-09-27
+  // before it existed: seven tools/__pycache__/*.cpython-314.pyc files had been
+  // committed on 8/9, a month before .gitignore learned to ignore __pycache__/.
+  // A .gitignore rule only governs files git is not already tracking, so adding
+  // it changed nothing for them and they stayed. Nothing can load them — the
+  // magic number in all seven is 3627 (CPython 3.14), while the interpreter this
+  // repository installs is 3571 (3.13) — and four of the seven are two days
+  // older than the .py file they were compiled from, so they are not even a
+  // stale copy of the code next to them.
+  const committed = committedAndIgnored();
+  if (committed !== null) {
+    assert(
+      committed.length === 0,
+      `${committed.length} file(s) are committed although .gitignore excludes them: ${committed.join(', ')}. ` +
+        'gitignore does not untrack a file that is already in the index, and an unreadable build artefact that follows every diff of its directory is worse than no file — run `git rm --cached` on them.',
+    );
+  }
+  const gitignore = existsSync(join(root, '.gitignore')) ? readFileSync(join(root, '.gitignore'), 'utf8') : null;
+  assert(gitignore !== null, '.gitignore is missing, so build output and Python bytecode can be committed by the next `git add -A`');
+  assert(
+    /^__pycache__\/$/m.test(gitignore),
+    '.gitignore does not ignore __pycache__/, so every run of the Python site tools leaves bytecode behind that the next `git add -A` can pick up',
+  );
 });
 
 check('the checked-in lockfile is present, honest and reproducible', () => {

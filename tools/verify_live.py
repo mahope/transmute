@@ -6,7 +6,7 @@ BugBottle panel at 360/768/1280 px, confirms the playground runs the engine in
 the browser, sends one real BugBottle report and, when BB_ADMIN_KEY is set,
 confirms it landed in the inbox at mahope.tools. Never prints the key.
 
-    BB_ADMIN_KEY=... python tools/verify_live.py [--base https://transmute.run] [--out DIR] [--no-report]
+    BB_ADMIN_KEY=... python tools/verify_live.py [--base URL] [--out DIR] [--no-report]
 """
 from __future__ import annotations
 
@@ -23,12 +23,15 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 WIDTHS = [360, 768, 1280]
 INBOX = "https://mahope.tools/api/bugreport"
-
+# The address of the site under test is a claim of record, not a default that may
+# drift: it is the site a reader is sent to, and it is the site the report is
+# filed against.
+SITE = json.loads((ROOT / "tools" / "product-contract.json").read_text(encoding="utf-8"))["site_url"].rstrip("/")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="https://transmute.run")
+    ap.add_argument("--base", default=SITE)
     ap.add_argument("--out", default=str(ROOT / "tools" / "shots" / "live"))
     ap.add_argument("--no-report", action="store_true")
     args = ap.parse_args()
@@ -36,7 +39,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     problems = 0
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    message = f"Test fra Claude transmute.run {stamp}"
+    message = f"Test fra Claude {SITE} {stamp}"
 
     with sync_playwright() as p:
         browser = p.chromium.launch()

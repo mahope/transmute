@@ -9,6 +9,7 @@ Uses IBM Plex Sans if it is installed, otherwise Segoe UI, otherwise Arial.
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 
@@ -72,7 +73,7 @@ def render(title: str, kicker: str, footer: str, out: Path) -> None:
     d.rectangle((0, 0, W, 96), fill=(30, 34, 38))
     mark(d, margin, 30, 36)
     d.text((margin + 52, 30), "transmute", font=font("semibold", 30), fill=FG)
-    d.text((W - margin, 34), "transmute.run", font=font("mono", 24), fill=DIM, anchor="ra")
+    d.text((W - margin, 34), host(), font=font("mono", 24), fill=DIM, anchor="ra")
 
     # Kicker line ("$ guide" style) and title
     y = 150
@@ -100,6 +101,27 @@ def render(title: str, kicker: str, footer: str, out: Path) -> None:
     print(out.relative_to(SITE).as_posix(), out.stat().st_size, "bytes")
 
 
+def install() -> str:
+    """The command that installs this repository, read from the package npm serves.
+
+    Written out here it would be a second source for a claim, and this one is
+    baked into pixels: no text rule can read a PNG, so a renamed package would
+    keep telling readers to install a package that no longer exists.
+    """
+    return f"npm i -g {json.loads((ROOT / 'package.json').read_text(encoding='utf-8'))['name']}"
+
+
+def host() -> str:
+    """The site's own address, read from the contract, drawn into pixels.
+
+    The same reasoning as install(), and the same limit: once a claim is a
+    picture, no grep and no diff can contradict it, so the only place to fix it
+    is the line that draws it.
+    """
+    url = json.loads((ROOT / 'tools' / 'product-contract.json').read_text(encoding='utf-8'))['site_url']
+    return url.removeprefix('https://').rstrip('/')
+
+
 def h1(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     m = re.search(r"<h1>(.*?)</h1>", text, flags=re.S)
@@ -108,10 +130,10 @@ def h1(path: Path) -> str:
 
 def main() -> None:
     render("Convert JSON, CSV, YAML, XML and SQL from the terminal. Nothing leaves your machine.",
-           "npm i -g @mahope/transmute", "Offline CLI and desktop app. MIT licensed. Made by Mads Holst Jensen, mahoje.dk",
+           install(), "Offline CLI and desktop app. MIT licensed. Made by Mads Holst Jensen, mahoje.dk",
            OUT / "home.png")
     render("Konvertér JSON, CSV, YAML, XML og SQL fra terminalen. Intet forlader din maskine.",
-           "npm i -g @mahope/transmute", "Offline CLI og desktop-app. MIT-licens. Udviklet af Mads Holst Jensen, mahoje.dk",
+           install(), "Offline CLI og desktop-app. MIT-licens. Udviklet af Mads Holst Jensen, mahoje.dk",
            OUT / "home-da.png")
     for page in sorted((SITE / "guides").glob("*/index.html")):
         slug = page.parent.name

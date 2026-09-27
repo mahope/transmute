@@ -6,7 +6,7 @@ hreflang, Open Graph, Twitter card, JSON-LD, single h1, alt texts, lang,
 viewport, icons. Exit code is the number of findings, so 0 means clean.
 
     python tools/seo_check.py                       # local files in site/
-    python tools/seo_check.py --base https://transmute.run   # fetch live pages
+    python tools/seo_check.py --base URL                    # fetch live pages
 """
 from __future__ import annotations
 
@@ -20,7 +20,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = Path(os.environ.get("TRANSMUTE_SITE") or (ROOT / "site"))
-BASE = "https://transmute.run"
+# The site has one address and the contract of record is where it is stated, so a
+# moved domain cannot leave this checking a site that nobody serves.
+BASE = json.loads((ROOT / "tools" / "product-contract.json").read_text(encoding="utf-8"))["site_url"].rstrip("/")
 
 
 def pages() -> list[tuple[str, Path]]:
@@ -95,7 +97,7 @@ def check(url: str, text: str) -> list[str]:
             f.append("missing hreflang x-default")
         if "en" not in hl:
             f.append("missing hreflang en")
-        if url in ("/", "/da/", "/privacy/", "/da/privacy/") and "da" not in hl:
+        if url in ("/", "/da/", "/privacy/", "/da/privacy/", "/support/", "/da/support/") and "da" not in hl:
             f.append("missing hreflang da")
 
     for prop in ("og:title", "og:description", "og:url", "og:type", "og:image", "og:site_name", "og:locale", "og:image:alt"):

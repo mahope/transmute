@@ -20,6 +20,7 @@
     "source_repository_private": true
   },
   "donation_link": "https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c",
+  "site_url": "https://transmute.run",
   "allowed_desktop_link_targets": [
     "/#desktop",
     "/da/#desktop",

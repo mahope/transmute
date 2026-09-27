@@ -68,6 +68,11 @@ status=0
 "$PY" "$ROOT/tools/seo_check.py" || status=1
 "$PY" "$ROOT/tools/layout_check.py" || status=1
 "$PY" "$ROOT/tools/site_gate_selftest.py" || status=1
+# Deploy-friskhedskontrollen bruges kun efter en deploy, men dens selftest er
+# offline og derfor billig. Den skal ligge her, ellers er der intet, der
+# beviser at kontrol-værktøjet stadig kan se drift, før det bruges i en
+# iteration hvor det betyder "stop med at merge".
+"$PY" "$ROOT/tools/deploy_freshness_selftest.py" || status=1
 
 if [ "$status" -eq 0 ]; then
   echo "Site-gate grøn."

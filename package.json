@@ -1,6 +1,6 @@
 {
   "name": "@mahope/transmute",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Cross-platform data transformer — JSON, CSV, YAML, XML",
   "main": "src/engine.js",
   "bin": {
@@ -12,15 +12,18 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/test.js && node test/cli.test.mjs && node test/conformance.test.mjs && node test/readme.test.mjs && node test/verify-workflows.test.mjs && node test/deploy.test.mjs && node tools/verify_workflows.mjs && node tools/verify_contract.mjs",
+    "test": "node test/test.js && node test/cli.test.mjs && node test/conformance.test.mjs && node test/readme.test.mjs && node test/verify-workflows.test.mjs && node test/release.test.mjs && node test/deploy.test.mjs && node test/version.test.mjs && node test/claims.test.mjs && node tools/verify_workflows.mjs && node tools/verify_contract.mjs && node tools/release_check.mjs",
     "check:contract": "node tools/verify_contract.mjs",
     "snapshots:cli": "node tools/update_cli_snapshots.mjs",
     "check:site": "bash tools/site_gate.sh",
+    "check:deploy": ".venv-site/bin/python tools/check_deploy_freshness.py",
     "deploy:site": "node tools/deploy_guard.mjs",
     "audit:site": ".venv-site/bin/python -m pip_audit -r tools/site-requirements.txt --require-hashes",
     "lock:site": "uv pip compile tools/site-requirements.in --python-version 3.13 --generate-hashes --no-annotate --no-header -o tools/site-requirements.txt",
     "start": "node src/cli.js",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "check:release": "node tools/release_drift.mjs",
+    "check:version": "node tools/release_check.mjs"
   },
   "keywords": [
     "json",

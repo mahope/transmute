@@ -23,6 +23,10 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history, so the step below can ask whether the tagged commit is
+          # on the default branch. A shallow clone cannot answer that.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -47,6 +51,16 @@ jobs:
             fi
           fi
           echo "RELEASE_TAG=v$version" >> "$GITHUB_ENV"
+
+      - name: Refuse to publish a tag that is not on the default branch
+        if: github.event_name == 'push'
+        run: |
+          default="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's|^origin/||')"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$default"; then
+            echo "::error::$RELEASE_TAG is not on $default. Publishing it would put a version on npm that $default does not contain, and npm versions cannot be taken back. Merge the commit into $default and push the tag from there."
+            exit 1
+          fi
+          echo "$RELEASE_TAG is on $default"
 
       - name: Publish to npm
         env:
