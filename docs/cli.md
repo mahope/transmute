@@ -1453,6 +1453,36 @@ printf 'v: |-\n    a\n    b' | transmute --format yaml --output json
 ]
 ```
 
+#### A tab is a character, not separation
+
+YAML indents and separates with spaces. A tab cannot open a line and cannot
+start a token, so a file that uses one where a token should begin is refused
+rather than read as a value:
+
+```bash
+printf 'v:\t1\n' | transmute --format yaml --output json
+```
+```
+Error: Could not parse input as yaml: YAML line 1: found character '\t' that cannot start any token — a tab is not separation in YAML, so it is only a character inside a quoted scalar, inside a comment, or on a line of a block scalar
+```
+
+The same holds inside a plain key (`a<TAB>b: 1`), after a dash (`- <TAB>a`),
+inside a flow collection (`v: {<TAB>"a": 1<TAB>}`) and behind a value
+(`v: 1<TAB>`). Three places accept one, and there it is data: inside a quoted
+scalar, inside a comment, and on a line of a block scalar, where the indentation
+has already begun:
+
+```bash
+printf 'v: |\n  a\tb\n' | transmute --format yaml --output json
+```
+```
+[
+  {
+    "v": "a\tb\n"
+  }
+]
+```
+
 #### An empty line in a folded block is a line break, and a run of them is a run
 
 `>` folds a line break between two lines that both have content into a space.

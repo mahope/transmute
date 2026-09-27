@@ -2012,7 +2012,7 @@ function parseYAML(text, opts) {
   if (extra > 0 && opts && Array.isArray(opts.warnings)) {
     opts.warnings.push(`YAML: ${extra + 1} documents in file, only the first was read`);
   }
-  if (start >= lines.length) return [];
+  if (start >= lines.length) return finishYAML(lines, []);
 
   const ctx = { warnings: (opts && opts.warnings) || null };
 
@@ -2032,7 +2032,7 @@ function parseYAML(text, opts) {
     const flow = parseYAMLFlow(stripYAMLComment(rootLine).trim(), ctx);
     const rest = lines.slice(start + 1);
     if (flow.ok && rest.every((l) => l.blank || isYAMLComment(l.content))) {
-      return Array.isArray(flow.value) ? flow.value : [flow.value];
+      return finishYAML(lines, Array.isArray(flow.value) ? flow.value : [flow.value]);
     }
   }
 
@@ -2048,13 +2048,14 @@ function parseYAML(text, opts) {
       if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content)) break;
       records.push(parseYAMLScalar(lines[i].content));
     }
-    return records;
+    return finishYAML(lines, records);
   }
 
   const parsed = parseYAMLBlock(lines, start, lines[start].indent, ctx);
-  if (Array.isArray(parsed.value)) return parsed.value;
-  if (parsed.value === null) return [];
-  return [parsed.value];
+  return finishYAML(
+    lines,
+    Array.isArray(parsed.value) ? parsed.value : parsed.value === null ? [] : [parsed.value]
+  );
 }
 
 /**
@@ -2090,15 +2091,76 @@ function tokenizeYAML(text) {
       );
     }
     const lead = /^ */.exec(line)[0];
-    const content = line.slice(lead.length);
+    const body = line.slice(lead.length);
+    const content = body.replace(/\s+$/, '');
     return {
       indent: lead.length,
-      content: content.replace(/\s+$/, ''),
-      raw: content,
+      content,
+      raw: body,
+      // A tab that is not a token start but not content either: it sits inside a
+      // plain scalar, right after a `:`, after a `- `, inside a flow collection,
+      // or in the whitespace this line's own trailing trim just ate. Where the
+      // token starts, PyYAML answers "found character '\t' that cannot start any
+      // token" and refuses the file, and this read it as a value — `v:\t1` came
+      // back as `{"v": 1}`, `a\tb: 1` as the key `a\tb`, `-\ta` as "a" and
+      // `v: {\t"a": 1\t}` as a mapping, all with exit 0 and an empty stderr.
+      //
+      // It is recorded rather than thrown, because the same character is legal
+      // in exactly two places and only the block scalar path can see them: inside
+      // a quoted scalar, and on a line of a `|` block, where the indentation has
+      // already begun and the tab is the data. `readYAMLBlockScalar` clears the
+      // mark on the lines it collected, and `finishYAML` asks the question once
+      // the document is read.
+      tabAt: yamlTabTokenStart(content, body.slice(content.length)),
       blank: content.trim() === '',
       no: i + 1
     };
   });
+}
+
+/**
+ * Where the first tab in `content` sits that a parser cannot read, or -1 when
+ * there is none: outside every quoted scalar and before any comment. The walk is
+ * `stripYAMLComment`'s, because it is the same question asked in the other
+ * direction — a `#` only starts a comment when nothing is open, and a tab inside
+ * a comment is text, exactly as it is inside a quote.
+ *
+ * `tail` is the whitespace the line's own trailing trim removed, and a tab in
+ * *it* was swallowed before any reader saw it: `v: 1<TAB>` read as `{"v": 1}`
+ * while PyYAML refuses the file, because the tab is then the next token.
+ */
+function yamlTabTokenStart(content, tail) {
+  let quote = null;
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '\t') return i;
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '#' && (i === 0 || /\s/.test(content[i - 1]))) return -1;
+  }
+  return tail && tail.includes('\t') ? content.length : -1;
+}
+
+/**
+ * The one place a tab is refused, asked after the document is read so the block
+ * scalar path has had its say about which tabs are content. Every return below
+ * `tokenizeYAML` goes through here, so a new document shape cannot start
+ * accepting a tab by being read differently.
+ */
+function finishYAML(lines, value) {
+  const bad = lines.find(l => l.tabAt >= 0);
+  if (bad) {
+    throw new SyntaxError(
+      `YAML line ${bad.no}: found character '\\t' that cannot start any token — ` +
+      `a tab is not separation in YAML, so it is only a character inside a quoted ` +
+      `scalar, inside a comment, or on a line of a block scalar`
+    );
+  }
+  return value;
 }
 
 function isYAMLComment(content) {
@@ -2260,7 +2322,13 @@ function parseYAMLSequence(lines, start, indent, ctx) {
     }
 
     // `- key: value` opens a mapping whose lines are indented to the column
-    // the key starts in, so the entry is rewritten in place as that block.
+    // the key starts in, so the entry is rewritten in place as that block. The
+    // rewrite carries the source line's tab mark with it, because the tab the
+    // rewrite removes is the very tab PyYAML refuses: `-\ta` read as "a" and
+    // `-\ta: 1` read as `{"a": 1}`, both exit 0 and an empty stderr. Dropping
+    // the mark here did not un-tab the line, it un-recorded it — which is how
+    // three of the measured files slipped through a check that had already found
+    // them. So the line remembers where it came from, not what it became.
     const childIndent = indent + 1 + lead;
     const block = blockScalarHeader(inner);
     if (block) {
@@ -2269,7 +2337,7 @@ function parseYAMLSequence(lines, start, indent, ctx) {
       i = child.end;
       continue;
     }
-    lines[i] = { indent: childIndent, content: inner, blank: false, no: lines[i].no };
+    lines[i] = { indent: childIndent, content: inner, blank: false, no: lines[i].no, tabAt: lines[i].tabAt };
     const child = parseYAMLBlock(lines, i, childIndent, ctx);
     arr.push(child.value);
     i = child.end;
@@ -2320,6 +2388,10 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
     collected.push(lines[i]);
     i++;
   }
+  // The collected lines are the block's data, so a tab on one of them is the
+  // value and not a token: `{"v":"x\n\ty"}` is written as `|-` with four spaces
+  // and a tab on the second line, and the tab is the only copy of that data.
+  for (const l of collected) l.tabAt = -1;
 
   // A block's own lines start at the block's indentation, and there are two ways
   // to say where that is. A digit on the marker says it outright — `|2` is two

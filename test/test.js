@@ -3994,6 +3994,73 @@ t('a tab inside a block scalar is content, and comes back as a tab', () => {
   assert.strictEqual(padded.data[0].v, 'a\n \nb\n', JSON.stringify(padded.data));
 });
 
+t('a tab where a token starts is refused, in every place that ate one', () => {
+  // The other half of T79's rule, and the one the measurement grew: PyYAML
+  // answers the *same* thing for a tab that cannot open a line and a tab that
+  // cannot start a token, so a file carrying one was refused there and read here
+  // as a value. Fifteen of the eighteen measured files were this, through five
+  // different places, and the message was one string.
+  const cases = [
+    ['a\tb: 1\n', 'a tab inside a plain key'],
+    ['v:\t1\n', 'a tab right after the colon'],
+    ['v: a\tb\n', 'a tab inside a plain value'],
+    ['v: 1\t\n', 'a tab the trailing trim ate'],
+    ['-\ta\n', 'a tab after the dash'],
+    ['-  \ta\n', 'a tab after two spaces and a dash'],
+    ['-\ta: 1\n', 'a tab after the dash, before an inline mapping'],
+    ['-\t\n', 'nothing but a tab after the dash'],
+    ['v: {\t"a": 1\t}\n', 'a tab inside a flow mapping'],
+    ['v: [\t1, 2]\n', 'a tab inside a flow sequence'],
+    ['v: [1\t]\n', 'a tab before a closing bracket'],
+    ['v: {\t}\n', 'a tab in an empty flow mapping'],
+    ['v: [1,\t2]\n', 'a tab after a flow comma'],
+    ['v:\t\n  1\n', 'a tab where the value should begin'],
+    ['a\tb:\t1\n', 'a tab in the key and after the colon']
+  ];
+  for (const [text, what] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${what} was read as a value: ${JSON.stringify(r.data)}`);
+    assert.match(r.error, /found character '\\t' that cannot start any token/, `${what}: ${r.error}`);
+  }
+  // The line the user has to open is the file's own.
+  assert.match(run('k: 1\nv: a\tb\n', 'yaml').error, /YAML line 2/);
+});
+
+t('a tab is legal in a quoted scalar and in a block scalar, and stays data', () => {
+  // The control table, written because the fix is a refusal: a tab the user typed
+  // on purpose must survive, and these are the places PyYAML accepts one. All
+  // eighteen were measured against PyYAML 6.0.3 through the real binary, and the
+  // twelve block-scalar shapes below are the ones a block reader can reach.
+  const legal = [
+    ['"a\tb": 1\n', [{ 'a\tb': 1 }]],
+    ["v: 'a\tb'\n", [{ v: 'a\tb' }]],
+    ['v: 1 # a\tb\n', [{ v: 1 }]],
+    ['v: {"a\tb": 1}\n', [{ v: { 'a\tb': 1 } }]],
+    ['v: ["a\tb"]\n', [{ v: ['a\tb'] }]],
+    ['v: |\n  a\tb\n', [{ v: 'a\tb\n' }]],
+    ['v: >\n  a\tb\n', [{ v: 'a\tb\n' }]],
+    ['v: |+\n  a\tb\n\n', [{ v: 'a\tb\n\n' }]],
+    ['v: |-\n  a\tb\n', [{ v: 'a\tb' }]],
+    ['v: |2\n    a\tb\n', [{ v: '  a\tb\n' }]],
+    ['v: |\n  a\n  \t\n  b\n', [{ v: 'a\n\t\nb\n' }]],
+    ['v: |\n  a\tb\nnext: 1\n', [{ v: 'a\tb\n', next: 1 }]],
+    ['- |\n  a\tb\n', ['a\tb\n']],
+    ['k:\n  v: |\n    a\tb\n', [{ k: { v: 'a\tb\n' } }]]
+  ];
+  for (const [text, want] of legal) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+  // And the round trip this tool's own writer makes, which is the case T79 lost a
+  // tab in: a tab in a value is written as a block scalar line, and the tab is
+  // the only copy of that data.
+  for (const value of ['x\n\ty', 'a\tb\nc', 'a\nb\tc']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.strictEqual(run(text, 'yaml').data[0].v, value, text);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
