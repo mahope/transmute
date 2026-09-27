@@ -2069,7 +2069,27 @@ function parseYAML(text, opts) {
  */
 function tokenizeYAML(text) {
   return text.split(/\r\n|\n|\r/).map((line, i) => {
-    const lead = /^[ \t]*/.exec(line)[0];
+    // Indentation is spaces, and only spaces. A tab that opens a line is not
+    // whitespace to a parser, it is a character that cannot start a token:
+    // PyYAML answers "found character '\t' that cannot start any token" and
+    // refuses the file, and this read `v: |` with a tab under it as the value
+    // 'a\nb\n' — a file no real parser opens, read here as a value, exit 0,
+    // empty stderr.
+    //
+    // The same character is why `lead` used to be `/^[ \t]*/`, and the other
+    // half of that regex was worse than the silence above: inside a block
+    // scalar the tab is *content*, the indentation has already begun, and
+    // eating the tab as indentation handed the dedent a column that was not
+    // there. `{"v":"x\n\ty"}` was written as `|-` with `    <TAB>y` on the
+    // second line and read back as `'x\n y'` — this tool's own writer, its own
+    // reader, one tab lost in a round trip nobody had to ask for.
+    if (line[0] === '\t') {
+      throw new SyntaxError(
+        `YAML line ${i + 1}: a tab character cannot start a line — YAML indents ` +
+        `with spaces, so this line is indented with a character no parser accepts`
+      );
+    }
+    const lead = /^ */.exec(line)[0];
     const content = line.slice(lead.length);
     return {
       indent: lead.length,
@@ -2361,7 +2381,11 @@ function readYAMLBlockScalar(lines, start, parentIndent, header) {
   // literal block (`a`, ` `, `b` is three lines) while it is still a line of
   // nothing but spaces here — so `raw` decides, and `content` never gets a vote.
   const dedented = collected.map(l => {
-    if (l.blank && l.indent <= shared) return '';
+    // A line of nothing at all is an empty line. A line of nothing but *spaces*
+    // at the block's own level is one too, because those spaces are the
+    // indentation. A tab is neither: it is content wherever the indentation has
+    // begun, so `x`, a tab, `y` is 'x\n\ty\n' (PyYAML) and not 'x\n\ny'.
+    if (l.blank && l.indent <= shared && !l.raw.includes('\t')) return '';
     return ' '.repeat(Math.max(0, l.indent - shared)) + l.raw;
   });
 
