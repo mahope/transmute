@@ -3827,6 +3827,112 @@ t('a literal block has no folding, so a deeper line in it is just content', () =
   }
 });
 
+// ─── The first line sets the block's indentation ───────────────────────────
+//
+// Measured with PyYAML 6.0.3 as the judge, on 107 hand-written YAML files
+// through this tool's own reader, plus 18 more for the one corner the first pass
+// left open. Before: 44 of 107 and 12 of 18. Without an indentation indicator
+// the *first* line of a block says where the block's own lines start, so a later
+// line indented less is not a line of the block — it is a sibling of the block's
+// parent, and a block scalar is a single scalar, so a parser looking for the end
+// of the block finds a mapping start or a scalar where the value should be.
+// PyYAML answers "expected <block end>, but found" and refuses the file. This
+// asked for the *minimum* indentation instead, which is the only answer that
+// keeps every line inside the block, so `v: |` / `a` at six / `b` at four came
+// back as `'  a\nb\n'`: a file no real parser accepts, read as a value at exit 0
+// with empty stderr. T68's class, and the reason the explicit indicator exists.
+
+t('a line under the block its first line opened is refused, not read as a value', () => {
+  // Every "was" below is what this tool's reader gave on the same file, measured.
+  const cases = [
+    // The class itself, through every marker and every chomping: the rule is
+    // about where the block starts, so none of the six can reach it.
+    ['v: |\n      a\n    b\n', "'  a\\nb\\n'"],
+    ['v: >\n      a\n    b\n', "'  a\\nb\\n'"],
+    ['v: |-\n      a\n    b\n', "'  a\\nb'"],
+    ['v: >-\n      a\n    b\n', "'  a\\nb'"],
+    ['v: |+\n      a\n    b\n', "'  a\\nb\\n'"],
+    ['v: >+\n      a\n    b\n', "'  a\\nb\\n'"],
+    // Three spaces under six, and a second line under the first: the depth of
+    // the difference does not matter, only which side of it the first line is.
+    ['v: |\n      a\n   b\n', "'   a\\nb\\n'"],
+    ['v: |\n      a\n    b\n    c\n', "'  a\\nb\\nc\\n'"],
+    // A line that is a *key* is the sharpest case: a reader that keeps it in
+    // the block writes a value that contains another mapping's start, and one
+    // that ends the block has nowhere to put it.
+    ['v: |\n      a\n  b: 1\n', "'    a\\nb: 1\\n'"],
+    ['v: |\n      a\n    b: 1\n', "'  a\\nb: 1\\n'"],
+    // The block's parent is not the document, and a sequence item is not either:
+    // the question is the same one, asked from each parent.
+    ['outer:\n  v: |\n      a\n    b: 1\n', "outer.v = '  a\\nb: 1\\n'"],
+    ['- v: |\n      a\n    b\n', "'  a\\nb\\n'"],
+    // An empty line does not move the block, so the line after it is still
+    // under it: `v: |`, six spaces, `a` at six, empty, `b` at four.
+    ['v: |\n      a\n\n    b\n', "'  a\\n\\nb\\n'"],
+  ];
+  for (const [text, before] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${JSON.stringify(text)} was read as a value (was ${before})`);
+    assert.match(r.error, /YAML line \d+/, `${JSON.stringify(text)}: ${r.error}`);
+  }
+  // The message names the line that opened the block and the line under it,
+  // because a file like this is a mistake in a file the user wrote by hand and
+  // the two numbers are what they have to look at.
+  const r = run('v: |\n      a\n    b\n', 'yaml');
+  assert.match(r.error, /YAML line 3/, r.error);
+  assert.match(r.error, /first line of this block is indented 6/, r.error);
+  assert.match(r.error, /this line is indented 4/, r.error);
+  // A file that says `|2` and indents less is the same mistake said out loud,
+  // and it was already refused — the two messages differ, the answer does not.
+  const explicit = run('v: |2\n    a\n b\n', 'yaml');
+  assert.ok(explicit.error, `the explicit form must stay refused: ${JSON.stringify(explicit)}`);
+  assert.match(explicit.error, /says 2 spaces of indentation/, explicit.error);
+});
+
+t('a line at the block its first line opened is still read, and is not this rule', () => {
+  // The controls, and the reason the rule is safe: everything that used to agree
+  // with PyYAML still does. A block whose *first* line is its shallowest is
+  // untouched, and so is a line that dedents all the way out of the block — to
+  // the next key, or to the next item of a sequence.
+  const cases = [
+    ['v: |\n  a\n  b\n', 'a\nb\n'],
+    ['v: >\n  one\n  two\n', 'one two\n'],
+    ['v: |\n  a\n    b\n', 'a\n  b\n'],
+    ['v: |\n  a\nnext: 1\n', 'a\n'],
+    ['v: >\n      a\nnext: 1\n', 'a\n'],
+    // Dedenting to the next key of the same mapping, and to the next item of a
+    // sequence: a line *at* the parent's indentation never reached the block.
+    ['v: |\n      a\n', 'a\n'],
+    // An empty line before the block's first line says nothing, and a line of
+    // nothing but spaces above it claims the indentation as well — which is why
+    // six spaces then `a` at eight is '\na\nb\n' and six spaces then `a` at two
+    // is the refusal above.
+    ['v: |\n\n  a\n  b\n', '\na\nb\n'],
+    ['v: |\n      \n        a\n        b\n', '\na\nb\n'],
+    ['v: >\n      \n        a\n        b\n', '\na b\n'],
+    ['v: |\n  \n    a\n    b\n', '\na\nb\n'],
+    // ... and below the first line with text, a line of spaces is content again
+    // (T74's rule), so it does not claim anything.
+    ['v: |\n      \n        a\n          \n        b\n', '\na\n  \nb\n'],
+    // The explicit indicator is a different rule and answers the same way it
+    // always has: the digit says where the block starts, so a deeper first line
+    // is content rather than a mistake.
+    ['v: |2\n      a\n    b\n', '    a\n  b\n'],
+  ];
+  for (const [text, expected] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const got = Array.isArray(r.data) ? r.data[0] : r.data;
+    const v = [got.v, got.outer && got.outer.v].find(x => x !== undefined);
+    assert.strictEqual(v, expected, JSON.stringify(text));
+  }
+  // A dedent to the next item of a sequence is a two-item file, not a one-item
+  // file with a second item inside the value.
+  const seq = run('- v: |\n      a\n- b: 1\n', 'yaml');
+  assert.strictEqual(seq.data.length, 2, JSON.stringify(seq.data));
+  assert.strictEqual(seq.data[1].b, 1, JSON.stringify(seq.data));
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
