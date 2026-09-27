@@ -4353,6 +4353,69 @@ t('a tag leaves everything else alone', () => {
   }
 });
 
+t('a key spelled out in front is a key', () => {
+  // `? x` and the `: 1` under it are one entry written out, and the reader had no
+  // notion of one. What it did with the line depended on what stood around it:
+  // `? x` + `: 1` was refused outright with "unexpected indentation" on a file
+  // PyYAML 6.0.3 reads as `{x: 1}`, while `? x` with nothing after it was read
+  // as the invented text `"? x"` — exit 0, an empty stderr — and `- ? x` gave a
+  // record whose one field was called `"? x"`. A `!!set` is written on exactly
+  // these lines, so a tag that exists only to be spelled out this way had nothing
+  // to stand on.
+  const cases = [
+    // The value under the key, at the key's own indentation.
+    ['a:\n  ? x\n  : 1\n', [{ a: { x: 1 } }]],
+    ['a:\n  ? x # a note\n  : 1\n', [{ a: { x: 1 } }]],
+    // No value of its own is a key holding nothing, the same answer `x:` gets.
+    ['a:\n  ? x\n  ? y\n', [{ a: { x: null, y: null } }]],
+    // One level deeper, which is where a sequence entry pushes the line.
+    ['- ? x\n  : 1\n', [{ x: 1 }]],
+    ['- ? x\n', [{ x: null }]],
+    // The document's own keys, which are a mapping and not a run of bare scalars.
+    ['? x\n: 1\n', [{ x: 1 }]],
+    ['? x\n', [{ x: null }]],
+    // A key is text, so a `#` in it is a key and a quoted one keeps it.
+    ['a:\n  ? "x # y"\n  : 1\n', [{ a: { 'x # y': 1 } }]],
+    // A `!!set` is a mapping whose members hold nothing: read as written, and
+    // named on stderr, because a set is a type JSON does not have.
+    ['a: !!set\n  ? x\n  ? y\n', [{ a: { x: null, y: null } }], 1]
+  ];
+  for (const [text, want, warnings = 0] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+    assert.strictEqual(r.warnings.length, warnings, JSON.stringify(text));
+  }
+
+  // A key that is a flow collection is read as the text of that collection, so
+  // the field is named `[x, y]`. PyYAML refuses the document there instead, since
+  // a list cannot be a key at all; this tool names the key it was given, which is
+  // the reading T69's decision already made for a key it cannot resolve.
+  assert.deepStrictEqual(
+    run('a:\n  ? [x, y]\n  : 1\n', 'yaml').data,
+    [{ a: { '[x, y]': 1 } }]
+  );
+
+  // And everything else the reader did with a `?` line is untouched: a `?` in a
+  // value, in a quote and in a comment is text, and a folded scalar ends where
+  // an explicit key begins.
+  for (const [text, want] of [
+    ['a: "b ? c"\n', [{ a: 'b ? c' }]],
+    ["a: '?'\n", [{ a: '?' }]],
+    ['a: hi?\n', [{ a: 'hi?' }]],
+    ['a: 1 # ? x\n', [{ a: 1 }]],
+    ['? not a key\n']
+  ]) {
+    const r = run(text, 'yaml');
+    if (want === undefined) {
+      assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+      continue;
+    }
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
