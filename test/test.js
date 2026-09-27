@@ -4061,6 +4061,132 @@ t('a tab is legal in a quoted scalar and in a block scalar, and stays data', () 
   }
 });
 
+t('an anchor names a value and a reference stands in for it', () => {
+  // `&name` and `*name` are properties of the value in front of them, not the
+  // value. They came out as the value's own text — `&x 1` and `*x`, two strings,
+  // exit 0, an empty stderr — and a file whose anchor sat above a block was
+  // refused outright, because `a: &x` reads as a finished line and the block
+  // under it was then an unexpected indentation. Eighteen of the twenty files
+  // measured against PyYAML 6.0.3 through the real binary disagreed that way,
+  // and the second of them is the one that cost a file: `a: &x` + `k: 1` never
+  // got read at all. Anchors are how GitHub Actions workflows, compose files and
+  // Kubernetes manifests say the same block twice.
+  const cases = [
+    ['a: &x 1\nb: *x\n', [{ a: 1, b: 1 }]],
+    ['a: &x\n  k: 1\nb: *x\n', [{ a: { k: 1 }, b: { k: 1 } }]],
+    ['a: &s [1, 2]\nb: *s\n', [{ a: [1, 2], b: [1, 2] }]],
+    ['a: &x "a b"\nb: *x\n', [{ a: 'a b', b: 'a b' }]],
+    ['a: &x 1 # note\nb: *x\n', [{ a: 1, b: 1 }]],
+    ['a: &x\nb: 1\nc: *x\n', [{ a: null, b: 1, c: null }]],
+    ['a: &b |\n  text\nc: *b\n', [{ a: 'text\n', c: 'text\n' }]],
+    ['- &x a\n- *x\n', ['a', 'a']],
+    ['- &x\n  a: 1\n- *x\n', [{ a: 1 }, { a: 1 }]],
+    ['outer:\n  a: &x 1\n  b: *x\n', [{ outer: { a: 1, b: 1 } }]],
+    ['a: &s\n  - 1\nb:\n  - *s\n', [{ a: [1], b: [[1]] }]],
+    ['a: &x 1\nb: [*x, 2]\n', [{ a: 1, b: [1, 2] }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // Two keys that share an anchor are two values once they are JSON: changing
+  // one may not reach into the other, which is the rule the writers follow.
+  const shared = run('base: &b\n  k: 1\none: *b\ntwo: *b\n', 'yaml');
+  shared.data[0].one.k = 99;
+  assert.strictEqual(shared.data[0].two.k, 1, 'the two references are one object');
+  assert.strictEqual(shared.data[0].base.k, 1, 'and neither is the anchor');
+
+  // A name that was never given, and a value that holds itself. The second is
+  // the one PyYAML answers with a structure JSON cannot carry, so it is refused
+  // in words rather than answered with something that would not survive.
+  assert.match(
+    run('a: 1\nb: *nope\n', 'yaml').error,
+    /YAML line 2: found undefined alias 'nope'/
+  );
+  assert.match(
+    run('a: &r\n  self: *r\n', 'yaml').error,
+    /YAML line 2: &r points at itself/
+  );
+});
+
+t('a merge key copies fields in, and the document\'s own fields win', () => {
+  // `<<` is not a key: it copies the fields of the mappings it names into this
+  // one. It came out as a field called `<<` whose value was the text `*b`, so a
+  // child mapping lost every inherited field and gained a lie instead — the
+  // shape most config files use to say "the same as the parent, plus this".
+  const cases = [
+    ['base: &b\n  k: 1\nchild:\n  <<: *b\n  j: 2\n', [{ base: { k: 1 }, child: { k: 1, j: 2 } }]],
+    // The written field is the one that counts, in either order, and a merge
+    // that repeats a field is not the duplicate the tool warns about — PyYAML
+    // answers both of these without a word.
+    ['base: &b\n  k: 1\nchild:\n  <<: *b\n  k: 2\n', [{ base: { k: 1 }, child: { k: 2 } }]],
+    ['a: &a\n  k: 1\nc:\n  k: 2\n  <<: *a\n', [{ a: { k: 1 }, c: { k: 2 } }]],
+    ['a: &a\n  x: 1\nb:\n  <<: *a\n  <<: *a\n', [{ a: { x: 1 }, b: { x: 1 } }]],
+    // In a list the first mapping to carry a field wins.
+    [
+      'a: &a\n  x: 1\n  y: 1\nb: &b\n  x: 2\nc:\n  <<: [*a, *b]\n',
+      [{ a: { x: 1, y: 1 }, b: { x: 2 }, c: { x: 1, y: 1 } }]
+    ],
+    ['base: &b\n  k: 1\n  j: 2\nchild:\n  <<: *b\n  k: 9\n  m: 3\n',
+      [{ base: { k: 1, j: 2 }, child: { k: 9, j: 2, m: 3 } }]],
+    ['base: &b\n  k: 1\nouter:\n  child:\n    <<: *b\n',
+      [{ base: { k: 1 }, outer: { child: { k: 1 } } }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+    assert.deepStrictEqual(r.warnings, [], JSON.stringify(text));
+  }
+
+  // A merge can only merge a mapping, and PyYAML refuses the file rather than
+  // guessing, so the answer here is a name and a line as well.
+  assert.match(
+    run('a: &x 1\nb:\n  <<: *x\n', 'yaml').error,
+    /YAML line 3: a merge key \("<<"\) can only merge a mapping/
+  );
+});
+
+t('a name is a name: anchors and references leave everything else alone', () => {
+  // The control table, written because the fix reads a name where there was a
+  // string. A `*` or `&` inside a value is text, a tab is still a tab, a `#` is
+  // still a comment, and this tool's own writer and reader still agree.
+  const untouched = [
+    ['a: 2*3\n', [{ a: '2*3' }]],
+    ['a: x&y\n', [{ a: 'x&y' }]],
+    ['a: 1 # *b &c\n', [{ a: 1 }]],
+    ['# &a *b\nv: 1\n', [{ v: 1 }]],
+    ['a: "b # c"\n', [{ a: 'b # c' }]],
+    ['a: "b*c"\n', [{ a: 'b*c' }]]
+  ];
+  for (const [text, want] of untouched) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // A key really is a key: `<<` is a merge only when a reference follows it, and
+  // a `#` in a key is a key, not the start of a comment.
+  assert.deepStrictEqual(run('a#b: 1\n', 'yaml').data, [{ 'a#b': 1 }]);
+  assert.deepStrictEqual(run('note: "# not a comment"\n', 'yaml').data, [{ note: '# not a comment' }]);
+
+  // The tab rules are the other side of the same reader and did not move: a tab
+  // where a token starts is still refused, and a tab inside a comment or a
+  // quoted scalar is still data.
+  assert.match(run('v:\t1\n', 'yaml').error, /cannot start any token/);
+  assert.match(run('v: 1\t# note\n', 'yaml').error, /cannot start any token/);
+  assert.deepStrictEqual(run('# note\ta\nv: 1\n', 'yaml').data, [{ v: 1 }]);
+  assert.deepStrictEqual(run('v: "a\tb"\n', 'yaml').data, [{ v: 'a\tb' }]);
+
+  // And the writer's own round trip, which is where a name must not appear.
+  for (const value of ['a\nb', 'x\n\ty', 'a *b* c', 'a &b c']) {
+    const text = serializers.yaml([{ v: value }]);
+    assert.deepStrictEqual(run(text, 'yaml').data, [{ v: value }], text);
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
