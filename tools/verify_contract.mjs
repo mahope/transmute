@@ -264,6 +264,61 @@ for (const file of claimed) {
   }
 }
 
+// Eleven of the seventeen indexable pages — every guide and the cheat sheet,
+// which is where a visitor arrives from a search result — carried the paid
+// product in the shared footer and nowhere else. That is chrome, identical on
+// every page, so a reader who lands on one guide and wants the app is told
+// where to look without being told anything about whether it is worth it.
+// Measured by tools/measure_t105.py, which counts body links and reports the
+// footer separately for exactly that reason.
+//
+// The rule asks one question per page: does the body give a reader a way
+// through? A page that is not a place someone decides to buy is exempt and has
+// to say so here, so adding an exempt page is a visible decision rather than a
+// gap in a count. Privacy and terms pages are exempt because nobody arrives
+// from a search result intending to buy on them, and a buy button in a privacy
+// policy is the ontrængende case the product rules rule out.
+const PRO_PATH_EXEMPT = [
+  { match: /privacy/, why: 'a privacy page is not where a reader decides to buy, and selling there would be pushy' },
+  { match: /404\.html$/, why: 'an error page has no reader to sell to' },
+  { match: /search\//, why: 'search results are a list, not a landing page' },
+  { match: /support\//, why: 'the support page is where the buy button lives' },
+];
+
+check('every page a reader lands on gives them a way to the paid product', () => {
+  const buying = new Set([
+    pro.payment_link,
+    '/support/', '/support/#buying-pro', '/da/support/', '/da/support/#buying-pro',
+    '/#desktop', '/da/#desktop',
+  ]);
+  let measured = 0;
+
+  for (const file of claimed) {
+    if (!file.endsWith('.html')) continue;
+    const rel = file.slice(root.length + 1).replace(/\\/g, '/');
+    if (/noindex/.test(readFileSync(file, 'utf8'))) continue;
+    const exempt = PRO_PATH_EXEMPT.find(e => e.match.test(rel));
+    if (exempt) continue;
+    measured += 1;
+
+    // The footer is stripped before the question is asked. Counting it made
+    // this check report that every page was fine, which was true and useless:
+    // chrome is the same on all of them and is not where the reader is.
+    const body = readFileSync(file, 'utf8')
+      .replace(/<header\b[\s\S]*?<\/header>/g, '')
+      .replace(/<footer\b[\s\S]*?<\/footer>/g, '');
+
+    const paths = [...body.matchAll(/<a\b[^>]*href="([^"]+)"/g)]
+      .map(([, href]) => href)
+      .filter(href => buying.has(href));
+    assert(paths.length > 0,
+      `${rel} gives a reader no way to the paid product outside the shared footer; the guides and the cheat sheet are where visitors arrive from a search result, so that is where the path has to be`);
+  }
+
+  assert(measured >= 11,
+    `only ${measured} pages are held to this rule, which is fewer than the eleven that were measured as missing a path; the rule has stopped covering the pages it was written for`);
+});
+
 check('npm, the CLI and the site agree on the version', () => {
   const version = packageJson.version;
   assert(/^\d+\.\d+\.\d+$/.test(version), `package.json version is not a release version: ${version}`);
