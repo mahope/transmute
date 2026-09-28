@@ -162,6 +162,78 @@ test('a well-formed CSV produces no warnings', () => {
   assert.deepStrictEqual(r.warnings, []);
 });
 
+// Measured against `csv` in the reader, not against a wish. Every case below
+// read as data on the real binary before T98: the line above the header became
+// the header, so every real column name in the file was gone, and a `;` file
+// with a comment above it lost every column boundary it had.
+test('a # line above the header is a comment, so the header is the header', () => {
+  const r = run('# exported 2026-09-28\na,b\n1,2\n', 'csv', [], 'json');
+  assert.deepStrictEqual(r.data, [{ a: 1, b: 2 }]);
+  // The comment is gone, and nothing pretends otherwise: one line naming the
+  // count and the text, so a file that used `#` as a column name hears about it.
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('1 CSV line starting with #'), r.warnings[0]);
+  assert.ok(r.warnings[0].includes('# exported 2026-09-28'), r.warnings[0]);
+});
+
+test('a # line in the middle or at the end of a file is a comment, not a row', () => {
+  // Both read as an invented data row before, with the comment's own words in
+  // the columns — T26's class, the one that puts text in a file that has none.
+  const middle = run('a,b\n#x,y\n1,2\n', 'csv', [], 'json');
+  assert.deepStrictEqual(middle.data, [{ a: 1, b: 2 }]);
+  const end = run('a,b\n1,2\n#x,y\n', 'csv', [], 'json');
+  assert.deepStrictEqual(end.data, [{ a: 1, b: 2 }]);
+});
+
+test('a comment does not take the delimiter with it', () => {
+  // The measured worst case: `# note` above a `;` file won the delimiter
+  // comparison, so the whole file came back as ONE column of raw text and
+  // every column boundary in it was gone.
+  const r = run('# note\na;b\n1;2\n', 'csv', [], 'json');
+  assert.deepStrictEqual(r.data, [{ a: 1, b: 2 }]);
+  // Same shape with the delimiter inside the comment line itself.
+  assert.deepStrictEqual(run('#a,b\n1,2\n3,4\n', 'csv', [], 'json').data, [{ 1: 3, 2: 4 }]);
+});
+
+test('a # that opens a quoted field is data, because the reader trims before it asks', () => {
+  assert.deepStrictEqual(run('a\n"#b",2\n', 'csv', [], 'json').data, [{ a: '#b', column2: 2 }]);
+  // A # on the second line of a quoted field never ends a record at all, so it
+  // cannot become a comment either.
+  assert.deepStrictEqual(run('a,b\n"x\n#y",2\n', 'csv', [], 'json').data, [{ a: 'x\n#y', b: 2 }]);
+  // Leading whitespace does not save a line: the reader trims an unquoted
+  // field, so `  #a,b` is a comment with two fields, not a header with two
+  // names — and a file of nothing but those is empty, and says so.
+  const indented = run('  #a,b\n1,2\n', 'csv', [], 'json');
+  assert.deepStrictEqual(indented.data, []);
+  assert.ok(indented.warnings[0].includes('1 CSV line starting with #'), indented.warnings[0]);
+});
+
+test('several comment lines are one warning, like every other per-parse warning', () => {
+  const r = run('# a\n# b\n#c\na,b\n1,2\n', 'csv', [], 'json');
+  assert.deepStrictEqual(r.data, [{ a: 1, b: 2 }]);
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('3 CSV lines starting with #'), r.warnings[0]);
+});
+
+test('a file of nothing but # lines is empty, and says so', () => {
+  const r = run('#a\n#b\n', 'csv', [], 'json');
+  assert.deepStrictEqual(r.data, []);
+  assert.ok(r.warnings[0].includes('2 CSV lines starting with #'), r.warnings[0]);
+});
+
+test('a value or header that opens with # is quoted on the way out', () => {
+  // Without this the tool wrote files it then read back wrong: `{"a":"#1"}`
+  // went out as `a\n#1` and came back as ZERO rows, and a column called
+  // `#id` cost the file every one of its other columns.
+  assert.strictEqual(run('[{"a":"#1"}]', 'json', [], 'csv').text, 'a\n"#1"');
+  assert.strictEqual(run('[{"#id":"1","a":"x"}]', 'json', [], 'csv').text, '"#id",a\n1,x');
+  assert.deepStrictEqual(
+    run(run('[{"a":"#1"}]', 'json', [], 'csv').text, 'csv', [], 'json').data, [{ a: '#1' }]);
+  // A # that is not the first character is ordinary text and stays bare.
+  assert.strictEqual(run('[{"a#b":"1"}]', 'json', [], 'csv').text, 'a#b\n1');
+  assert.strictEqual(run('[{"a":"x#y"}]', 'json', [], 'csv').text, 'a\nx#y');
+});
+
 test('a header that names a column twice says so, because one column is gone', () => {
   const r = run('a,a,b\n1,2,3', 'csv', [], 'json');
   // The last of the two wins, exactly as it always did — the point is that the

@@ -1980,13 +1980,49 @@ function countUnquoted(line, delimiter) {
 }
 
 /**
+ * Is this record a comment?
+ *
+ * A line whose first field begins with `#` is one, and the question is asked in
+ * exactly one place because three readers of a CSV file need the same answer:
+ * the format detector (which has always skipped such a line to find the first
+ * line that says something), the delimiter detection, and the reader itself.
+ * They disagreed, and the reader was the one that lost data.
+ *
+ * `quoted` is the guard that makes the rule safe: a `#` that opens a quoted
+ * field is data, and so is a `#` on the second line of a quoted field, which
+ * never ends a record in the first place. So a record counts as a comment only
+ * when nothing in it was read as quoted.
+ */
+function csvComment(values, quoted) {
+  return !quoted && values.length > 0 && values[0].startsWith('#');
+}
+
+/**
+ * The lines of a file, with the comment lines left out, as far as the
+ * delimiter detector is concerned. This is a line-level question and not the
+ * record-level one above, because the detector reads a file before the reader
+ * has split it: it must see the same `#` lines the reader will skip.
+ */
+function csvDataLines(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+  const kept = lines.filter(line => !csvComment([line.trim()], false));
+  return kept.length > 0 ? kept : lines;
+}
+
+/**
  * Pick the delimiter from the first line. Excel in Denmark, Germany and most of
  * the rest of Europe writes `;` by default, so a comma-only reader silently
  * collapses such a file into a single column. A tie — and a line with no
  * delimiter at all — keeps `,`, so single-column and comma files are unchanged.
+ *
+ * The line is the first one that is not a comment, because the line above the
+ * header is the one a file is most likely to open with — `# exported`, a
+ * `#`-prefixed title, a note about where the export came from. Read from the
+ * comment instead, `# note` above a `;` file wins every comparison and the
+ * whole file collapses into one column of text.
  */
 function detectDelimiter(text) {
-  const firstLine = text.replace(/^﻿/, '').split(/\r?\n/)[0] || '';
+  const firstLine = csvDataLines(text)[0] || '';
   let best = ',';
   let bestCount = 0;
   for (const delimiter of CSV_DELIMITERS) {
@@ -2024,6 +2060,16 @@ function extraFieldsWarning(rowCount, lines, columns) {
   const rest = names.length > cols.length ? `, and ${names.length - cols.length} more` : '';
   const verb = lines.size === 1 ? 'has' : 'have';
   return `${lines.size} of ${rowCount} CSV rows ${verb} more fields than the header (${where}); the extra values are kept in ${cols.join(', ')}${rest}`;
+}
+
+function csvCommentWarning(count, records) {
+  const first = records.find(r => csvComment(r.values, r.quoted));
+  const shown = first ? first.values.join(' ') : '';
+  const clipped = shown.length > 40 ? shown.slice(0, 40) + '…' : shown;
+  return `${count} CSV line${count > 1 ? 's' : ''} starting with # ` +
+    `${count > 1 ? 'were' : 'was'} skipped as comments (first: "${clipped}"); ` +
+    `they hold no fields, so a file that uses # as part of a column name needs ` +
+    `its own name quoted.`;
 }
 
 function duplicateHeaderWarning(name, columns, differing, rowCount) {
@@ -2089,9 +2135,19 @@ function parseCSV(text, opts = {}) {
   // header. A record that was *quoted* is not one of them: `""` is a record
   // holding one empty field, and dropping it because its value happens to be
   // empty is how a one-column export lost every row whose value was empty.
+  //
+  // A comment line is a third kind: it is a real record by RFC 4180, and it was
+  // read as one, so the header became `# exported 2026-09-28` and every real
+  // column name in the file was data. The format detector has skipped such lines
+  // since it learned to ask what a YAML file looks like, so the reader and the
+  // detector disagreed about the same byte of the same file.
+  const skipped = records.filter(r => csvComment(r.values, r.quoted));
   const recordsWithIndex = records.filter(
-    r => !(r.values.length === 1 && r.values[0] === '' && !r.quoted)
+    r => !(r.values.length === 1 && r.values[0] === '' && !r.quoted) && !csvComment(r.values, r.quoted)
   );
+  if (skipped.length > 0 && Array.isArray(opts.warnings)) {
+    opts.warnings.push(csvCommentWarning(skipped.length, records));
+  }
   if (recordsWithIndex.length === 0) return [];
   const headers = recordsWithIndex[0].values.map((h, i) => (i === 0 ? h.replace(/^﻿/, '') : h));
 
@@ -2171,6 +2227,15 @@ function parseCSV(text, opts = {}) {
  */
 function escapeCSV(val) {
   if (/[",;\t|\r\n]/.test(val)) {
+    return '"' + val.replace(/"/g, '""') + '"';
+  }
+  // A value that opens with `#` is a comment line to the reader in this file,
+  // so writing it bare wrote a file this tool could not read back: a column
+  // called `#id` became a comment, the header it sat in became the comment's
+  // own second field, and every column in the file was lost. The reader trims
+  // an unquoted field before deciding, so leading whitespace counts too.
+  // A `#` anywhere else is ordinary text and stays bare.
+  if (/^\s*#/.test(val)) {
     return '"' + val.replace(/"/g, '""') + '"';
   }
   return val;
@@ -5206,9 +5271,12 @@ function detectFormat(filename, content) {
     const trimmed = content.trim();
     // The first line that says something: a comment or a blank above it is
     // not evidence of any format, and a YAML file usually starts with one.
+    // The reader asks the same question about the same line, in `csvComment`,
+    // because a detector that skips what the reader keeps is a detector that
+    // routes a file to the wrong reader.
     const firstLine = trimmed.split('\n')
       .map(l => l.trim())
-      .find(l => l && !l.startsWith('#') && l !== '---') || '';
+      .find(l => l && !csvComment([l], false) && l !== '---') || '';
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'json';
     if (trimmed.startsWith('<')) return 'xml';
     if (trimmed.startsWith('- ') || trimmed.startsWith('---')) return 'yaml';
