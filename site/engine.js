@@ -124,6 +124,106 @@ function cdataText(content) {
 }
 
 /**
+ * What is in an element's content, in document order: the pieces of text, and
+ * where each child element starts.
+ *
+ * One scan, asked once, because the two questions — *is there an element in
+ * this* and *what is the text around it* — were two readers with two answers,
+ * and the second one lost data. `cdataText` above only spoke when the content
+ * was nothing but sections, so an element that held a section **beside** text
+ * fell to the text path with the section still in it: `<a>pre<![CDATA[<b>]]>
+ * post</a>` came out as `prepost`, the section's `<b>` gone, exit 0, no warning
+ * — and `xml.etree.ElementTree` reads it as `pre<b>post`. Inside a child it was
+ * worse: the section's own markers were handed back as the value, so
+ * `<i>a<![CDATA[x]]>b</i>` read as `a<![CDATA[x]]>b`. Silent loss is the worst
+ * class in this reader, so it is answered here instead of at either end.
+ *
+ * A section is text, so a `<` inside one is data and not an element, and the
+ * scan asks about the marker before it asks about a name. A section left open
+ * is answered as `unterminated` rather than swallowed: an unterminated
+ * `<![CDATA[` would otherwise spell its own opening marker into a value, and a
+ * value the file never held is the one thing this reader may not answer with.
+ */
+function readContentRuns(content) {
+  const runs = [];
+  let pos = 0;
+  while (pos < content.length) {
+    const next = content.indexOf('<', pos);
+    if (next === -1) {
+      runs.push({ pos, text: content.slice(pos) });
+      break;
+    }
+    if (next > pos) runs.push({ pos, text: content.slice(pos, next) });
+    if (content.startsWith('<![CDATA[', next)) {
+      const end = content.indexOf(']]>', next);
+      if (end === -1) return { runs, unterminated: content.slice(next, next + 40) };
+      runs.push({ pos: next, section: content.slice(next + '<![CDATA['.length, end) });
+      pos = end + 3;
+      continue;
+    }
+    // Where the opening tag ends, so a `<` inside an attribute value is not read
+    // as the start of an element. A `<` that begins no name at all is reported
+    // as an element start anyway, so the caller's own error still names it.
+    const open = content.slice(next).match(new RegExp(`^<(/?)(${XML_NAME})((?:[^>"']|"[^"]*"|'[^']*')*)>`));
+    if (open) {
+      // A closing tag is not an element. The caller reads each child whole —
+      // `parseElement` returns where it ends — so the tag that ends it is
+      // skipped rather than offered as another child to read.
+      if (open[1] === '/') { pos = next + open[0].length; continue; }
+      runs.push({ pos: next, at: next });
+      pos = next + open[0].length;
+      continue;
+    }
+    runs.push({ pos: next, at: next });
+    pos = next + 1;
+  }
+  return { runs };
+}
+
+/**
+ * The text of the runs between two elements, or `null` when there is none.
+ *
+ * `hasMarkup` is what tells "an element whose value is the empty string" from
+ * "an element with no text of its own beside its children": `<a>   </a>` and
+ * `<a><![CDATA[]]></a>` are a value, and `<a> <b>1</b> </a>` is a record whose
+ * only text is layout. Whitespace at the ends of the content is layout, so a run
+ * that is nothing but spaces between two elements contributes nothing — but an
+ * element that is *only* text still has the value the file gave it, empty or
+ * not.
+ *
+ * The other rules are the ones the file's own layout forces, and each of them is
+ * there because the alternative puts a value in the output that the file never
+ * held:
+ *
+ * - A space between two sections is layout too — a writer that wraps a long
+ *   value puts each line in its own section — so a text piece that is nothing
+ *   but spaces *between two sections* is dropped. Every other space is kept
+ *   verbatim: `a <![CDATA[x]]> b` is `a x b` in `ElementTree` too.
+ * - A section's own text is never trimmed and never decoded. That is the one
+ *   thing that separates it from every other text in the file.
+ */
+function textBetweenRuns(runs, hasMarkup) {
+  const parts = runs.filter((r) => r.at === undefined);
+  // No runs at all is not a value: `<a></a>` holds nothing, so it is no record,
+  // and an empty record would be a row the file never wrote.
+  if (parts.length === 0) return null;
+  let out = '';
+  for (let i = 0; i < parts.length; i++) {
+    const run = parts[i];
+    if (run.section !== undefined) { out += run.section; continue; }
+    let piece = decodeXML(run.text);
+    const before = parts[i - 1];
+    const after = parts[i + 1];
+    if (!piece.trim() && before && after && before.section !== undefined && after.section !== undefined) continue;
+    if (i === 0) piece = piece.trimStart();
+    if (i === parts.length - 1) piece = piece.trimEnd();
+    out += piece;
+  }
+  if (hasMarkup && !out.trim()) return null;
+  return out;
+}
+
+/**
  * Where the element named `tag`, opened at `from - 1`, actually ends.
  *
  * Not the first `</tag>` in the text. An element that contains a child of its
@@ -266,6 +366,13 @@ const parsers = {
 
     // Parse one element starting at index i in `inner`.
     // Returns [{ tag, value }, nextIndex] so parents can key children by tag name.
+    // `mixed` counts the elements that hold text beside markup, so the loss that
+    // costs is named once for the document instead of once per record.
+    const mixed = { count: 0, first: null };
+    const noteMixed = (tag) => {
+      if (mixed.count === 0) mixed.first = tag;
+      mixed.count++;
+    };
     const parseElement = (inner, i) => {
       const m = inner.slice(i).match(new RegExp(`^<(${XML_NAME})((?:[^>"']|"[^"]*"|'[^']*')*)>`));
       if (!m) return null;
@@ -278,83 +385,102 @@ const parsers = {
       if (closeIdx === -1) return null;
       const content = inner.slice(contentStart, closeIdx).trim();
       let value;
-      // A CDATA section is text, and the element content begins with a `<` for
-      // two unrelated reasons: it holds markup, or it holds a section. Reading
-      // the second as the first sent a well-formed document down the markup path
-      // with nothing to parse, so `<i><![CDATA[one]]></i>` — the shape an RSS
+      // The content is text runs and child elements in document order, and
+      // which of the two it holds decides the value. A CDATA section is text, so
+      // the section's `<` is data: `<i><![CDATA[one]]></i>` — the shape an RSS
       // description, a SOAP string and every export that embeds markup writes —
-      // failed the whole file with "Could not read the XML element" on a
-      // document `xml.etree.ElementTree` reads. The text of a section is
-      // literal: no entity in it is decoded, which is the one thing that
-      // separates it from every other text in the file.
-      const literal = cdataText(content);
-      if (content.startsWith('<') && literal === null) {
-        value = { ...attrs };
-        let pos = 0;
-        while (pos < content.length) {
-          const rest = content.slice(pos);
-          if (!rest.trim()) break;
-          const offset = pos + (rest.length - rest.trimStart().length);
-          const child = parseElement(content, offset);
-          // Stopping here used to leave the element holding only its attributes,
-          // so one tag the reader could not name turned the whole record into
-          // `{}` — printed, exit 0, no warning. Half a document is not a result.
-          if (!child) throw new Error(`Could not read the XML element at "${content.slice(offset, offset + 40).trim()}"`);
-          const [{ tag: childTag, value: childValue }, next] = child;
-          const [childKey, unwrapped] = readFieldName(childTag, childValue);
-          if (hasField(value, childKey)) {
-            if (!Array.isArray(value[childKey])) value[childKey] = [value[childKey]];
-            value[childKey].push(unwrapped);
-          } else {
-            setField(value, childKey, unwrapped);
-          }
-          pos = next;
+      // used to fail the whole file with "Could not read the XML element" on a
+      // document `xml.etree.ElementTree` reads.
+      const { runs, unterminated } = readContentRuns(content);
+      if (unterminated !== undefined) {
+        throw new Error(`XML CDATA section is never closed: "${unterminated}"`);
+      }
+      if (!runs.some((r) => r.at !== undefined)) {
+        const text = textBetweenRuns(runs, false);
+        value = Object.keys(attrs).length
+          ? (text === null ? { ...attrs } : { ...attrs, '#text': text })
+          : (text === null ? '' : text);
+        return [{ tag, value }, closeIdx + closeTag.length];
+      }
+      value = { ...attrs };
+      // A child spans from its own start to wherever its own subtree ends, so a
+      // text run belongs to this element when it starts outside the last child
+      // read. The order between the two is what the warning below is about.
+      let seen = 0;
+      for (const run of runs) {
+        if (run.at === undefined) continue;
+        if (run.at < seen) continue;
+        const child = parseElement(content, run.at);
+        // Stopping here used to leave the element holding only its attributes,
+        // so one tag the reader could not name turned the whole record into
+        // `{}` — printed, exit 0, no warning. Half a document is not a result.
+        if (!child) throw new Error(`Could not read the XML element at "${content.slice(run.at, run.at + 40).trim()}"`);
+        const [{ tag: childTag, value: childValue }, next] = child;
+        const [childKey, unwrapped] = readFieldName(childTag, childValue);
+        if (hasField(value, childKey)) {
+          if (!Array.isArray(value[childKey])) value[childKey] = [value[childKey]];
+          value[childKey].push(unwrapped);
+        } else {
+          setField(value, childKey, unwrapped);
         }
-      } else {
-        const text = literal === null ? decodeXML(content) : literal;
-        value = Object.keys(attrs).length ? { ...attrs, '#text': text } : text;
+        seen = next;
+      }
+      const text = textBetweenRuns(runs.filter((r) => r.at === undefined && r.pos >= seen), true);
+      if (text !== null && text !== '') {
+        setField(value, '#text', text);
+        // Only when the element holds both — text beside markup. An element that
+        // is only text has lost nothing, so it has nothing to be told about.
+        if (seen > 0) noteMixed(tag, mixed);
       }
       return [{ tag, value }, closeIdx + closeTag.length];
     };
 
-    // Parse all top-level children of root
+    // The root element's content, read the same way a child's is: one scan, and
+    // the same question asked at both levels.
+    //
+    // This loop only ever looked for children, so an element whose content was
+    // text was refused whatever the text was — `<a>hello</a>` and
+    // `<a><![CDATA[x]]></a>` failed the same way, and the second is how an RSS
+    // description, a SOAP string and every export that embeds markup spells its
+    // value. The first version of the fix read the root's text with
+    // `body.replace(/<!\[CDATA\[…]]>/g, '')`, which *deleted* every section in
+    // the element instead of taking its text, so `<a>pre<![CDATA[<b>]]>post</a>`
+    // came out as `prepost` — the section's `<b>` gone, exit 0, no warning, on a
+    // document `xml.etree.ElementTree` reads as `pre<b>post`. Silent loss of what
+    // the file said, from the fix for silent loss, is the class of bug this
+    // reader keeps failing into.
+    const { runs: rootRuns, unterminated: rootOpen } = readContentRuns(inner);
+    if (rootOpen !== undefined) {
+      throw new Error(`XML CDATA section is never closed: "${rootOpen}"`);
+    }
     const rows = [];
-    let pos = 0;
-    while (pos < inner.length) {
-      const rest = inner.slice(pos);
-      if (!rest.trim()) break;
-      const offset = pos + (rest.length - rest.trimStart().length);
-      const parsed = parseElement(inner, offset);
+    const spans = [];
+    // A child that contains an element of its own name closes twice, and its own
+    // scan already read everything inside it, so only the children that start
+    // outside every child read so far are rows of their own. Without this the
+    // same element was read twice — once inside its parent, once beside it.
+    let seen = 0;
+    for (const run of rootRuns) {
+      if (run.at === undefined) continue;
+      if (run.at < seen) continue;
+      const parsed = parseElement(inner, run.at);
       if (!parsed) {
-        // The root element's own text. This loop only ever looked for children,
-        // so an element whose content is text was refused whatever the text was
-        // — `<a>hello</a>` and `<a><![CDATA[x]]></a>` failed the same way, and
-        // the second is how an RSS description, a SOAP string and every export
-        // that embeds markup spells its value. Sections come out first, because
-        // a `<` inside one is data and not an element. A section left open is
-        // not read as text either: an unterminated `<![CDATA[` would otherwise
-        // spell its own opening marker into a value, and a value the file never
-        // held is the one thing this reader may not answer with. It is the
-        // root's text only when no element is left in it — text beside markup is
-        // mixed content, which this reader has not chosen an answer for, and a
-        // file holding it keeps the message below rather than being read as one
-        // of the two things it is.
-        const body = inner.trim();
-        const literal = cdataText(body);
-        const rest = body.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '');
-        if (rest.includes('<![CDATA[')) {
-          throw new Error(`XML CDATA section is never closed: "${body.slice(0, 40)}"`);
-        }
-        if (!rest.trim() || !/<[A-Za-z_]/.test(rest)) {
-          rows.push({ [rootTag]: literal === null ? decodeXML(rest) : literal });
-          break;
-        }
-        throw new Error(`Could not read the XML element at "${inner.slice(offset, offset + 40).trim()}"`);
+        throw new Error(`Could not read the XML element at "${inner.slice(run.at, run.at + 40).trim()}"`);
       }
       const [{ tag, value }, next] = parsed;
       rows.push({ [tag]: value });
-      pos = next;
+      spans.push([run.at, next]);
+      seen = next;
     }
+    // Text the root holds beside its children. It belongs to no child, so it
+    // rides on the records below, the same way the root's own attributes do —
+    // see `carryRootAttributes`, and the reason it exists: a record is the only
+    // place in this tool's output that can hold a value. The text *inside* a
+    // child is the child's own and was already read as the child's value.
+    const rootOwnText = textBetweenRuns(
+      rootRuns.filter((r) => r.at === undefined && !spans.some(([from, to]) => r.pos > from && r.pos < to)),
+      rows.length > 0
+    );
 
     // Flatten: <data><item>...</item><item>...</item></data> → records
     let records = rows;
@@ -374,7 +500,33 @@ const parsers = {
     // attribute put on them first would answer "no" for a file whose records are
     // a single nested object each — which is most feeds. `<rss version="2.0">`
     // lost its `version` here for exactly that reason, measured.
-    return carryRootAttributes(records, rootMatch[2], rootTag, opts);
+    //
+    // The root's own text goes the same way as its attributes and for the same
+    // reason: a record is the only place in this tool's output that can hold a
+    // value, so text on the root rides on every record rather than on none. A
+    // root with no children at all is not a document of records — it is one
+    // value — and keeps its tag, which is what `<a>only text</a>` has always
+    // read as and what `ElementTree` says it is. That record *is* the root's
+    // text, so it does not also carry a copy of it.
+    if (rows.length === 0 && rootOwnText !== null) {
+      return carryRootAttributes([{ [rootTag]: rootOwnText }], rootMatch[2], rootTag, opts, null);
+    }
+    if (rootOwnText !== null && rows.length > 0) noteMixed(rootTag, mixed);
+    const out = carryRootAttributes(records, rootMatch[2], rootTag, opts, rootOwnText);
+    // The one loss mixed content costs, named once. A record is a row and a
+    // field is a column, so a table has no place for "the text that came before
+    // the second field": the text runs are kept and joined into `#text`, and
+    // where they stood between the elements is not kept. That is a decision this
+    // reader made and the user did not, and the rule in this file is that an
+    // assumption about data is one line on stderr and never a silent column.
+    if (mixed.count > 0 && Array.isArray(opts && opts.warnings)) {
+      opts.warnings.push(
+        `xml: ${mixed.count} element${mixed.count === 1 ? '' : 's'} hold text beside markup, ` +
+        `the first <${mixed.first}> — the text is joined into "#text" and the order between the text ` +
+        'and the elements is not kept, because a record is a row and a field is a column'
+      );
+    }
+    return out;
   }
 };
 
@@ -400,14 +552,14 @@ const parsers = {
  * repeated — and the collision is named on stderr, because a name on two levels
  * is a decision this reader has made and the user has not.
  */
-function carryRootAttributes(rows, rawAttrs, rootTag, opts) {
+function carryRootAttributes(rows, rawAttrs, rootTag, opts, rootText) {
   const attrs = {};
   for (const m of String(rawAttrs).matchAll(new RegExp(XML_ATTR, 'g'))) {
     const value = m[2] !== undefined ? m[2] : (m[3] !== undefined ? m[3] : m[4]);
     attrs['@' + m[1]] = decodeXML(value);
   }
   const names = Object.keys(attrs);
-  if (names.length === 0) return rows;
+  if (names.length === 0 && rootText === null) return rows;
   // A root that holds nothing but its attributes — `<a id="1"/>` — is a record
   // that says what it is and has no other content, and an empty result said
   // nothing at all about a file that was not empty.
@@ -426,6 +578,17 @@ function carryRootAttributes(rows, rawAttrs, rootTag, opts) {
       }
       setField(row, name, attrs[name]);
     }
+    if (rootText === null) continue;
+    if (hasField(row, '#text')) {
+      if (Array.isArray(opts && opts.warnings)) {
+        opts.warnings.push(
+          `xml: <${rootTag}> and a record below it both carry "#text" — ` +
+          'the record keeps its own, because it is the more specific of the two answers'
+        );
+      }
+      continue;
+    }
+    setField(row, '#text', rootText);
   }
   return out;
 }

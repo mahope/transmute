@@ -1253,6 +1253,45 @@ t('XML DOCTYPE with an internal subset is skipped whole', () => {
   if (r.data.length !== 1) throw new Error('expected 1 record, got ' + JSON.stringify(r.data));
 });
 
+t('XML: a CDATA section beside text keeps its own text', () => {
+  // The section *is* text, and it is text wherever it stands. The previous fix
+  // made a reader for it that only spoke when the content was nothing but
+  // sections, so a section beside text fell to the other reader — and the two
+  // answered differently about the same file:
+  //
+  //   `<a>pre<![CDATA[<b>]]>post</a>` → `prepost`  (the section's `<b>` gone)
+  //   `<a><![CDATA[x]]>hello</a>`      → `hello`   (the section's `x` gone)
+  //   `<i>a<![CDATA[x]]>b</i>`          → `a<![CDATA[x]]>b` (the markers as text)
+  //
+  // All three are silent: exit 0, no warning, a value the file never held. The
+  // first two are the worst class in this reader — data removed in silence — and
+  // they came out of the fix for that same class, one iteration earlier.
+  // `xml.etree.ElementTree` reads them as `pre<b>post`, `xhello` and `axb`.
+  for (const [text, expected] of [
+    ['<a>pre<![CDATA[<b>]]>post</a>', [{ a: 'pre<b>post' }]],
+    ['<a><![CDATA[x]]>hello</a>', [{ a: 'xhello' }]],
+    ['<a>hello<![CDATA[x]]></a>', [{ a: 'hellox' }]],
+    ['<a>a<![CDATA[x]]>b</a>', [{ a: 'axb' }]],
+    ['<a>a <![CDATA[x]]> b</a>', [{ a: 'a x b' }]],
+    ['<r><i>a<![CDATA[x]]>b</i></r>', [{ i: 'axb' }]],
+    ['<r><i><![CDATA[<b>bold</b>]]></i></r>', [{ i: '<b>bold</b>' }]],
+    // a space between two sections is layout, not a space in the value
+    ['<a><![CDATA[a]]> <![CDATA[b]]></a>', [{ a: 'ab' }]],
+    // and the section's own text is neither trimmed nor decoded
+    ['<a><![CDATA[ a ]]></a>', [{ a: ' a ' }]],
+    ['<a><![CDATA[a &amp; b]]></a>', [{ a: 'a &amp; b' }]],
+  ]) {
+    const r = run(text, 'xml', [], 'json');
+    if (r.error) throw new Error(text + ': ' + r.error);
+    assert.deepStrictEqual(r.data, expected, text);
+  }
+  // An unterminated section is named in a child too, not only at the root: it
+  // would otherwise spell its own opening marker into a value.
+  const open = run('<r><i><b>1</b><![CDATA[x</i></r>', 'xml', [], 'json');
+  assert.ok(open.error && /CDATA section is never closed/.test(open.error), open.error);
+  assert.strictEqual(open.data, undefined);
+});
+
 t('XML: 25 files read against ElementTree, and 11 CDATA and root-text answers', () => {
   // The XML reader had been measured by hand in nine iterations and never by a
   // table. Every line below is a measured answer: the input is one of the shapes
@@ -1300,14 +1339,36 @@ t('XML: 25 files read against ElementTree, and 11 CDATA and root-text answers', 
   assert.deepStrictEqual(run('<a>hello</a>', 'xml', [], 'json').data, [{ a: 'hello' }]);
   // an entity in it is decoded, as it is everywhere else in the file
   assert.deepStrictEqual(run('<a>a &amp; b</a>', 'xml', [], 'json').data, [{ a: 'a & b' }]);
-  // the root's text beside a child is mixed content, which this reader has not
-  // chosen an answer for. It keeps saying so rather than reading as one of the
-  // two things such a file is, and these are the two forms of it.
-  for (const mixed of ['<a>hello<b>1</b></a>', '<r><i>1</i>tail<i>2</i></r>', '<r>lead<i>1</i><i>2</i></r>']) {
+  // Text beside markup. It was refused with exit 3 whatever the text was, which
+  // is T68's class — a well-formed file this reader cannot open. The three
+  // answers were weighed: `#content` as `xmltodict` writes it (a list of the
+  // runs and the elements) round-trips through this tool's own writer only
+  // because `#content` is not a legal XML name, so the writer sends it out as
+  // three `<field name="#content">` siblings and the child element is gone from
+  // the file; a refusal keeps the class; and `#text` is the field this reader
+  // already gives an element that has text beside an attribute
+  // (`<b id="2">1</b>` → `{'@id':'2','#text':'1'}`) and the field the writer
+  // already writes back. So the text rides on the record as `#text`, and the one
+  // thing that costs — the order between text and elements — is named once.
+  for (const [mixed, expected] of [
+    ['<a>hello<b>1</b></a>', [{ b: '1', '#text': 'hello' }]],
+    ['<r><i>1</i>tail<i>2</i></r>', [{ i: '1', '#text': 'tail' }, { i: '2', '#text': 'tail' }]],
+    ['<r>lead<i>1</i><i>2</i></r>', [{ i: '1', '#text': 'lead' }, { i: '2', '#text': 'lead' }]],
+    ['<a>1<b>2</b>3<c>4</c>5</a>', [{ b: '2', '#text': '135' }, { c: '4', '#text': '135' }]],
+    ['<p>Some <b>bold</b> and <i>italic</i>.</p>', [{ b: 'bold', '#text': 'Some  and .' }, { i: 'italic', '#text': 'Some  and .' }]],
+  ]) {
     const r = run(mixed, 'xml', [], 'json');
-    assert.ok(r.error, 'mixed content must be named: ' + mixed);
-    assert.strictEqual(r.data, undefined, mixed);
+    if (r.error) throw new Error(mixed + ': ' + r.error);
+    assert.ok(r.warnings.some((w) => /text beside markup/.test(w) && /order between the text/.test(w)),
+      'the loss must be named: ' + mixed + ' → ' + JSON.stringify(r.warnings));
+    assert.deepStrictEqual(r.data, expected, mixed);
   }
+  // An element whose only text is layout is not mixed content and is not named:
+  // `<a> <b>1</b> </a>` is an indented element, and it read as `{b: '1'}` before
+  // this and must keep reading that way, silently.
+  const indented = run('<a> <b>1</b> </a>', 'xml', [], 'json');
+  assert.deepStrictEqual(indented.data, [{ b: '1' }]);
+  assert.deepStrictEqual(indented.warnings, [], 'layout is not a loss to report');
 
   // --- 24 files that must not move --------------------------------------
   // A repeated element is a list. These are the shapes measured alongside the
