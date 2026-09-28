@@ -4480,6 +4480,94 @@ test('a question mark opening a flow collection is a key, not a name', () => {
   }
 });
 
+test('a key that was not written is the key YAML leaves out', () => {
+  // The flow half of the `?` key was fixed in the test above; the block half was
+  // not, and it failed in two ways that PyYAML 6.0.3 answers to the letter.
+  // A whole entry on one line — `? x : 1` — took its colon as an ordinary key
+  // separator, so the file got a field called `? x` and lost both the key and the
+  // value: an invented name, exit 0, an empty stderr. And a key left out, which
+  // `?`, `? : 1` and `{? : 1}` all write, came out as the empty name `''` — a
+  // name no file writes, and one this reader cannot tell from `? ""`, the key
+  // written as the empty string, which YAML keeps apart.
+  const cases = [
+    // The entry on one line, in the document's root, nested, in a sequence entry
+    // and in a sequence entry that inlines a mapping.
+    ['? x : 1\n', [{ x: 1 }]],
+    ['a:\n  ? x : 1\n', [{ a: { x: 1 } }]],
+    ['- ? x : 1\n', [{ x: 1 }]],
+    ['? "a, b" : 1\n', [{ 'a, b': 1 }]],
+    ['? x : 1\nb: 2\n', [{ x: 1, b: 2 }]],
+    // The value is whatever the line after a `k:` holds, so a block under a
+    // one-line `?` key is read as the value the entry already had.
+    ['? x : |\n  line\n', [{ x: 'line\n' }]],
+    ['? x :\n  c: 1\n', [{ x: { c: 1 } }]],
+    ['? x :\n', [{ x: null }]],
+    // The key left out, in every spelling a block file writes it.
+    ['?\n', [{ null: null }]],
+    ['?\n: 1\n', [{ null: 1 }]],
+    ['? : 1\n', [{ null: 1 }]],
+    ['?   \n: 1\n', [{ null: 1 }]],
+    ['? # note\n: 1\n', [{ null: 1 }]],
+    ['? &k\n: 1\n', [{ null: 1 }]],
+    ['? : 1\nb: 2\n', [{ null: 1, b: 2 }]],
+    ['? :\n  a: 1\n', [{ null: { a: 1 } }]],
+    ['- ?\n  : 1\n', [{ null: 1 }]],
+    // `~` is the other spelling of nothing, and a key written that way is the
+    // same key — it was a field called `~`, which no JSON file has.
+    ['? ~\n: 1\n', [{ null: 1 }]],
+    ['~: 1\n', [{ null: 1 }]],
+    // And the same in a flow collection, which is where the value is on the line
+    // by definition.
+    ['a: {? : 1}\n', [{ a: { null: 1 } }]],
+    ['a: {? : 1, b: 2}\n', [{ a: { null: 1, b: 2 } }]],
+    ['a: {?}\n', [{ a: { null: null } }]],
+    ['a: {? , b: 2}\n', [{ a: { null: null, b: 2 } }]],
+    ['{? : 1}\n', [{ null: 1 }]],
+    ['- {? : 1}\n', [{ null: 1 }]],
+    ['- {? : 1, b: 2}\n', [{ null: 1, b: 2 }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // The empty string is a key of its own and stays one: YAML keeps the key left
+  // out and the key written as `""` apart, and so does this.
+  for (const [text, want] of [
+    ['? ""\n: 1\n', [{ '': 1 }]],
+    ['a: {"": 1}\n', [{ a: { '': 1 } }]],
+    ["'': 1\n", [{ '': 1 }]]
+  ]) {
+    assert.deepStrictEqual(run(text, 'yaml').data, want, JSON.stringify(text));
+  }
+  // A key written `null: 1` was already this key — the name is the text it was
+  // written with — so the two spellings are the one field and not two.
+  assert.deepStrictEqual(run('null: 1\n', 'yaml').data, run('? : 1\n', 'yaml').data);
+
+  // An alias is the whole key and leaves no text behind it, so `? *z` is a key
+  // named after the value `z` holds. Asking whether the key was left out first
+  // called it a key YAML never wrote, and the block reader did exactly that while
+  // the flow reader did not.
+  assert.deepStrictEqual(run('a: &z 1\n? *z\n: 2\n', 'yaml').data, [{ a: 1, 1: 2 }]);
+  assert.deepStrictEqual(run('a: &z 1\nb: {? *z : 2}\n', 'yaml').data, [{ a: 1, b: { 1: 2 } }]);
+
+  // JSON has no key that is not text, so the two spellings of the key left out
+  // land on the same field. That is the collision the duplicate-key warning is
+  // for, and it is the same one a file with two identical names gets.
+  const twice = run('? : 1\n~: 2\n', 'yaml');
+  assert.deepStrictEqual(twice.data, [{ null: 2 }]);
+  assert.strictEqual(twice.warnings.length, 1);
+  assert.ok(/key "null" has two different values/.test(twice.warnings[0]), twice.warnings[0]);
+
+  // The tool's own writer cannot tell the key left out from one written `null`,
+  // and it does not have to: it quotes the name, so the key comes back as text
+  // and the entry survives the round trip through this reader's own two halves.
+  const written = serializers.yaml(run('? : 1\nb: 2\n', 'yaml').data);
+  assert.ok(/"null": 1/.test(written), written);
+  assert.deepStrictEqual(run(written, 'yaml').data, [{ null: 1, b: 2 }]);
+});
+
 test('a flow collection reads a key as the name it stands for', () => {
   // `{&z x : 1}` and `{*z : 2}` are a key that names itself and a key that is
   // a reference, and the flow reader took both for the text of the line — so an

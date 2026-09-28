@@ -2370,6 +2370,16 @@ function splitYAMLKey(content, no) {
   // on it. `- <<: *b` read as a field called `- <<` gave a file a field nobody
   // wrote and lost the list the line was opening.
   if (isYAMLSequenceEntry(content)) return null;
+  // A `?` in front of a key is the indicator that spells the key out, not part of
+  // the name. `? x : 1` is the entry `x: 1` and `? : 1` the one with the key left
+  // out, and reading their colon as an ordinary key separator named a field `? x`
+  // — a name no file writes, exit 0, an empty stderr, on the spelling that says
+  // out loud what the key is. The same entry over two lines (`? x` and `: 1`) and
+  // the same entry in a flow collection (`{? x : 1}`) were both read already; the
+  // one written on a single line was the only one left behind. Every caller of
+  // this function asks `isYAMLExplicitKey` right next to it, so handing the line
+  // on is what they were already asking for.
+  if (isYAMLExplicitKey(content)) return null;
   if (content[0] === '"' || content[0] === "'") {
     const quoted = readYAMLQuoted(content, 0);
     if (!quoted) return null;
@@ -2464,6 +2474,30 @@ function yamlTagName(tag) {
 // PyYAML's own resolver agrees — `!!bool y` is an error there, not a `true`.
 /** The tags whose result is a JSON scalar — the ones that are applied. */
 const CARRIED_YAML_TAGS = new Set(['str', 'int', 'float', 'bool', 'null']);
+/**
+ * The name a key that was not written gets. A JSON object has no key that is
+ * not a string, so the key YAML calls `null` — `?` on a line of its own, `? : 1`,
+ * `{? : 1}` — has to be spelled, and this is the spelling this reader already
+ * uses twice: `scalarKeyName` gives it to a reference to a value that holds
+ * nothing, and a file that wrote `null: 1` gets it because the name is the text
+ * it was written with. Both spellings come back as the same field, so the tool's
+ * own writer keeps the entry a round trip: `null: 1` in, `null: 1` out.
+ *
+ * Before this the empty key was read as the empty name `''`, which no file
+ * writes — and it could not tell a key left out (`?`) from a key written as an
+ * empty string (`? ""`), so the two YAML keeps apart arrived as the same field.
+ */
+const YAML_NULL_KEY = 'null';
+/**
+ * Is this key the one YAML leaves out? `?` and `? : 1` write nothing in front of
+ * the colon, and `~` is the other spelling of nothing — all three are the same
+ * key, and none of them is a field called `~`, which is a name no JSON file has.
+ * `""` is not one of them: that is a key written as the empty string, and YAML
+ * keeps the two apart, so the test has to know whether the key was quoted.
+ */
+function yamlKeyLeftOut(rawName, quoted) {
+  return !quoted && (rawName === '' || rawName === '~');
+}
 const YAML_TRUE = new Set(['yes', 'true', 'on']);
 const YAML_FALSE = new Set(['no', 'false', 'off']);
 
@@ -2632,7 +2666,7 @@ function scalarKeyName(value, no, ctx) {
       `YAML line ${no}: a field name is text, and a reference to a ${Array.isArray(value) ? 'list' : 'table'} is not`
     );
   }
-  return value === null ? 'null' : String(value);
+  return value === null ? YAML_NULL_KEY : String(value);
 }
 
 /**
@@ -2688,20 +2722,34 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       const keyNo = lines[i].no;
       // The key may be quoted, so the `#` is only a comment when it stands in
       // the open — the same question `stripYAMLComment` asks everywhere else.
-      const keyText = stripYAMLComment(lines[i].content.slice(1)).replace(/^[ \t]+/, '').replace(/\s+$/, '');
+      const afterQuestion = stripYAMLComment(lines[i].content.slice(1)).replace(/^[ \t]+/, '').replace(/\s+$/, '');
+      // `? x : 1` writes the whole entry on the line, and `? : 1` writes it with
+      // the key left out. The colon is the one that ends a key, whatever stood in
+      // front of it, so the text after the `?` is asked the same question every
+      // other key is asked instead of being taken as the name whole — which is
+      // what named a field `? x : 1` and lost both the key and the value.
+      const inline = splitYAMLKey(afterQuestion, keyNo);
+      const keyText = inline ? inline.key : afterQuestion;
       const keyProp = keyText ? readYAMLProperties(keyText, keyNo) : null;
-      // A key written as nothing at all is the empty name, not a missing one, and
-      // a quoted key is the text inside its quotes — the same answer `k: v` gives.
+      // A key written as nothing at all is the key YAML leaves out, which is
+      // `null`, and a quoted key is the text inside its quotes — the same answer
+      // `k: v` gives. `? ""` is the second of the two, so the empty name and the
+      // empty string stay apart.
       const quotedKey = keyText[0] === '"' || keyText[0] === "'" ? readYAMLQuoted(keyText, 0) : null;
       const rawName = quotedKey
         ? quotedKey.value
         : keyText
           ? (keyProp ? keyProp.rest : keyText)
           : '';
-      const name = rawName === ''
-        ? ''
-        : keyProp && keyProp.alias
-          ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, keyNo), keyNo, ctx)
+      // The alias is asked about before the key left out, because an alias *is*
+      // the whole key and leaves no text behind it: `? *z` is a key named after
+      // the value `z` holds, and testing for the missing key first called it a
+      // key YAML never wrote. This is the order the flow reader asks in, and the
+      // reason is the same there.
+      const name = keyProp && keyProp.alias
+        ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, keyNo), keyNo, ctx)
+        : yamlKeyLeftOut(rawName, quotedKey)
+          ? YAML_NULL_KEY
           : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
             ? String(applyYAMLTag(keyProp.tag, rawName, ctx, keyNo))
             : keyProp && keyProp.tag
@@ -2713,6 +2761,35 @@ function parseYAMLMapping(lines, start, indent, ctx) {
         ctx.anchors.set(keyProp.anchor, value);
         return value;
       };
+
+      // The value on the same line as the key, which is what `? x : 1` and
+      // `? :` write. Everything below here reads the value from the next line,
+      // which is the other spelling of the same entry.
+      if (inline) {
+        const rest = inline.rest;
+        if (rest === '' || isYAMLComment(rest)) {
+          const k = skipYAMLBlanks(lines, i + 1);
+          if (k < lines.length && lines[k].indent > indent) {
+            const child = parseYAMLBlock(lines, k, lines[k].indent, ctx);
+            set(name, named(child.value), keyNo);
+            i = child.end;
+            continue;
+          }
+          set(name, named(null), keyNo);
+          i++;
+          continue;
+        }
+        const block = blockScalarHeader(rest);
+        if (block) {
+          const child = readYAMLBlockScalar(lines, i + 1, indent, block);
+          set(name, named(child.value), keyNo);
+          i = child.end;
+          continue;
+        }
+        set(name, named(parseYAMLScalar(rest, ctx)), keyNo);
+        i++;
+        continue;
+      }
 
       // The value stands on its own line, at the key's indentation or the one
       // level a sequence entry pushed it to. A deeper line with no `:` is the
@@ -2758,7 +2835,12 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       continue;
     }
     const { key, keyProp } = split;
-    let name = key;
+    // A key written `~: 1` is the key YAML leaves out, the same one `?` and
+    // `? : 1` write — not a field called `~`. `splitYAMLKey` has already read a
+    // quoted key as the text inside its quotes, so only the bare spelling can be
+    // the missing one, and `"": 1` stays the empty string.
+    const quotedKey = lines[i].content[0] === '"' || lines[i].content[0] === "'";
+    let name = !keyProp && yamlKeyLeftOut(key, quotedKey) ? YAML_NULL_KEY : key;
     if (keyProp) {
       // A name can stand on the key too: `&k b: 2` names the field `b`, and
       // `*x: 2` takes the field name from the value it points at. A JSON field
@@ -3281,7 +3363,7 @@ function parseYAMLFlow(text, ctx) {
    * The field name a flow key stands for, asked the same three questions the
    * block reader asks of one: a quoted key is the text inside its quotes, a key
    * may name an alias and hand the value over, and a key written as nothing at
-   * all is the empty name rather than a missing one.
+   * all is the key YAML leaves out rather than a missing one.
    *
    * It is the same reader for `{x: 1}` and for `{? x : 1}`, because a flow key is
    * a flow key — the `?` says how it was written down, not what it is. So
@@ -3302,8 +3384,8 @@ function parseYAMLFlow(text, ctx) {
     // no name at all.
     const name = keyProp && keyProp.alias
       ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, ctx.line), ctx.line, ctx)
-      : rawName === ''
-        ? ''
+      : yamlKeyLeftOut(rawName, quoted)
+        ? YAML_NULL_KEY
         : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
           ? String(applyYAMLTag(keyProp.tag, rawName, ctx, ctx.line, keyProp.rest))
           : keyProp && keyProp.tag
