@@ -2344,13 +2344,17 @@ t('a flow collection that is the whole document is read as its content', () => {
   // A sequence at the root, and a comment after the collection.
   assert.deepStrictEqual(run('[1, 2, 3]', 'yaml', []).data, [1, 2, 3]);
   assert.deepStrictEqual(run('{a: 1} # a note', 'yaml', []).data, [{ a: 1 }]);
-  // An unbalanced `{` is a different file, and it reads the way it reads today.
-  assert.deepStrictEqual(run('{a: 1', 'yaml', []).data, [{ '{a': 1 }]);
+  // An unbalanced `{` is a file PyYAML refuses, and so is a collection on the root
+  // line with a line behind it — `yamlFlowLine` only takes the collection when
+  // nothing follows it, so the block reader below got the line. It used to answer
+  // the field `{a` holding the text `1` and the field `{a` holding `1}`, a name no
+  // file writes; both are now refused by name, the same way `? {a: 1}` is.
+  assert.ok(run('{a: 1', 'yaml', []).error, '{a: 1 should be refused');
   // Nor does a collection on the root line swallow the lines under it. A
   // collection spread over several lines *is* a document this rule reaches,
   // since the lines are folded together before it is asked — the old answer
   // here was the one string `[`, and PyYAML reads the list.
-  assert.deepStrictEqual(run('{a: 1}\nb: 2', 'yaml', []).data, [{ '{a': '1}', b: 2 }]);
+  assert.ok(run('{a: 1}\nb: 2', 'yaml', []).error, '{a: 1}\\nb: 2 should be refused');
   assert.deepStrictEqual(run('[\n  {a: 1},\n  {a: 2}\n]', 'yaml', []).data, [{ a: 1 }, { a: 2 }]);
   // A flow collection under an explicit document marker is the same document.
   assert.deepStrictEqual(run('---\n{a: 1}\n', 'yaml', []).data, [{ a: 1 }]);
@@ -4389,14 +4393,71 @@ t('a key spelled out in front is a key', () => {
     assert.strictEqual(r.warnings.length, warnings, JSON.stringify(text));
   }
 
-  // A key that is a flow collection is read as the text of that collection, so
-  // the field is named `[x, y]`. PyYAML refuses the document there instead, since
-  // a list cannot be a key at all; this tool names the key it was given, which is
-  // the reading T69's decision already made for a key it cannot resolve.
-  assert.deepStrictEqual(
-    run('a:\n  ? [x, y]\n  : 1\n', 'yaml').data,
-    [{ a: { '[x, y]': 1 } }]
-  );
+  // A *quoted* key is text, so the same collection written in quotes is still the
+  // key it spells — the rule asks the key's own text before its quotes are read,
+  // and this is the control that says it did not read them first.
+  assert.deepStrictEqual(run('? "[x, y]"\n: 1\n', 'yaml').data, [{ '[x, y]': 1 }]);
+  assert.deepStrictEqual(run("a: {? 'x, b' : 1}\n", 'yaml').data, [{ a: { 'x, b': 1 } }]);
+});
+
+t('a key that is a flow collection is refused, because a field name is text', () => {
+  // A table or a list standing where a key belongs cannot be a field name in JSON,
+  // and PyYAML refuses every one of these with `found unhashable key`. It used to
+  // be read as the text of the collection instead, so the field was named after it
+  // — a name this tool invented — and in the two-line spellings the key's *own
+  // value* was read as a second field beside it, so `? {a: 1}` + `: 1` came back
+  // as two fields, `null` and `{a`, and neither was in the file. The six written
+  // inside a flow collection came back as the line's own text, taking every field
+  // of the document with it, exit 0 and an empty stderr. Twenty spellings measured
+  // 2026-09-28 with PyYAML 6.0.3 as the judge: 0 of 20 in agreement before, 20 of
+  // 20 after.
+  const collectionKeys = [
+    'a:\n  ? [x, y]\n  : 1\n',
+    '? {a: 1}\n: 1\n',
+    '? {a: 1} : 1\n',
+    '? [x, y]\n: 1\n',
+    '? [x, y] : 1\n',
+    '- ? {a: 1}\n  : 1\n',
+    '- ? {a: 1} : 1\n',
+    '? {a: 1}\n',
+    '- ? {a: 1}\n',
+    'a:\n  ? {b: 1}\n  : 1\n',
+    '? {a: 1}\n: 1\nb: 2\n',
+    'a: {? {b: 1} : 1}\n',
+    'a: {? [x, y] : 1}\n',
+    'a: {{b: 1}: 1}\n',
+    'a: {[x]: 1}\n',
+    'a: {[1, 2]: 3}\n',
+    'a: {[]: 1}\n',
+    'a: {? [] : 1}\n',
+    'a: {? {b: 1, c: 2} : 3}\n',
+    '{a: 1}: 2\n'
+  ];
+  for (const text of collectionKeys) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${JSON.stringify(text)} was read as ${JSON.stringify(r.data)}`);
+    assert.match(r.error, /a field name is text, and a (list|table) is not/, r.error);
+  }
+  // A *quoted* key is text, so the same collection written in quotes is still the
+  // key it spells — the rule asks the key's own text before its quotes are read,
+  // and this is the control that says it did not read them first.
+  assert.deepStrictEqual(run('? "[x, y]"\n: 1\n', 'yaml').data, [{ '[x, y]': 1 }]);
+  assert.deepStrictEqual(run("a: {? 'x, b' : 1}\n", 'yaml').data, [{ a: { 'x, b': 1 } }]);
+  // And a collection is still read wherever it *is* the value, at the root, one
+  // level down, over two lines and on a list entry.
+  for (const [text, want] of [
+    ['{a: 1, b: two}\n', [{ a: 1, b: 'two' }]],
+    ['a: {a: 1}\n', [{ a: { a: 1 } }]],
+    ['a: [1, 2]\n', [{ a: [1, 2] }]],
+    ['a: [1,\n  2]\n', [{ a: [1, 2] }]],
+    ['- {a: 1}\n', [{ a: 1 }]],
+    ['- [1, 2]\n', [[1, 2]]],
+    ['a: [not a collection]\n', [{ a: ['not a collection'] }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
 
   // And everything else the reader did with a `?` line is untouched: a `?` in a
   // value, in a quote and in a comment is text, and a folded scalar ends where

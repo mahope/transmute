@@ -2747,6 +2747,45 @@ function readYAMLMerge(text, ctx, no) {
 }
 
 /**
+ * A file the reader refuses, said in a way the flow reader must not swallow.
+ * `parseYAMLFlow` catches everything and answers "this text is not a flow
+ * collection", so the caller reads the line as the text it was written with —
+ * the right answer for `a: [not a collection]`, which is a list of one text. But
+ * a file that is *wrong* cannot be answered that way: it came back as its own
+ * text, every field in it gone and nothing on stderr. So the refusals carry their
+ * own type and the catch passes those on.
+ */
+class YAMLRefusal extends SyntaxError {}
+
+/**
+ * Refuse a key that opens a flow collection — `? [x, y]`, `{a: 1} : 1`,
+ * `{? {b: 1} : 1}`, `{{b: 1}: 1}`. A table or a list standing where a field name
+ * belongs is the rule `scalarKeyName` states for a reference that holds one, in
+ * the same words, because it is the same rule: **a JSON object has no key that is
+ * not a string.**
+ *
+ * Asked of the key's own written text, after its `&name` and `!tag` are off and
+ * before its quotes are read, so `? "[x, y]"` is still the key `[x, y]` — a
+ * quoted key is text — and only the bare `[x, y]` is a list where a name goes.
+ * Returns the text so the two call sites are one line each, which is what keeps
+ * the question from being answered two ways.
+ *
+ * PyYAML refuses all of these files with `found unhashable key`. Twenty spellings
+ * measured 2026-09-28 through `run(text, 'yaml')`, 0 of 20 in agreement: two of
+ * them read the collection as the *name* of a field the file never wrote, so
+ * `? {a: 1}` + `: 1` came back as two fields — `null` and `{a` — and the six
+ * written inside a flow collection came back as the line's own text, taking every
+ * field of the document with it.
+ */
+function refuseCollectionKey(text, no) {
+  if (!text || (text[0] !== '[' && text[0] !== '{')) return text;
+  const where = no ? `YAML line ${no}: ` : '';
+  throw new YAMLRefusal(
+    `${where}a field name is text, and a ${text[0] === '[' ? 'list' : 'table'} is not`
+  );
+}
+
+/**
  * A field name that came from a reference: a JSON key is a string, so a name that
  * is a table or a list is refused here instead of being written as `[object
  * Object]` in a file the user then keys on.
@@ -2874,6 +2913,12 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       const keyText = inline ? inline.key : afterQuestion;
       const written = inline ? inline.rawKey : afterQuestion;
       const keyProp = inline ? inline.keyProp : (keyText ? readYAMLProperties(keyText, keyNo, 'key') : null);
+      // A key that opens a collection is a table or a list where a field name
+      // belongs, and it is refused here — before the text is read as a name, which
+      // is what named a field `{a` and then named a second field `null` beside it
+      // (`? {a: 1}` + `: 1` gave two fields, neither of them in the file). PyYAML
+      // refuses the same file with `found unhashable key`.
+      refuseCollectionKey(keyProp ? keyProp.rest : keyText, keyNo);
       // A key written as nothing at all is the key YAML leaves out, which is
       // `null`, and a quoted key is the text inside its quotes — the same answer
       // `k: v` gives. `? ""` is the second of the two, so the empty name and the
@@ -2994,6 +3039,12 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       continue;
     }
     const { key, keyProp } = split;
+    // The same refusal the `?` line and the flow reader make, asked of the one
+    // path that is left: a key that opens a collection is a table or a list where
+    // a field name belongs. `{a: 1}: 2` at the root is the spelling the flow
+    // reader never sees, and it used to be read as the field `{a` holding the
+    // text `1}: 2` — the whole line as a value, split in two.
+    refuseCollectionKey(keyProp ? keyProp.rest : key, lines[i].no);
     // A key written `~: 1` is the key YAML leaves out, the same one `?` and
     // `? : 1` write — not a field called `~`. `splitYAMLKey` has already read a
     // quoted key as the text inside its quotes, so only the bare spelling can be
@@ -3565,6 +3616,12 @@ function parseYAMLFlow(text, ctx) {
    */
   const flowKeyName = (keyText) => {
     const keyProp = keyText ? readYAMLProperties(keyText, ctx.line, 'key') : null;
+    // The same question the block reader asks before it names a key, asked here
+    // because both flow paths — `{? {b: 1} : 1}` and `[? [x, y]]` — come through
+    // this one place, so the two readers cannot answer it differently. Without it
+    // the flow reader gave up on the whole line and the document came back as the
+    // text it was written with, every field in it lost and nothing on stderr.
+    refuseCollectionKey(keyProp ? keyProp.rest : keyText, ctx.line);
     // The quotes are looked for after the `&name` and the `!tag`, for the same
     // reason the block reader looks for them there: `{&k "x": 1}` is the field
     // `x`, and it used to be a field called `"x"`.
@@ -3704,7 +3761,12 @@ function parseYAMLFlow(text, ctx) {
     const parsed = value();
     skipSpace();
     return i === text.length ? { ok: true, value: parsed } : { ok: false };
-  } catch {
+  } catch (err) {
+    // "This is not a flow collection" is the answer every caller wants, and it is
+    // why this catch is here. "This file is wrong" is not that answer — that one
+    // has to reach the user, or a bad tag, an unknown alias and a collection
+    // standing where a key belongs all come back as the line's own text.
+    if (err instanceof YAMLRefusal) throw err;
     return { ok: false };
   }
 }
