@@ -1,9 +1,26 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-28 (T93)
+Opdateret: 2026-09-28 (T94)
 
 
 ## Mission
+
+**Næste iteration (T94): T94 er færdig på `ceo/csv-quoting-measure` (fra `main`).** Den tog punkt 93's (d) ordret — **seksten iterationer have været én læser** — og målingen siger at **CSV-læseren og -skriveren er sunde**, så opgaven blev ikke en rettelse men en låsning. Se punkt 94.
+
+**Først de to målinger alleiterationer gør.** CI med ét kald: `success`, `success`, `success` — **trettende grønne kørsel i træk** siden T83's rettelse. `npm run check:deploy`: **`DEPLOY-MISSING` uændret for seksogtyvende gang i træk**, de samme syv afvigende filer (`/da/index.html`, `/da/privacy/`, `/engine.js`, `/index.html`, `/privacy/`, `/sitemap.xml`, `/try.html`). Se `❓ Til Mads` punkt 1.
+
+**Punkt 93's (d) skrev at `parsers.csv`s `countUnquoted`/quoting skulle måles, og målingen siger at der ikke er noget at rette.** 50 læsefiler og 23 skrivefiler gennem **Pythons `csv`-modul som dommer** — samme ene-dommer-vej som T73's YAML-, CSV- og SQL-tabeller, og første gang en *anden* læser end YAML har været målt. **Læseren: 40 af 50 er enige med PyYAML's søskend** (`csv`), og **alle ti afvigelser er en af tre dokumenterede regler** — trim af et felt der ikke blev læst som citeret (3), en kort række fyldt ud til sidens bredde (5), og en tom linje mellem poster droppet som RFC 4180 tillader (2). **Ingen afvigelse er data-tab, opfundet tekst eller tavshed.** Skriveren: **alle 23** filer den skriver, læser Pythons `csv` uændret tilbage — inklusive komma, citat, linjeskift, CR, `;`, tab, `|`, kantspaltes værdier, tomme værdier, et tomt kolonnenavn, et navn med mellemrum, et navn med komma, et navn med citat, tal, boolean, `null`, unicode. Format-detektoren er målt på 19 filer (smukt JSON, XML med og uden deklaration, YAML med kommentar og `---`, alle fire delimitere, enmandskolonne, `42`, `12:30` i et hoved, `http://` i et hoved) og **rammer alle rigtigt**.
+
+**To målefejl i min egen måling, og de er samme klasse som de fireten i to dage.** Min forventningsside byggede den med Pythons `str()` på tal og booleans, så den skrev `True` og `None` hvor en CSV-celle holder `true` og ingenting — to af de treogtyve skrivninger så ud som afvigelser og var det ikke. **En målingstabel skal kunne skelne mellem de to ting den sammenligner, ellers måler den ingenting**, og her var det forventningen, ikke sammenligneren, der ikke kunne.
+
+**Rettelsen er ingen: rettelsen er tabellen.** Én ny test (280 → 281) med alle 73 målte filer, hver med sit målte svar, og de ti afvigelser med den regel de følger skrevet over sig — så en ændring i `parseCSV`, `escapeCSV`, `csvCell`, `detectDelimiter` eller `countUnquoted` ikke kan flytte en af dem stille. Det er det loopet har manglet i seksten iterationer: **hver YAML-iteration målte sin tabel fra hånd, og planen tæller nu fjorten gange en tabel, der ikke kunne skelne mellem de to ting den sammenlignede.** Målingen ligger i `tools/`-form på papir (Python-dommer + 73 cases), og næste iteration kan køre den igen med to tal i stedet for at bygge den fra nul.
+
+**Baseline for den ændrede kode, målt 2026-09-28 (uændret af en låsning):** Plausible `transmute.run` 28 dage: **1 besøgende, 1 sidevisning**, bounce 100 %, besøgstid 0 s. Cloudflare 28 d: 3734 unikke besøg-dage, 7027 sidevisninger, 20560 requests (tæller også bots), **908 unikke sidste 7 dage**. En låsning kan ikke måles i trafik; den kan måles i at **de 73 filer der holder CSV-læseren og -skriveren sammen nu er en del af gaten**, så næste iteration ikke skal måle dem igen.
+
+**Ingen site-fil rørt** (`src/engine.js` er uændret), så der er ingen `VERIFICÉR DEPLOY`-note at skrive.
+
+**Næste opgave, målt før den skrives.** (a) **Den anden halvdel af punkt 93's (d): XML's lister** — samme måling, samme dommer (`xml.etree.ElementTree`), samme tre spørgsmål holdt adskilt; den er ulæst og den er den næste læser i rækken efter CSV. (b) Punkt 93's (a): den døde fejlkanal i `parseYAMLFlow` er stadig død for alt andet end strømsamlinger — mål `readYAMLAlias`'s og `applyYAMLTag`s afvisninger inde i en strøm. (c) Punkt 93's (b) og (c): ankernavn med kolon taber nøglens tekst, `&` uden navn. (d) **Mål det `#` der `#`-kommentaren efterlader i en CSV-læsning** — detektoren springer en kommentarlinje over, når den afgør formatet, men læseren gør ikke, så `# exported` bliver overskriften på en rigtig eksport.
+
 
 **Næste iteration (T93): T93 er færdig på `ceo/yaml-collection-key` (fra `main`), MERGERET til `main` (fast-forward), pushet 2026-09-28 ca. 05:4x CEST.** Den tog punkt 92's (a) ordret — **en strømsamling som nøgle i otte stavemåder** — og målingen sagde at opgaven var **mindre end skrevet, men at den var den værste i læseren siden punkt 82: 0 af 20 stavemåder var enige, fordi PyYAML afviser dem alle og værktøjet læste dem alle.** Se punkt 93.
 
@@ -931,6 +948,18 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 
 - 2026-09-27 ca. 13:4x–14:0x CEST: **T72 gennemført på `ceo/xml-prefix-names` (fra `main`), commits `fa52410` + `3aeac9e`, MERGERET til `main` som `e44a1cf`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **seksoghalvtredsindstyvende** gang i træk, live er `3d90812` og de samme 28 afvigende filer. Emnet var T71's eget næste mål: **de værdier der mangler en hel stavning.** Elle varianter målt på den rigtige binary før koden blev rørt, **med `xml.etree.ElementTree` som dommer** i stedet for værktøjets egen læser. Tre fund: et kolon i et navn er en navnerumsreference, så `{"a:b":1}` skrev `<a:b>` og **filen kunne ikke åbnes** af nogen parser; en tabulator eller et linjeskift i en attributværdi bliver et mellemrum, så værktøjet og en rigtig læser læste samme byte som to forskellige værdier; og `@xmlns` skrev en navnerumserklæring, som en konformer læser ser som nul attributter. `$` i en YAML-nøgle viste sig allerede rettet. Rettelsen er `writesAsXMLName` (skriverens spørgsmål, læserens `XML_NAME` urørt) og `escapeXMLAttr`. Se punkt 72.
 - 2026-09-27 ca. 12:4x–13:2x CEST: **T71 gennemført på `ceo/boolean-truthy` (fra `main`), commit `cf9803c`, MERGERET til `main` som `19b9737`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **femoghalvtredsindstyvende** gang i træk, live er `3d90812`, 2 sider utilgængelige (`/support/`, `/da/support/`) og de samme 28 afvigende filer. Emnet var T70's eget næste mål: **sandhedsværdier på tværs af formaterne.** `{"a":true}` gennem alle seks formater, frem og tilbage gennem dem der kan læses, plus den passage i `docs/cli.md` der siger at `sql` skriver en streng der ligner en boolean som `'true'` og en rigtig boolean som `TRUE` — den passage stod der **uden en eneste kørsel bag sig**, og den er nu kørt ordret: **den er sand.** To veje rene, ét fund der ikke lå i koden men i en påstand: **`reportAbsentFields` sagde "json, yaml and xml keep the difference" om en `null`, og en test låste den påstand — målt er den falsk for `xml`**, fordi `String(null)` er de fire bogstaver `null`, så en fraværende værdi blev en værdi, exit 0, tom stderr. Rettelsen er `reportXMLNulls` (samme idiom som `reportXMLListShape`, talt pr. felt og med hvert steds eget navn), den rettede sætning i `reportAbsentFields`, de to advarselsblokke i `docs/cli.md` der lavede samme fejl, og en ny sektion i dokumentationen. Se punkt 71.
+
+### 94. [x] Mål CSV-læseren og -skriveren mod Pythons `csv`, og lås de 73 filer fast i gaten
+
+**Hvorfor:** punkt 93's (d), som har stået i køen siden T82. Seksten iterationer har kun målt én læser, og CSV er den læser en bruger rammer først — en håndskrevet regnearks-eksport, en mailingliste, en `.tsv` fra et værktøj. Uden en tabel vidste ingen, om den var i orden, og hver fremtidig ændring i den måtte måles fra hånd igen.
+
+**Måling:** 50 læsefiler + 23 skrivefiler, Python 3's `csv` som dommer. Læseren 40 af 50 enige; alle ti afvigelser er trim (3), række udvidet til sidens bredde (5) eller en tom linje droppet (2) — de tre regler læseren dokumenterer. Skriveren 23 af 23. Detektoren 19 filer, alle rigtige.
+
+**Resultat:** ingen fejl at rette. Rettelsen er tabellen: `test/test.js` har nu én test med alle 73 filer og deres målte svar, så `parseCSV`, `escapeCSV`, `csvCell`, `detectDelimiter` og `countUnquoted` ikke kan flytte en uden at gaten bliver rød.
+
+**Acceptkriterium:** `npm test` exit 0 med 281 engine-tests, og de 73 linjer er røde mod `git show HEAD:test/test.js` — de findes ikke, før de skrives.
+
+**Næste:** (a) XML's lister mod `xml.etree.ElementTree`, (b) punkt 93's (a) den døde fejlkanal i strømlæseren, (c) ankernavn med kolon, (d) `#`-kommentaren i en CSV-eksport.
 
 ### 90. [x] Læs en nøgles egen tekst med citattegnene væk, og navngiv tagget på nøglen
 

@@ -5116,6 +5116,180 @@ test('a key that carries a tag and no text of its own is named, not left out', (
   }
 });
 
+test('CSV: 50 files read against Python\'s csv, and 23 written files read back', () => {
+  // The CSV reader and writer had been measured by hand in sixteen iterations of
+  // YAML work and never by a table, so nothing held them in place. Every line below
+  // is a measured answer: the input is one of fifty shapes a real export has, the
+  // expected value is what Python 3's `csv` module says about the same file, and a
+  // line that differs says which of the reader's three documented rules it follows —
+  // the trim of an unquoted field, the padding of a short row to the header's width,
+  // or the dropping of a blank line between records. A cell count, a cell's text and
+  // that trim are three different questions, and the table keeps them apart on
+  // purpose: the last fifteen iterations each found a table that could not.
+
+  // --- the reader, 50 files -------------------------------------------
+  // "a,b\n1,2\n"
+  assert.deepStrictEqual(run("a,b\n1,2\n", 'csv', [], 'json').data, [{"a": 1, "b": 2}]);
+  // "name,note\n\"Smith, John\",ok\n"
+  assert.deepStrictEqual(run("name,note\n\"Smith, John\",ok\n", 'csv', [], 'json').data, [{"name": "Smith, John", "note": "ok"}]);
+  // "name,note\n\"Smith, John\",\"said \"\"hi\"\"\"\n"
+  assert.deepStrictEqual(run("name,note\n\"Smith, John\",\"said \"\"hi\"\"\"\n", 'csv', [], 'json').data, [{"name": "Smith, John", "note": "said \"hi\""}]);
+  // "name,note\n\"multi\nline\",x\n"
+  assert.deepStrictEqual(run("name,note\n\"multi\nline\",x\n", 'csv', [], 'json').data, [{"name": "multi\nline", "note": "x"}]);
+  // leading space before quote: trim: the space keeps the quotes literal, as they are in a real file
+  // "name,note\n \"quoted\",x\n"
+  assert.deepStrictEqual(run("name,note\n \"quoted\",x\n", 'csv', [], 'json').data, [{"name": "\"quoted\"", "note": "x"}]);
+  // "a,b\n\"x\" ,y\n"
+  assert.deepStrictEqual(run("a,b\n\"x\" ,y\n", 'csv', [], 'json').data, [{"a": "x ", "b": "y"}]);
+  // "a,b\n\"x\"y,z\n"
+  assert.deepStrictEqual(run("a,b\n\"x\"y,z\n", 'csv', [], 'json').data, [{"a": "xy", "b": "z"}]);
+  // "a,b\na\"b,c\n"
+  assert.deepStrictEqual(run("a,b\na\"b,c\n", 'csv', [], 'json').data, [{"a": "a\"b", "b": "c"}]);
+  // "a,b\na\"b\"c,d\n"
+  assert.deepStrictEqual(run("a,b\na\"b\"c,d\n", 'csv', [], 'json').data, [{"a": "a\"b\"c", "b": "d"}]);
+  // "a,b\n\"\",x\n"
+  assert.deepStrictEqual(run("a,b\n\"\",x\n", 'csv', [], 'json').data, [{"a": "", "b": "x"}]);
+  // "a,b\n\"\"\"\",x\n"
+  assert.deepStrictEqual(run("a,b\n\"\"\"\",x\n", 'csv', [], 'json').data, [{"a": "\"", "b": "x"}]);
+  // "a,b\n\"a\"\"\",x\n"
+  assert.deepStrictEqual(run("a,b\n\"a\"\"\",x\n", 'csv', [], 'json').data, [{"a": "a\"", "b": "x"}]);
+  // "a,b\n\"  \",x\n"
+  assert.deepStrictEqual(run("a,b\n\"  \",x\n", 'csv', [], 'json').data, [{"a": "  ", "b": "x"}]);
+  // unquoted spaces trimmed: trim: the reader trims every field it did not read as quoted
+  // "a,b\n  x  ,  y\n"
+  assert.deepStrictEqual(run("a,b\n  x  ,  y\n", 'csv', [], 'json').data, [{"a": "x", "b": "y"}]);
+  // unterminated quote: padded to the header's width, like any short row
+  // "a,b\n\"c,d\n"
+  assert.deepStrictEqual(run("a,b\n\"c,d\n", 'csv', [], 'json').data, [{"a": "c,d\n", "b": ""}]);
+  // unterminated quote eof: padded to the header's width, like any short row
+  // "a,b\n\"c"
+  assert.deepStrictEqual(run("a,b\n\"c", 'csv', [], 'json').data, [{"a": "c", "b": ""}]);
+  // "a,b\r1,2\r"
+  assert.deepStrictEqual(run("a,b\r1,2\r", 'csv', [], 'json').data, [{"a": 1, "b": 2}]);
+  // "a,b\r\n1,2\r\n"
+  assert.deepStrictEqual(run("a,b\r\n1,2\r\n", 'csv', [], 'json').data, [{"a": 1, "b": 2}]);
+  // "a,b\r\n\"x\ry\",z\r\n"
+  assert.deepStrictEqual(run("a,b\r\n\"x\ry\",z\r\n", 'csv', [], 'json').data, [{"a": "x\ry", "b": "z"}]);
+  // "a;b\n1;2\n"
+  assert.deepStrictEqual(run("a;b\n1;2\n", 'csv', [], 'json', { delimiter: ";" }).data, [{"a": 1, "b": 2}]);
+  // "a;b\n\"x;y\";2\n"
+  assert.deepStrictEqual(run("a;b\n\"x;y\";2\n", 'csv', [], 'json', { delimiter: ";" }).data, [{"a": "x;y", "b": 2}]);
+  // "a\tb\n1\t2\n"
+  assert.deepStrictEqual(run("a\tb\n1\t2\n", 'csv', [], 'json', { delimiter: "\t" }).data, [{"a": 1, "b": 2}]);
+  // "a|b\n1|2\n"
+  assert.deepStrictEqual(run("a|b\n1|2\n", 'csv', [], 'json', { delimiter: "|" }).data, [{"a": 1, "b": 2}]);
+  // "a,b\n1,2,\n"
+  assert.deepStrictEqual(run("a,b\n1,2,\n", 'csv', [], 'json').data, [{"a": 1, "b": 2, "column3": ""}]);
+  // "a,b\n1,2\n"
+  assert.deepStrictEqual(run("a,b\n1,2\n", 'csv', [], 'json').data, [{"a": 1, "b": 2}]);
+  // blank line between records: RFC 4180 lets a file carry blank lines between records; the reader drops them
+  // "a,b\n1,2\n\n3,4\n"
+  assert.deepStrictEqual(run("a,b\n1,2\n\n3,4\n", 'csv', [], 'json').data, [{"a": 1, "b": 2}, {"a": 3, "b": 4}]);
+  // blank quoted record: padded to the header's width, like any short row
+  // "a,b\n1,2\n\"\"\n"
+  assert.deepStrictEqual(run("a,b\n1,2\n\"\"\n", 'csv', [], 'json').data, [{"a": 1, "b": 2}, {"a": "", "b": ""}]);
+  // "a,b\n1,2,3,4\n"
+  assert.deepStrictEqual(run("a,b\n1,2,3,4\n", 'csv', [], 'json').data, [{"a": 1, "b": 2, "column3": 3, "column4": 4}]);
+  // "\"a,1\",b\n1,2\n"
+  assert.deepStrictEqual(run("\"a,1\",b\n1,2\n", 'csv', [], 'json').data, [{"a,1": 1, "b": 2}]);
+  // "\" a \",b\n1,2\n"
+  assert.deepStrictEqual(run("\" a \",b\n1,2\n", 'csv', [], 'json').data, [{" a ": 1, "b": 2}]);
+  // "a,\n1,2\n"
+  assert.deepStrictEqual(run("a,\n1,2\n", 'csv', [], 'json').data, [{"a": 1, "": 2}]);
+  // "a,b\n,\n"
+  assert.deepStrictEqual(run("a,b\n,\n", 'csv', [], 'json').data, [{"a": "", "b": ""}]);
+  // "a,b\n\"x;y|z\tw\",q\n"
+  assert.deepStrictEqual(run("a,b\n\"x;y|z\tw\",q\n", 'csv', [], 'json').data, [{"a": "x;y|z\tw", "b": "q"}]);
+  // "a,b,c\n,\"q\",\n"
+  assert.deepStrictEqual(run("a,b,c\n,\"q\",\n", 'csv', [], 'json').data, [{"a": "", "b": "q", "c": ""}]);
+  // "a,b,c\n1,,3\n"
+  assert.deepStrictEqual(run("a,b,c\n1,,3\n", 'csv', [], 'json').data, [{"a": 1, "b": "", "c": 3}]);
+  // "a,b\n\"1,234\",2\n"
+  assert.deepStrictEqual(run("a,b\n\"1,234\",2\n", 'csv', [], 'json').data, [{"a": "1,234", "b": 2}]);
+  // "a\n\"\"\n"
+  assert.deepStrictEqual(run("a\n\"\"\n", 'csv', [], 'json').data, [{"a": ""}]);
+  // single col plain empty: a blank line is not a record, so a one-column file of them has no rows
+  // "a\n\n"
+  assert.deepStrictEqual(run("a\n\n", 'csv', [], 'json').data, []);
+  // "﻿a,b\n1,2\n"
+  assert.deepStrictEqual(run("﻿a,b\n1,2\n", 'csv', [], 'json').data, [{"a": 1, "b": 2}]);
+  // "a,b\n\"x\n\ny\",2\n"
+  assert.deepStrictEqual(run("a,b\n\"x\n\ny\",2\n", 'csv', [], 'json').data, [{"a": "x\n\ny", "b": 2}]);
+  // "a,b\n\"x\"\"\",2\n"
+  assert.deepStrictEqual(run("a,b\n\"x\"\"\",2\n", 'csv', [], 'json').data, [{"a": "x\"", "b": 2}]);
+  // "a,b,c\n1,\"\",3\n"
+  assert.deepStrictEqual(run("a,b,c\n1,\"\",3\n", 'csv', [], 'json').data, [{"a": 1, "b": "", "c": 3}]);
+  // space then unterminated: trim: same, on a file whose quote is never closed
+  // "a,b\n \"c,d\n"
+  assert.deepStrictEqual(run("a,b\n \"c,d\n", 'csv', [], 'json').data, [{"a": "\"c", "b": "d"}]);
+  // delim inside unterminated: padded to the header's width, like any short row
+  // "a,b\n\"c,d,e\n"
+  assert.deepStrictEqual(run("a,b\n\"c,d,e\n", 'csv', [], 'json').data, [{"a": "c,d,e\n", "b": ""}]);
+  // row shorter: padded to the header's width, like any short row
+  // "a,b,c\n1,2\n"
+  assert.deepStrictEqual(run("a,b,c\n1,2\n", 'csv', [], 'json').data, [{"a": 1, "b": 2, "c": ""}]);
+  // "a,b\n1,2"
+  assert.deepStrictEqual(run("a,b\n1,2", 'csv', [], 'json').data, [{"a": 1, "b": 2}]);
+  // "\"\",b\n1,2\n"
+  assert.deepStrictEqual(run("\"\",b\n1,2\n", 'csv', [], 'json').data, [{"": 1, "b": 2}]);
+  // "a,b\n1,\"x\"y\"\n"
+  assert.deepStrictEqual(run("a,b\n1,\"x\"y\"\n", 'csv', [], 'json').data, [{"a": 1, "b": "xy\""}]);
+  // "a,b\n\"x;y\",2\n"
+  assert.deepStrictEqual(run("a,b\n\"x;y\",2\n", 'csv', [], 'json').data, [{"a": "x;y", "b": 2}]);
+  // "a;b\n\"x,y\";2\n"
+  assert.deepStrictEqual(run("a;b\n\"x,y\";2\n", 'csv', [], 'json', { delimiter: ";" }).data, [{"a": "x,y", "b": 2}]);
+
+  // --- the writer, 23 files a standard reader opens ---------------------
+  // plain
+  assert.strictEqual(serializers.csv([{"a": "1", "b": "x"}, {"a": "2", "b": "y"}]).trimEnd(), "a,b\n1,x\n2,y");
+  // comma in value
+  assert.strictEqual(serializers.csv([{"a": "1,234", "b": "x"}]).trimEnd(), "a,b\n\"1,234\",x");
+  // quote in value
+  assert.strictEqual(serializers.csv([{"a": "he said \"hi\"", "b": "x"}]).trimEnd(), "a,b\n\"he said \"\"hi\"\"\",x");
+  // newline in value
+  assert.strictEqual(serializers.csv([{"a": "multi\nline", "b": "x"}]).trimEnd(), "a,b\n\"multi\nline\",x");
+  // cr in value
+  assert.strictEqual(serializers.csv([{"a": "x\ry", "b": "z"}]).trimEnd(), "a,b\n\"x\ry\",z");
+  // semicolon in value
+  assert.strictEqual(serializers.csv([{"a": "x;y", "b": "z"}]).trimEnd(), "a,b\n\"x;y\",z");
+  // tab in value
+  assert.strictEqual(serializers.csv([{"a": "x\ty", "b": "z"}]).trimEnd(), "a,b\n\"x\ty\",z");
+  // pipe in value
+  assert.strictEqual(serializers.csv([{"a": "x|y", "b": "z"}]).trimEnd(), "a,b\n\"x|y\",z");
+  // leading space value
+  assert.strictEqual(serializers.csv([{"a": " x", "b": "y"}]).trimEnd(), "a,b\n\" x\",y");
+  // trailing space value
+  assert.strictEqual(serializers.csv([{"a": "x ", "b": "y"}]).trimEnd(), "a,b\n\"x \",y");
+  // only spaces value
+  assert.strictEqual(serializers.csv([{"a": "   ", "b": "y"}]).trimEnd(), "a,b\n\"   \",y");
+  // empty value
+  assert.strictEqual(serializers.csv([{"a": "", "b": "y"}]).trimEnd(), "a,b\n,y");
+  // empty header name
+  assert.strictEqual(serializers.csv([{"a": "x", "": "y"}]).trimEnd(), "a,\nx,y");
+  // header w/ space
+  assert.strictEqual(serializers.csv([{" a ": "x", "b": "y"}]).trimEnd(), "\" a \",b\nx,y");
+  // both headers w/ space
+  assert.strictEqual(serializers.csv([{" a": "x", "a ": "y"}]).trimEnd(), "\" a\",\"a \"\nx,y");
+  // header with comma
+  assert.strictEqual(serializers.csv([{"a,1": "x", "b": "y"}]).trimEnd(), "\"a,1\",b\nx,y");
+  // header with quote
+  assert.strictEqual(serializers.csv([{"a\"1": "x", "b": "y"}]).trimEnd(), "\"a\"\"1\",b\nx,y");
+  // numbers as numbers
+  assert.strictEqual(serializers.csv([{"a": 1, "b": 2.5}]).trimEnd(), "a,b\n1,2.5");
+  // bool value: a boolean is written as the word, and read back as the word
+  // bool value
+  assert.strictEqual(serializers.csv([{"a": true, "b": false}]).trimEnd(), "a,b\ntrue,false");
+  // null value: a value with no cell of its own is an empty cell, not the word
+  // null value
+  assert.strictEqual(serializers.csv([{"a": null, "b": "x"}]).trimEnd(), "a,b\n,x");
+  // one column one row
+  assert.strictEqual(serializers.csv([{"a": ""}]).trimEnd(), "a\n\"\"");
+  // value looks like formula
+  assert.strictEqual(serializers.csv([{"a": "=SUM(A1)", "b": "x"}]).trimEnd(), "a,b\n=SUM(A1),x");
+  // unicode
+  assert.strictEqual(serializers.csv([{"a": "Ærø blå", "b": "日本"}]).trimEnd(), "a,b\nÆrø blå,日本");
+})
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
