@@ -1234,6 +1234,58 @@ function withFieldOrder(record, order) {
 }
 
 /**
+ * The names a record has, in the order the file had them: the remembered order
+ * first, and then every name the record has that the order does not name. A
+ * stale order can only hide a name that is already gone, so this can lose
+ * nothing.
+ *
+ * This is what a step that copies fields has to read. `Object.keys` answers
+ * JavaScript's order, which puts a name that looks like a whole number in
+ * front — so a step that read that list and wrote a new record from it carried
+ * the wrong order forward, and the order it carried was the very thing it was
+ * asked to preserve.
+ */
+function ownNames(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return [];
+  const order = fieldOrderOf(record);
+  if (!order) return Object.keys(record);
+  return [...new Set([
+    ...order.filter(key => hasField(record, key)),
+    ...Object.keys(record).filter(key => !order.includes(key)),
+  ])];
+}
+
+/**
+ * Carry the order into a record a step has just built.
+ *
+ * A step that builds a record field by field — `pick`, `omit`, `rename`, `add`,
+ * `join` and a `map` that writes a record — copies the fields and not the order,
+ * because the order does not live in a field. Six call sites, one question, and
+ * the question is *not* "what order did the file have": it is **what order did
+ * this step write the fields in**, which is the only order a step that renames,
+ * adds or drops columns can honestly claim. The file's order is the starting
+ * point, because that is where a step that only selects begins, but `pick`
+ * follows the list the user wrote and a rename puts the new name where the old
+ * one stood.
+ *
+ * Measured, not guessed (`tools/measure_t109.py`): the file's own order alone
+ * would be wrong in three of the six — `pick` in the order the user listed,
+ * `rename` with the new name in the old one's place, and a new field after the
+ * ones the file had. And a record with no order of its own gets none, so
+ * nothing here can invent a column order a file never had.
+ */
+function carryFieldOrder(record, written, source) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return record;
+  const names = written || ownNames(record);
+  if (!names.length) return record;
+  // A stale name can only hide a key that is already gone — the same rule the
+  // proxy trap follows, so the two readers cannot answer differently.
+  const order = names.filter((name, i) => names.indexOf(name) === i && hasField(record, name));
+  if (!order.length) return record;
+  return withFieldOrder(record, order);
+}
+
+/**
  * The same record, in the order the file had. `JSON.stringify` and `Object.keys`
  * both read `[[OwnPropertyKeys]]`, and a proxy is the one thing that can answer
  * it differently from the object underneath — so this is what makes the order
@@ -1447,6 +1499,15 @@ const operations = {
   },
   map: (data, params) => {
     const fn = compileExpression(params.expr);
+    // A `map` that writes a record builds one, and it is left alone on purpose.
+    // Measured (`tools/measure_t109.py`): the record `({...item, n: 1})` returns
+    // and the record `({b: item.a, a: item.b})` returns are the same object to
+    // every reader the engine has — `Object.keys`, the spread, the hint. A rule
+    // that carried the file's order in would undo a swap the user wrote on
+    // purpose, and a rule that carried the expression's order in would change
+    // nothing, because the expression's order is the language's own by the time
+    // the record exists. So there is no rule here that helps, and `map` is left
+    // as the one step whose column order is the language's.
     return data.map((item, i) => fn(item, i));
   },
   pick: (data, params) => {
@@ -1456,17 +1517,28 @@ const operations = {
       for (const f of fields) {
         if (hasField(item, f)) setField(picked, f, item[f]);
       }
-      return picked;
+      // The list the user wrote, not the order the file had: `docs/cli.md` says
+      // pick keeps "the fields you name, in the order you list them", and a
+      // list is an order the user gave. Measured: a name that looks like a
+      // number used to leave the list and lead the file, because JavaScript
+      // put it first in the new object.
+      return carryFieldOrder(picked, fields);
     });
   },
   omit: (data, params) => {
     const fields = new Set(Array.isArray(params.fields) ? params.fields : [params.fields]);
     return data.map(item => {
       const omitted = {};
-      for (const [k, v] of Object.entries(item)) {
-        if (!fields.has(k)) setField(omitted, k, v);
+      const written = [];
+      // `ownNames`, not `Object.entries`: omitting does not move what is left,
+      // so the fields that stay have to be read in the order the file had. A
+      // name that looks like a number used to jump in front of the ones above.
+      for (const k of ownNames(item)) {
+        if (fields.has(k)) continue;
+        setField(omitted, k, item[k]);
+        written.push(k);
       }
-      return omitted;
+      return carryFieldOrder(omitted, written);
     });
   },
   sort: (data, params) => {
@@ -1527,10 +1599,18 @@ const operations = {
     const mapping = params.mapping ?? {};
     return data.map(item => {
       const renamed = {};
-      for (const [k, v] of Object.entries(item)) {
-        setField(renamed, hasField(mapping, k) ? mapping[k] : k, v);
+      const written = [];
+      // `ownNames`, so a rename moves a *name* and not a column: the new name
+      // stands where the old one stood, and a file with a year column keeps it
+      // in the middle after `--rename '{"2026":"year"}'`. It used to lead the
+      // file, because a string key cannot be pushed behind a name that looks
+      // like a number.
+      for (const k of ownNames(item)) {
+        const name = hasField(mapping, k) ? mapping[k] : k;
+        setField(renamed, name, item[k]);
+        written.push(name);
       }
-      return renamed;
+      return carryFieldOrder(renamed, written);
     });
   },
   flatten: (data, params) => {
@@ -1572,7 +1652,12 @@ const operations = {
           setField(out, name, null);
         }
       }
-      return out;
+      // A new field lands after the fields the record already had, which is
+      // where `add` has always put it — a name that looks like a number used to
+      // jump in front of all of them instead, and a name that is already in the
+      // file keeps the place it had rather than moving to the end. The source
+      // is read in its own order, or the carried order is JavaScript's.
+      return carryFieldOrder(out, [...ownNames(item), ...compiled.map(([name]) => name)]);
     });
   },
   join: (data, params) => {
@@ -1601,6 +1686,7 @@ const operations = {
       const match = own === undefined ? undefined : index.get(own);
       if (match) {
         const merged = { ...item };
+        const written = ownNames(item);
         for (const [k, v] of Object.entries(match)) {
           // The guard has to ask about the name we are about to write, not the
           // one on the right. It asked about the unprefixed one, so a join that
@@ -1613,9 +1699,15 @@ const operations = {
           // prototype write for that one name. `hasField` and `setField` are
           // the same two calls `pick` and `rename` use.
           const target = prefix + k;
-          if (k !== on && !hasField(merged, target)) setField(merged, target, v);
+          if (k !== on && !hasField(merged, target)) {
+            setField(merged, target, v);
+            written.push(target);
+          }
         }
-        result.push(merged);
+        // The right-hand fields land after the left-hand ones, which is the
+        // order the merge wrote them in. A name that looks like a number used
+        // to lead the file instead, on either side of the join.
+        result.push(carryFieldOrder(merged, written));
       } else if (keepMissing) {
         result.push(item);
       }

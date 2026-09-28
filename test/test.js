@@ -244,6 +244,99 @@ test('a column name that only looks like a number is left where the file had it'
     serializers.csv(r.data, { warnings: [] }).split('\n')[0], 'id,0074,1.0,name');
 });
 
+// The other half of the order's price, measured in `tools/measure_t109.py`: a
+// step that builds a record field by field copied the fields and not the order,
+// so a single `--rename` or `--pipe add` undid what the reader had just got
+// right. `map` is the sixth place and the plan did not name it — a `map` that
+// writes a record builds one too.
+test('a step that builds a record writes its fields in the order it wrote them', () => {
+  const text = 'id,2026,name\n1,2,x\n';
+  // The column list out of the INSERT line, between the first `(` and the one
+  // before VALUES — the file's own words, not a guess about where they sit.
+  const cols = (pipeline, format = 'sql') => {
+    const out = run(text, 'csv', pipeline, format).text;
+    // Including the opening paren: the slice starts at the table's own, and
+    // an expectation that has to remember that is an expectation that can be
+    // wrong about it.
+    return out.slice(out.indexOf('('), out.indexOf(') VALUES') + 1);
+  };
+  const r = run(text, 'csv', [], 'json');
+  // A step that only selects begins at the file's order.
+  assert.strictEqual(cols([{ op: 'head', n: 1 }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'map', expr: 'item' }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'filter', expr: 'true' }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'sort', by: 'id' }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'unique', by: 'id' }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'flatten', field: 'name' }]), '("id", "2026", "name")');
+  // `pick` follows the list the user wrote, because a list is an order they
+  // gave: `docs/cli.md` promises "the fields you name, in the order you list
+  // them", and it used to be true only when no name looked like a number.
+  assert.strictEqual(cols([{ op: 'pick', fields: ['id', '2026', 'name'] }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'pick', fields: ['name', '2026', 'id'] }]), '("name", "2026", "id")');
+  // A rename moves a name and not a column: the new name stands where the old
+  // one stood. Before this, the renamed field led the file, because a string
+  // key cannot be pushed behind a name that looks like a number.
+  assert.strictEqual(cols([{ op: 'rename', mapping: { 2026: 'year' } }]), '("id", "year", "name")');
+  assert.strictEqual(cols([{ op: 'rename', mapping: { id: 'key' } }]), '("key", "2026", "name")');
+  // Omitting does not move what is left, and a new field lands after the ones
+  // the record already had — the two answers that were `("year", "id", "name")`,
+  // `("2026", "id", "name")` and `("2026", "id", "name", "extra")`.
+  assert.strictEqual(cols([{ op: 'omit', fields: ['name'] }]), '("id", "2026")');
+  assert.strictEqual(cols([{ op: 'add', fields: { extra: '1' } }]), '("id", "2026", "name", "extra")');
+  // A new field named like a number is still a new field, and lands last: the
+  // order is the step's, not JavaScript's.
+  assert.strictEqual(cols([{ op: 'add', fields: { 2027: '1' } }]), '("id", "2026", "name", "2027")');
+  // A name that is already in the file keeps its place rather than moving to
+  // the end, which is the one answer `add` already gave.
+  assert.strictEqual(cols([{ op: 'add', fields: { name: "'y'" } }]), '("id", "2026", "name")');
+  assert.strictEqual(cols([{ op: 'join', with: [{ id: '1', extra: 'z' }], on: 'id' }]),
+    '("id", "2026", "name", "extra")');
+  // No value is lost and nothing is said: the order is a list of names, and a
+  // name is not a value. Three steps, every field still there.
+  const out = run(text, 'csv', [
+    { op: 'rename', mapping: { 2026: 'year' } },
+    { op: 'add', fields: { extra: 'item.year' } },
+    { op: 'omit', fields: ['name'] },
+  ], 'json');
+  assert.deepStrictEqual(out.data.map(row => [row.id, row.year, row.extra]), [[1, 2, 2]]);
+  assert.deepStrictEqual(out.warnings, []);
+  // And the JSON writer, which reads the order through the proxy rather than a
+  // column list, writes it in the same place as the other five.
+  const json = run(text, 'csv', [{ op: 'rename', mapping: { 2026: 'year' } }], 'json').text;
+  assert.ok(json.indexOf('"id"') < json.indexOf('"year"'), json);
+});
+
+// The boundary of the fix, locked from both sides: a `map` that reorders on
+// purpose keeps that order, and a record with no file behind it is not given an
+// order it never had. The second half is what stops this from inventing a
+// column order for a JSON file the reader could not remember.
+test('a step writes the order it was given, and nothing gets an order it never had', () => {
+  const clean = run('a,b,c\n1,2,3\n', 'csv', [], 'json');
+  const cols = (text, pipeline) => {
+    const out = run(text, 'csv', pipeline, 'sql').text;
+    // Including the opening paren: the slice starts at the table's own, and
+    // an expectation that has to remember that is an expectation that can be
+    // wrong about it.
+    return out.slice(out.indexOf('('), out.indexOf(') VALUES') + 1);
+  };
+  // A swap in a `map` is the user's, and survives — and so does the shape of
+  // the question: a `map` that only *spreads* the record gives every reader
+  // the same record as one that names the fields one by one, so no rule can
+  // tell the two apart. Measured, not wished for: `tools/measure_t109.py`.
+  assert.strictEqual(cols('a,b,c\n1,2,3\n', [{ op: 'map', expr: '({b: item.a, a: item.b})' }]), '("b", "a")');
+  assert.strictEqual(cols('a,b,c\n1,2,3\n', [{ op: 'map', expr: '({...item})' }]), '("a", "b", "c")');
+  // A rename on a file with nothing to remember behaves exactly as it did.
+  assert.strictEqual(cols('a,b,c\n1,2,3\n', [{ op: 'rename', mapping: { a: 'z' } }]), '("z", "b", "c")');
+  assert.strictEqual(cols('a,b,c\n1,2,3\n', [{ op: 'pick', fields: ['c', 'a'] }]), '("c", "a")');
+  assert.strictEqual(cols('a,b,c\n1,2,3\n', [{ op: 'add', fields: { z: '1' } }]), '("a", "b", "c", "z")');
+  assert.strictEqual(cols('a,b,c\n1,2,3\n', [{ op: 'join', with: [{ a: '1', q: '9' }], on: 'a' }]), '("a", "b", "c", "q")');
+  // A `map` that returns a value rather than a record is not a record, and a
+  // record built from nothing has no order to carry.
+  const scalar = run('a,b\n1,2\n', 'csv', [{ op: 'map', expr: 'item.a' }], 'json');
+  assert.deepStrictEqual(scalar.data, [1]);
+  assert.deepStrictEqual(clean.warnings, []);
+});
+
 // stderr was T14's "N of N CSV rows have more fields than the header", which
 // describes the ragged rows and never the header they are ragged against.
 test('a file whose first line is narrower than every line below says which line named the columns', () => {
