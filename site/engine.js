@@ -2154,6 +2154,52 @@ function duplicateHeaderWarning(name, columns, differing, rowCount) {
 }
 
 /**
+ * Name the columns a file was read with, in the file's own order.
+ */
+function titleRowWarning(first, width, below, names) {
+  const fields = `field${first === 1 ? '' : 's'}`;
+  const lines = `line${below === 1 ? '' : 's'} below it ${below === 1 ? 'holds' : 'hold'}`;
+  const cols = names.slice(0, 5).join(', ');
+  const rest = names.length > 5 ? `, and ${names.length - 5} more` : '';
+  return `CSV: the first line holds ${first} ${fields} and the ${below} ${lines} ${width}, ` +
+    `so the columns are named after that line (${cols}${rest}); ` +
+    `a title row above the header is one way to get that shape.`;
+}
+
+/**
+ * A file whose first line holds fewer fields than every line below it is read
+ * with the columns named after that line: `Report, Q3` above `id,name,price`
+ * gives `Report`, `Q3`, `column3`, so the real column names arrive as the first
+ * row of *values*. Measured with `tools/measure_t107.py` — three files, in a
+ * comma and a semicolon export, and the only line on stderr was T14's
+ * "N of N CSV rows have more fields than the header", which describes the ragged
+ * rows and never the header they are ragged against.
+ *
+ * A warning must describe the file that was read (T57), and here the cause and
+ * the symptom sit on different lines. The shape is not changed: which reading is
+ * right depends on the data — `"a,b",c` above `1,2,3` is a well-formed file with
+ * one short header, measured to be the only non-title file the question catches.
+ * So the reader says what it saw and which line the names came from, the same
+ * answer it gives for every other collision that depends on the data.
+ */
+function reportTitleRow(records, headers, extraNames, warnings) {
+  if (!Array.isArray(warnings) || records.length < 2) return;
+  const first = records[0].values.length;
+  const rest = records.slice(1);
+  const width = rest[0].values.length;
+  // One line below the first, and the lines below agree with each other: a file
+  // whose rows are ragged among themselves is reported by T14's own warning,
+  // which is about those rows and says so.
+  if (width <= first) return;
+  if (!rest.every(r => r.values.length === width)) return;
+  const names = [];
+  for (let i = 0; i < width; i++) {
+    names.push(i < headers.length ? headers[i] : (extraNames.get(i) || extraColumnName(i, new Set(headers))));
+  }
+  warnings.push(titleRowWarning(first, width, rest.length, names));
+}
+
+/**
  * RFC 4180 reader: a quoted field may contain the delimiter, escaped quotes
  * (`""`) and line breaks, and whitespace inside quotes is data. Unquoted fields
  * are still trimmed, which is what every spreadsheet export expects.
@@ -2274,6 +2320,7 @@ function parseCSV(text, opts = {}) {
   if (extraLines.size > 0 && Array.isArray(opts.warnings)) {
     opts.warnings.push(extraFieldsWarning(rows.length, extraLines, extraNames.values()));
   }
+  reportTitleRow(recordsWithIndex, headers, extraNames, opts.warnings);
   // One warning per repeated name, not one per row: a 10,000-row export must not
   // print 10,000 lines, and the user can only act on the header anyway.
   if (rows.length > 0 && Array.isArray(opts.warnings)) {

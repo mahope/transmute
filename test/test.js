@@ -191,6 +191,53 @@ test('a file read as one column says so, and names the delimiter it saw', () => 
   assert.ok(cell.warnings[0].includes('2 ";" sit'), cell.warnings[0]);
 });
 
+// Measured with `tools/measure_t107.py`, the second half of T106's table: a
+// title row over the header is read with the columns named after the *title*,
+// so the real column names arrive as the first row of values. The only line on
+// stderr was T14's "N of N CSV rows have more fields than the header", which
+// describes the ragged rows and never the header they are ragged against.
+test('a file whose first line is narrower than every line below says which line named the columns', () => {
+  const r = run('Report, Q3\nid,name,price\n1,x,2\n', 'csv', [], 'json');
+  // The shape is not changed — which reading is right depends on the data — so
+  // the columns still carry the title's words, and the real names are still in
+  // the first row of values.
+  assert.deepStrictEqual(Object.keys(r.data[0]), ['Report', 'Q3', 'column3']);
+  const title = r.warnings.find(w => w.includes('the columns are named after that line'));
+  assert.ok(title, r.warnings.join(' | '));
+  assert.ok(title.includes('the first line holds 2 fields and the 2 lines below it hold 3'), title);
+  // Every name the file is read with is in the line, so the user can see the
+  // names they got without running the tool twice.
+  assert.ok(title.includes('(Report, Q3, column3)'), title);
+  // The two other stavemåder from the table, one of them a semicolon export,
+  // and the long title whose comma is why the first line is narrow at all.
+  const semi = run('Report;Q3\nid;name;price\n1;x;2\n', 'csv', [], 'json');
+  assert.ok(semi.warnings.some(w => w.includes('(Report, Q3, column3)')), semi.warnings.join(' | '));
+  const long = run('Quarterly report, generated 2026-09-28\nid,name,price\n1,x,2\n3,y,4\n', 'csv', [], 'json');
+  const three = long.warnings.find(w => w.includes('the columns are named after that line'));
+  assert.ok(three.includes('the first line holds 2 fields and the 3 lines below it hold 3'), three);
+});
+
+test('a file whose rows are not a title row is not told it is one', () => {
+  // Five of the nine control files from the table, each of which must stay as
+  // quiet as it was: an ordinary file in two delimiters, a file of prose in one
+  // column, a blank line between rows, and a first row that is *shorter* than
+  // the header instead of the header being shorter than the rows.
+  assert.deepStrictEqual(run('id,name\n1,x\n2,y\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('a\tb\n1\tx\n2\ty\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('a\nhello world\nsecond line\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('id,name\n1,x\n\n2,y\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('id,name\n1\n2,3\n', 'csv', [], 'json').warnings, []);
+  // Rows that are ragged *among themselves* are T14's warning and not this one:
+  // there is no single line the columns came from, and a second line would only
+  // make the first one unfindable.
+  const ragged = run('a,b,c\n1,2\n3,4,5,6\n', 'csv', [], 'json').warnings;
+  assert.ok(!ragged.some(w => w.includes('named after that line')), ragged.join(' | '));
+  // A file whose title row is as wide as its header reads the way the file is
+  // written — there is nothing narrower to point at, so there is nothing to say.
+  const wide = run('Report;Q3;2026\nid;name;price\n1;x;2\n', 'csv', [], 'json').warnings;
+  assert.deepStrictEqual(wide, []);
+});
+
 test('a file that is not one column is never told it is', () => {
   // The three shapes that came out of the table, each of which must stay quiet:
   // a file with a delimiter on the first line, a file with no delimiter anywhere,
