@@ -1,9 +1,28 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-28 (T101)
+Opdateret: 2026-09-28 (T102)
 
 
 ## Mission
+
+**Næste iteration (T102): T102 er færdig på `ceo/yaml-flow-merge-key` (fra `main`), commits `0efec7d` + `118fabc`, MERGERET til `main`.** Den tog punkt 99's (b) ordret — **`<<` i en strømsamling var ikke en sammenlægningsnøgle** — og målingen sagde at opgaven var **en mangel PLUS to fejl i bloklæseren som lå under den**, og at punktet havde skrevet den som *mangler* alene. Se punkt 102.
+
+**Først de to målinger alleiterationer gør.** CI med ét kald: `success`, `success` — **nioghalvtredsindstyvende og halvfemsindstyvende grønne kørsel i træk** siden T83's rettelse. `npm run check:deploy`: **`DEPLOY-MISSING` uændret for halvtredsindstyvende gang i træk**, de samme syv afvigende filer. Se `❓ Til Mads` punkt 1.
+
+**Målingen.** 23 filer + 18 kontrolfiler, PyYAML 6.0.3 som dommer gennem `run(text, 'yaml')` på den rigtige binary. **Før: 2 af 23 enige, 11 afveg, og alle elleve i én klasse** — `a: {<<: *b, d: 2}` gav feltet `<<` med ankerets *egne* felter som værdi, altså en post der tabte hvert arvet felt og fik en nøgle til, ingen fil mener ved det. Det er staveformen en håndskrevet konfiguration, en compose-fil og en CI-matrix bruger, når de deler én blok. **Efter: 13 af 23 enige, 0 afviger.**
+
+**Kontroltabellen tog to af de elleve tilbage, fordi de lå under opgaven.** Bloklæserens sammenlægning er *målt sund* i alle dens former (referencen, listen, feltet filen selv skriver i begge rækkefølger, to nøgler, navnet med et anker). Men den **flettede et `<<` i citattegn ind** — `"<<": *b` gav `{x: 1}` i stedet for feltet `<<`, altså et felt filen skrev, kastet væk og ankerets felter i dets sted, exit 0 og tom stderr. Og **en inline-mapping under `<<` blev afvist** (`<<: {x: 1}`), en gyldig fil i den klasse der betyder at værktøjet ikke virker for den der skriver den. Begge lå i `readYAMLMerge`, som punktet skrev som *fungerende*.
+
+**Rettelsen spørger det samme ét sted, to gange.** `isYAMLMergeKey` spørger nøglens **egen skrevne tekst** — `<<` frit er nøglen, `<<` i citattegn er feltet `<<` — og begge læsere bruger den, så de to kan ikke svare forskelligt; `flowKeyName` giver citattegnene videre, fordi det er dem spørgsmålet er om. `mergeYAMLFields` lægger felterne ind i den rækkefølge PyYAML gør (eget felt vinder, første sammenlægning vinder) og erstatter bloklæserens egen løkke. Inline-mappingen læses nu. **Og de fire `throw`s i `readYAMLMerge` blev `YAMLRefusal`** — samme type T99 flytted op: kun blokformen lå uden for en samling der fanger, så `{<<: [1, 2]}` kom tilbage som **den tekst linjen var skrevet med** (hele dokumentet som én streng, exit 0, tom stderr) fordi strømlæserens egen `catch` slugt den. Målingen skrev den fejl ud to gange undervejs, begge gange fundet af målingen og ikke af testen: et slice der startede *før* kolonnen (`": *b"`) gav hele linjen som tekst igen, og testens egen `!!map`-form havde intet anker at pege på.
+
+**Én testblok, 295 tests (294 → 295), rød mod `git show HEAD:src/engine.js`** med præcis det målte symptom. Den låser de femten læste former i begge stavemåder, de fire citattegnsformer, den eksplicitte `? <<` som *ikke* er nøglen i nogen af dem, `<<` som værdi som bliver værdi, og de seks afvisninger med bloklæserens ord.
+
+**Baseline for den ændrede kode (uændret af en læserrettelse):** Plausible `transmute.run` 28 dage: **1 besøgende, 1 sidevisning**, bounce 100 %, besøgstid 0 s. Cloudflare 28 d: 3772 unikke besøg-dage, 7358 sidevisninger, 21267 requests, **946 unikke sidste 7 dage**. En læserrettelse kan ikke måles i trafik; den kan måles i at **elleve filer, der læste `<<` som et felt, nu fletter felterne ind som dommeren gør**, at **to gyldige filer ikke længere afvises**, at **et felt kaldt `<<` overlever i stedet for at blive erstattet af ankerets felter**, og at **295 engine-tests** nu låser svarene.
+
+**Næste opgave, målt før den skrives.** (a) Punkt 101's (a) — **`expected : in flow mapping`**, den tredje halvdel og den eneste ulæste af de fire `throw`s: `{b 1}` som `{"b 1": null}` (dommerens svar) eller som teksten `{b 1}` (dagens). Det er **et valg**, ikke en fejl, fordi JSON kan have en tom værdi men ikke en tabel til nøgle, så det hører til `❓ Til Mads` punkt 19. (b) Punkt 99's (d): beskeden i `a: {b: !!int [1, 2]}` siger `"[1"`, fordi `endsFlowNode` skærer råteksten ved klammen. (c) Punkt 98's (d): **`#`-kommentaren er målt i CSV; samme spørgsmål i YAML og TSV er ulæst** — YAML har `#` i forvejen, TSV har det ikke. (d) **To læsere, én måling, er ulæst**: XML'ens `mixed content` er målt to gange, men ingen måling har endnu spurgt om **CSV' `countUnquoted` og citat-regler** giver det samme svar som Pythons `csv` på de samme filer.
+
+**Site-filer rørt** (`site/engine.js` byte-identisk + `try.html`'s asset-hash `c0cac4a5` → ny), så der er én `VERIFICÉR DEPLOY`-note til denne iteration.
+
 
 **Næste iteration (T101): T101 er færdig på `ceo/yaml-flow-broken-collection` (fra `main`), commit `ae5db8f`, MERGERET til `main` som `ae5db8f`.** Den tog punkt 100's (a) ordret — **de to `throw`s** — og målingen sagde at opgaven var **fire testblokke stor, ikke to, og at to filer lå uden for målingen**. Se punkt 101.
 
@@ -1001,6 +1020,10 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Den automatiske site-deploy er stadig aktiv i kode, selv om kontrakten siger, at den er slået fra. Den afvigelse bliver T5, før sitearbejde merges.
 
 ## Prioriteret opgavekø
+
+- 2026-09-28 ca. 10:4x–11:2x CEST: **T102 gennemført på `ceo/yaml-flow-merge-key` (fra `main`), commits `0efec7d` + `118fabc`, MERGERET til `main`, pushet.** `npm run check:deploy` kørt først: **`DEPLOY-MISSING` uændret for halvtredsindstyvende gang i træk**, de samme syv afvigende filer. CI målt med ét kald: `success`, `success` — **nioghalvtredsindstyvende og halvfemsindstyvende grønne kørsel i træk** siden T83's rettelse. Emnet var punkt 99's (b) ordret: **`<<` i en strømsamling er ikke en sammenlægningsnøgle**, som punktet skrev som *en manglende funktion*. **Målingen siger at den var en mangel PLUS to fejl i bloklæseren.** 23 filer + 18 kontrolfiler mod PyYAML 6.0.3: **før 2 af 23 enige og 11 afveg i én klasse, efter 13 af 23 og 0 afviger.** `a: {<<: *b, d: 2}` gav feltet `<<` med ankerets egne felter som værdi. **Kontrollen målte bloklæseren som sund i alle dens former** og fandt de to fejl under opgaven: et `<<` **i citattegn** blev flettet ind (et felt filen skrev væk, ankerets felter i dets sted, exit 0, tom stderr), og en **inline-mapping under `<<` blev afvist** på en fil dommeren læser. Rettelsen er `isYAMLMergeKey` (nøglens egen skrevne tekst, begge læsere) + `mergeYAMLFields` (rækkefølgen, én sted) + inline-mappingen læst + **de fire `throw`s i `readYAMLMerge` blev `YAMLRefusal`**, fordi kun blokformen lå uden for strømlæserens `catch` — ellers kom `{<<: [1, 2]}` tilbage som den tekst linjen var skrevet med. Én testblok (294 → 295), **rød mod `git show HEAD:src/engine.js`** med det målte symptom. `docs/cli.md` fik de tre former med kørte kommandoer og rigtig output. Lokalt grøn: `npm test` exit 0 i alle tolv trin, `npm run check:site` exit 0 med `0 finding(s) across 20 pages`, `deviations: 0` og grøn selftest, `site/engine.js` byte-identisk med `src/engine.js` (`cmp`). Ingen publish, ingen tag, ingen release. Se punkt 102.
+
+VERIFICÉR DEPLOY: **`<<` er sammenlægningsnøglen også mellem klammer, og et `<<` i citattegn er et feltnavn** — `b: &b {x: 1}` + `a: {<<: *b, d: 2}` giver nu `{"a": {"x": 1, "d": 2}}`, før **feltet `<<` med ankerets egen mapping som værdi**, altså hvert arvet felt væk og en nøgle til, ingen fil mener ved det; `a: {<<: [*b, *c], d: 3}` fletter nu to ankre ind med første-først; `a: {<<: {x: 1}, d: 2}` læses nu, før **exit 3**; `a: [{<<: *b, d: 2}]` læses nu som et listeelement; **to læsere, én regel:** `a:\n  "<<": *b` gav `{x: 1}` før — et felt filen skrev, kastet væk og ankerets felter i dets sted uden en lyd — og giver nu feltet **`<<`** med værdien, ligesom `a: {"<<": *b}` altid har gjort; **en sammenlægning der ikke kan laeses afvises nu med sit navn i begge stavemåder** — `a: {<<: [1, 2]}` før **hele linjen som teksten `{<<: [1, 2]}`**, exit 0, tom stderr. `? <<` er uændret **ikke** en sammenlægningsnøgle i nogen af stavemåderne, og `<<` som værdi (`a: [<<]`) er stadig værdien. Samme ændring i `src/engine.js` og `site/engine.js` (byte-identiske) plus `try.html`'s asset-hash `c0cac4a5` → ny, commits `0efec7d` + `118fabc` på `ceo/yaml-flow-merge-key`, MERGERET til `main`. Verificér på https://transmute.run/try/ ved at sætte `b: &b {x: 1}` + `a: {<<: *b, d: 2}` ind som YAML og se at **`a` får både `x` og `d`** — før kom der et felt der hed `<<`; sæt `a: {<<: [1, 2]}` ind og se at den **siger** *a merge key ("<<") can only merge a mapping* i stedet for at vise linjen som tekst.
 
 - 2026-09-28 ca. 10:0x–10:2x CEST: **T101 gennemført på `ceo/yaml-flow-broken-collection` (fra `main`), commit `ae5db8f`, MERGERET til `main` som `ae5db8f` (fast-forward), pushet 2026-09-28 ca. 10:1x CEST.** `npm run check:deploy` kørt først: **`DEPLOY-MISSING` uændret for nioghalvtredsindstyvende gang i træk**, live svarer til `83f6d02` (2026-09-27 16:29:56 +0200), de samme syv afvigende filer. CI målt med ét kald: `success`, `success` — **syvoghalvtredsindstyvende og otteoghalvtredsindstyvende grønne kørsel i træk** siden T83's rettelse. Emnet var punkt 100's (a) ordret: **de to `throw`s, og de fire testblokke der låser det gamle svar.** Målingen først, 15 filer mod PyYAML 6.0.3, **før 2 af 15 afvist, efter 10 af 15** — og den **skrev sin egen fejl ud to gange** (en harness der importerede et JavaScript-modul i Python, og en sammenligning der skelnede mellem *læser* og *afviser* men ikke mellem to *forskellige læsninger*; punkt 94's egen lære). **Punktet skrev to testblokke, der var fire** — de to i `test/cli.test.mjs:1531` lå under målingen, så uden dem ville gaten være rød. **Og målingen fandt to filer der lå uden for målingen af "hvor mange læser dommeren afviser", fordi de allerede blev afvist med den forkerte grund** — `{b: 1` og `{b: 1 c: 2}` i roden var *"a field name is text, and a table is not"*, punkt 93's nøgleregel for en fil uden nøgler. Rettelsen er **to `throw`s** (`src/engine.js:4076` og `:4119`) der bliver `YAMLRefusal`, samme type T99 flytted op; `expected : in flow mapping` står urørt, fordi T100 målte det som den modsatte halvdel og fordi dets spørgsmål er et valg. Fire testblokke skrevet om med dommeren som grund, **alle fire røde mod `git show HEAD:src/engine.js`** (292/2 mod gammel kode, 294/0 mod ny). Se punkt 101.
 
@@ -4938,6 +4961,28 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
   **De tre valg er uændrede:** (a) `❓ Til Mads` punkt 1, deploy-kommandoen, den eneste blokering for både købssiden og alle 0.3.0-rettelser; (b) `❓ Til Mads` punkt 18, `npm run release -- 0.3.0`; (c) punkt 15's tabsfri læser, som kræver Mads' svar om typen.
 
 ## Beslutninger og fund
+
+- **`<<` er nøglen i begge stavemåder, og det er spørgsmålet om nøglens *egen
+  skrevne tekst* der afgør det (T102).** Punktet skrev opgaven som *en manglende
+  funktion* — `parseYAMLFlow` havde ingen `<<`-gren — og målingen fandt at den
+  del var rigtig og at den **kun var halvdelen**. Bloklæserens egen sammenlægning
+  var målt sund i alle syv af sine former, og to fejl lå under den i den ene
+  funktion begge læsere delte: et `<<` **i citattegn** blev flettet ind (PyYAML
+  holder det som et almindeligt nøglenavn, så et felt filen skrev forsvandt og
+  ankerets felter tog dets plads, exit 0, tom stderr), og en **inline-mapping**
+  under `<<` blev afvist på en fil dommeren læser. **Den lære er den samme som
+  punkt 94's og T99's: spørgsmålet om hvor mange læser dommeren afviser er ikke
+  det samme spørgsmål som om hvor mange den er enig med.** Blokformen blev
+  aldrig målt mod dommeren for dette punkt, kun mod den forventning at den virkede.
+  Rettelsen derfor to spørgsmål ét sted hver — `isYAMLMergeKey` (nøglens egen
+  tekst, citattegnene rejst af `flowKeyName` fordi de *er* spørgsmålet) og
+  `mergeYAMLFields` (rækkefølgen: eget felt vinder, første sammenlægning vinder)
+  — og **de fire `throw`s blev `YAMLRefusal`**, fordi en sammenlægningsnøgle nu
+  står i to stavemåder og kun den ene lå uden for en `catch`. Uden den type
+  viste målingen `{<<: [1, 2]}` som hele linjens tekst igen, exit 0, tom stderr:
+  den nye kode lå i strømlæserens egen fælde. **Målingen skrev den fejl ud to
+  gange undervejs, og begge blev fundet af målingen, ikke af testen** — et slice
+  der startede før kolonnen, og en testform uden det anker den refererede til.
 
 - **En målingstabel skal kunne skelne mellem *det værktøjet gør* og *det filen
   har*.** T96 skrev op at `<a>pre<![CDATA[<b>]]>post</a>` læses som `prepost`.
