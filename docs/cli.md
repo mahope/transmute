@@ -620,6 +620,62 @@ values, and nothing in one of them can reach into the other. A `<<` that repeats
 a field is not a key given twice — it is the merge saying it again — so it draws
 no warning; in a list `<<: [*a, *b]` the first mapping to carry a field wins.
 
+The same key works between braces, which is how a hand-written config and a
+compose file share one block:
+
+```bash
+printf 'defaults: &d {retries: 3}\nservice: {<<: *d, name: api}\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "defaults": {
+      "retries": 3
+    },
+    "service": {
+      "retries": 3,
+      "name": "api"
+    }
+  }
+]
+```
+
+`<<` is the merge key only when the file writes it bare. In quotes it is the
+field name `<<`, and the value stays the value — which is the only way to keep a
+field called `<<` at all:
+
+```bash
+printf 'defaults: &d {retries: 3}\nservice: {"<<": *d}\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "defaults": {
+      "retries": 3
+    },
+    "service": {
+      "<<": {
+        "retries": 3
+      }
+    }
+  }
+]
+```
+
+A merge can only merge a mapping. A list of them, a mapping written in line
+(`<<: {retries: 3}`) and a plain reference are all merges; a scalar, an empty
+value and a list of values are not, and PyYAML refuses those files too:
+
+```bash
+printf 'a: {<<: [1, 2]}\n' | transmute --format yaml --output json
+```
+
+```
+Error: Could not parse input as yaml: YAML line 1: a merge key ("<<") can only merge a mapping into this one, not 1
+```
+
 A reference to a name nothing gave is a mistake PyYAML refuses too, and the
 refusal says which line it is on:
 
