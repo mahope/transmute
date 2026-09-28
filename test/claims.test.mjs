@@ -452,5 +452,41 @@ test('a Danish page may still link an English guide when it says so', () => {
   assert.equal(code, 0, `an honestly labelled cross-language guide link is not a purchase-path bug: ${output}`);
 });
 
+// Ten iterations of YAML work made `docs/cli.md`, the cheat sheet, the front
+// page and llms-full.txt all say the reader cannot do anchors, aliases or
+// multi-line strings. Every one of those sentences was true when it was
+// written and none of the 187 checks could see it, because the checks read
+// what a file *claims* and never asked the engine what it can do. These two
+// tests break one thing each and require the gate to notice.
+test('a page that denies a shape the engine reads is refused', () => {
+  const dir = repo();
+  const page = join(dir, 'site', 'cheatsheet', 'index.html');
+  const text = readFileSync(page, 'utf8');
+  assert.doesNotMatch(text, /Not supported: anchors/, 'the cheat sheet is expected to have been corrected; this is the bug under test');
+  const broken = text.replace(
+    'Lists of flat records, key\u2013value documents, and nested mappings',
+    'Not supported: anchors, multi-line strings, deeply nested maps.');
+  assert.notEqual(broken, text, 'the cheat sheet sentence under test was not found; the test would pass by measuring nothing');
+  writeFileSync(page, broken);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a shape the engine reads cannot be denied in public prose');
+  assert.match(output, /denies anchors and aliases with "Not supported: anchors/);
+});
+
+test('an address in llms.txt that leads nowhere is refused', () => {
+  // The other rule from the same measurement, and the reason it exists: the
+  // rules followed addresses in HTML and never in the three files a crawler or
+  // a language model reaches the site through. A guide that is renamed leaves
+  // llms.txt pointing at a 404, and nothing notices.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /\/guides\/csv-to-sql\//, 'llms.txt is expected to list the guide; this is the bug under test');
+  writeFileSync(file, text.replace('https://transmute.run/guides/csv-to-sql/', 'https://transmute.run/guides/csv-to-sqall/'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a dead address in llms.txt must not pass');
+  assert.match(output, /site\/llms\.txt publishes https:\/\/transmute\.run\/guides\/csv-to-sqall\//);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -1522,9 +1522,10 @@ YAML support covers the shapes this tool cares about: a list of objects, a list
 of scalars, and a single top-level object — read by indentation, so nested
 mappings and sequences at any depth survive, as do block scalars (`|`, `>`),
 single and double quotes, flow collections (`[a, b]`, `{k: v}`) and `#`
-comments. Anchors, aliases and multi-document files are not supported; a file
-with more than one document is read as its first document and says so on
-stderr.
+comments. Anchors, aliases and the `<<` merge key are read as the value they
+name, so a config that reuses a block can be converted whole; tags are read
+too, and an unknown tag is kept as text and named on stderr. A file with more
+than one document is read as its first document and says so on stderr.
 
 #### A block scalar's digit says where the block starts
 

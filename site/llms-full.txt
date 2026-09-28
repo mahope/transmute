@@ -32,7 +32,7 @@ Worth knowing:
 
 - CSV values are coerced the way a spreadsheet would: `32` becomes a number, `true`/`false` become booleans, empty cells stay empty strings. Values with leading zeros (zip codes, "007") stay strings.
 - XML values come through as strings, so wrap them in `Number()` when filtering on them: `Number(item.age) > 26`.
-- The YAML parser handles lists of flat records and simple key–value documents, not anchors or multi-line strings.
+- The YAML reader is indentation-driven: nested mappings and sequences at any depth, block scalars (`|`, `>`, `|-`, `>2`), single and double quotes, flow collections (`[a, b]`, `{k: v}`), `#` comments, anchors and aliases (`&name`, `*name`), the `<<` merge key and tags (`!!str`, `!!int`, …). An unknown tag is kept as text and named on stderr. A file with more than one document is read as its first document and says so on stderr.
 - SQL output: numbers are unquoted, strings are single-quoted with `'` doubled (`O'Brien` becomes `'O''Brien'`), JSON null, missing fields and empty strings become `NULL`, booleans become TRUE/FALSE. Column names are double-quoted. Column set is the union of keys across rows. Works for PostgreSQL, MySQL (ANSI_QUOTES for quoted identifiers) and SQLite.
 - Everything is read into memory; suited for files up to a few hundred megabytes rather than multi-gigabyte logs.
 

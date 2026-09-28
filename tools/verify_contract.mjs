@@ -17,6 +17,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 /** The contract of record. Changing a value here requires Mads' decision. */
@@ -515,6 +516,161 @@ check('every page states the address the contract locks, and no other', () => {
     for (const [, url] of readFileSync(file, 'utf8').matchAll(/<loc>([^<]+)<\/loc>/g)) {
       assert(url.startsWith(`${locked}/`),
         `${label(file)} lists ${url}, but the contract locks the site to ${locked}`);
+    }
+  }
+});
+
+// The three files a reader, a crawler or a language model reaches the site
+// through, and the only ones the rules above did not follow into: the HTML rules
+// read rendered pages, and nothing read the addresses these three files publish.
+// Measured 2026-09-29 with tools/measure_t114.py, on this repository: the
+// addresses all resolved and every guide was listed, which is why this is a
+// check and not a repair. What the measurement found instead was in the prose —
+// see the next check.
+const ADDRESS_FILES = ['llms.txt', 'llms-full.txt', 'robots.txt', 'sitemap.xml'];
+
+function addressToFile(url, locked) {
+  const path = url.split('#')[0].split('?')[0].slice(locked.length);
+  if (!path || path === '/') return 'index.html';
+  const relative = path.replace(/^\/+|\/+$/g, '');
+  // /try/ is try.html and /cheatsheet/ is cheatsheet/index.html, so the shape
+  // of the address does not say which one a page lives as.
+  if (existsSync(join(root, 'site', relative + '.html'))) return relative + '.html';
+  if (relative.endsWith('/')) return join(relative, 'index.html');
+  if (!/\.[a-z0-9]+$/i.test(relative)) return join(relative, 'index.html');
+  return relative;
+}
+
+check('every address llms.txt, llms-full.txt, robots.txt and sitemap.xml publish exists here', () => {
+  const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
+
+  for (const name of ADDRESS_FILES) {
+    const file = join(root, 'site', name);
+    assert(existsSync(file), `site/${name} is gone, and it is a file the site publishes`);
+    const text = readFileSync(file, 'utf8');
+    const addresses = new Set([
+      ...text.matchAll(new RegExp(`${locked.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\s)\\]\"'><]*[A-Za-z0-9/]`, 'g')),
+      ...text.matchAll(/<loc>([^<]+)<\/loc>/g),
+    ].map((match) => match[0].replace(/^<loc>|<\/loc>$/g, '')));
+
+    for (const url of addresses) {
+      assert(url.startsWith(`${locked}/`) || url === locked,
+        `site/${name} publishes ${url}, which is not on the locked site ${locked}`);
+      const rel = addressToFile(url, locked);
+      assert(existsSync(join(root, 'site', rel)),
+        `site/${name} publishes ${url}, but site/${rel} does not exist`);
+    }
+  }
+
+  // The other half: a page that exists and is not listed is invisible to a
+  // crawler, which no address check can see because the address is the thing
+  // that is missing. noindex pages are left out on purpose — a search page is
+  // a list of other pages, and submitting it is what gets a site a "no results
+  // for" page indexed.
+  const listed = new Set(
+    [...readFileSync(join(root, 'site', 'sitemap.xml'), 'utf8').matchAll(/<loc>([^<]+)<\/loc>/g)]
+      .map((match) => addressToFile(match[1], locked)),
+  );
+  for (const page of collect(join(root, 'site'), ['index.html'])) {
+    if (/noindex/.test(readFileSync(page, 'utf8'))) continue;
+    const rel = relative(join(root, 'site'), page).split('\\').join('/');
+    assert(listed.has(rel), `site/${rel} is indexable but sitemap.xml does not list it`);
+  }
+});
+
+// Ten iterations of YAML work — T75 through T92 — each of them measured against
+// PyYAML and each of them merged, and `docs/cli.md` still told every reader that
+// anchors, aliases and multi-line strings are not supported. The sentence was
+// written when the reader was three parsers old and nobody had bound prose to
+// the parser the way the price is bound to Stripe: a claim that is only true
+// when nothing changes.
+//
+// The rule asks the engine, not the document. Each shape is read through the
+// committed `run()`, and only a shape the engine really reads may not be denied
+// anywhere in the public prose — so adding support for a shape cannot leave a
+// sentence behind that says the opposite, and a sentence that denies a shape
+// nobody implemented is still allowed to exist.
+const engine = createRequire(import.meta.url)('../src/engine.js');
+
+/**
+ * One shape, and the two ways a sentence can deny it.
+ *
+ * A denial has to sit next to the name it denies: "not anchors", "Not supported:
+ * anchors", "anchors are not supported". A bare "no" is left out because "no
+ * network calls" and "no dependencies" are true of every shape. An `unless` is
+ * a named exemption with a reason, like the one on the rule about the paid
+ * product above: adding a shape is a visible decision and not a gap in a count.
+ */
+const YAML_SHAPES = [
+  {
+    name: 'anchors and aliases',
+    yaml: 'defaults: &d\n  retries: 3\ncopy: *d\n',
+    words: 'anchors?\\b|\\balias(?:es)?\\b',
+  },
+  {
+    name: 'the << merge key',
+    yaml: 'base: &b\n  a: 1\nchild:\n  <<: *b\n  b: 2\n',
+    words: '<<',
+  },
+  {
+    name: 'block scalars',
+    yaml: 'v: |\n  a\n  b\n',
+    words: 'block scalars?\\b|multi-?line (?:string|value)',
+  },
+  {
+    name: 'flow collections',
+    yaml: 'v: {a: 1, b: [2, 3]}\n',
+    words: 'flow (?:collection|mapping|sequence|node)',
+    unless: /escapes? invalid|hand-building/,
+  },
+  {
+    name: 'nesting at any depth',
+    yaml: 'a:\n  b:\n    c:\n      - 1\n      - 2\n',
+    words: 'deeply nested|nesting|nested mappings|at any depth',
+  },
+  {
+    name: 'tags on values',
+    yaml: 'a: !!str 7\n',
+    words: 'tags?\\b',
+    // A tag on a key is kept whole and says so; that is a true statement about
+    // a different thing than a tag on a value, and an unknown tag is kept too.
+    unless: /in a (?:key|field name)|resolve[s]? tags?\b|tag prefix/i,
+  },
+];
+
+const SUPPORT_DENIAL = /\b(?:not supported|unsupported|no support for|(?:does|do|does not|do not)\\s+support)\\b/i;
+
+check('no page denies a YAML shape the engine reads', () => {
+  const readable = YAML_SHAPES.filter((shape) => {
+    try {
+      const out = engine.run(shape.yaml, 'yaml', [], 'json');
+      return Array.isArray(out.data) && out.data.length > 0;
+    } catch {
+      return false;
+    }
+  });
+  assert(readable.length > 0, 'no YAML shape at all could be read, so this rule would pass by saying nothing');
+
+  for (const file of claimed) {
+    const text = readFileSync(file, 'utf8');
+    // A sentence ends at a full stop, a newline or a closing block tag: a
+    // cheat-sheet page is one long line of markup, and without the last of
+    // those the whole section reads as one sentence and any denial anywhere in
+    // it condemns every shape on the page.
+    for (const sentence of text.split(/(?<=[.!?])\n?|(?=<\/(?:p|li|h2|h3|dd|td)>)/)) {
+      for (const shape of readable) {
+        const names = new RegExp(shape.words, 'i');
+        if (!names.test(sentence)) continue;
+        if (shape.unless?.test(sentence)) continue;
+        // A negation right in front of the name ("not anchors", "Not supported:
+        // multi-line strings") and a support denial behind it ("anchors are not
+        // supported") are the two wordings a writer actually reaches for.
+        const before = new RegExp(`\\b(?:not|never|without|un)\\s+(?:supported:?\\s*)?(?:\\w+\\s+)?(?:${shape.words})`, 'i');
+        const after = new RegExp(`(?:${shape.words})[\\w\\s,'\u2019/&-]{0,40}?\\bnot\\s+(?:supported|read|handled|parsed|implemented|resolved|understood)\\b`, 'i');
+        if (before.test(sentence) || after.test(sentence)) {
+          fail(file, `denies ${shape.name} with "${sentence.trim().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100)}", which the engine reads`);
+        }
+      }
     }
   }
 });
