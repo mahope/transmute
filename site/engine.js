@@ -3080,15 +3080,47 @@ function copyYAMLValue(value) {
 }
 
 /**
- * The fields a `<<:` merge key names: one reference, or a list of them. In a
- * list the first mapping to carry a field wins, so a later anchor cannot
- * overwrite an earlier one.
+ * Is this key the merge key? `<<` written bare is, and `<<` written in quotes is
+ * the field name `<<`. PyYAML keeps the quoted one as an ordinary key, and the
+ * block reader merged it anyway: a field the file wrote was thrown away and the
+ * anchor's fields took its place, with nothing on stderr. Both readers ask this
+ * of the key's own written text, so they cannot answer it differently.
+ */
+function isYAMLMergeKey(name, quoted) {
+  return name === '<<' && !quoted;
+}
+
+/**
+ * Copy the fields a `<<` names into the mapping being read. A field the mapping
+ * writes itself wins, and between two merges the first to carry a field wins —
+ * the two rules PyYAML applies, asked here once so the block and the flow
+ * spelling of the same line cannot answer them in different orders.
+ */
+function mergeYAMLFields(map, fields, seen, merged) {
+  for (const field of Object.keys(fields)) {
+    if (seen.has(field) || merged.has(field)) continue;
+    merged.add(field);
+    setField(map, field, fields[field]);
+  }
+}
+
+/**
+ * The fields a `<<:` merge key names: one reference, a mapping written in line,
+ * or a list of either. In a list the first mapping to carry a field wins, so a
+ * later anchor cannot overwrite an earlier one.
+ *
+ * A merge that cannot be done is a `YAMLRefusal` and not a plain `SyntaxError`,
+ * because a merge key now stands in two spellings and only one of them runs
+ * inside a collection that catches. The flow reader's `catch` answers "this is
+ * not a flow collection" to everything else, which sent `{<<: [1, 2]}` back as
+ * the text the line was written with — the whole file as one string, exit 0, an
+ * empty stderr, for a file PyYAML refuses. This type is the one it passes on.
  */
 function readYAMLMerge(text, ctx, no) {
   const fields = {};
   const take = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      throw new SyntaxError(
+      throw new YAMLRefusal(
         `YAML line ${no}: a merge key ("<<") can only merge a mapping into this one, not ${JSON.stringify(value)}`
       );
     }
@@ -3097,10 +3129,24 @@ function readYAMLMerge(text, ctx, no) {
     }
   };
   const body = stripYAMLComment(text).trim();
+  // A mapping written in line is a merge the file can mean as well as a name:
+  // PyYAML reads `a: {<<: {x: 1}, d: 2}` as the two fields `x` and `d`, and this
+  // reader refused the same `<<` in block style — a valid file turned away, the
+  // one class that means the tool does not work for whoever wrote the file.
+  if (body.startsWith('{')) {
+    const inline = parseYAMLFlow(body, ctx);
+    if (!inline.ok || !inline.value || typeof inline.value !== 'object' || Array.isArray(inline.value)) {
+      throw new YAMLRefusal(
+        `YAML line ${no}: a merge key ("<<") takes a reference or a list of them, not "${body}"`
+      );
+    }
+    take(inline.value);
+    return fields;
+  }
   if (body.startsWith('[')) {
     const flow = parseYAMLFlow(body, ctx);
     if (!flow.ok || !Array.isArray(flow.value)) {
-      throw new SyntaxError(
+      throw new YAMLRefusal(
         `YAML line ${no}: a merge key ("<<") takes a reference or a list of them, not "${body}"`
       );
     }
@@ -3112,7 +3158,7 @@ function readYAMLMerge(text, ctx, no) {
   }
   const prop = readYAMLProperties(body, no);
   if (!prop || prop.anchor || !prop.alias || prop.tag || prop.rest !== '') {
-    throw new SyntaxError(
+    throw new YAMLRefusal(
       `YAML line ${no}: a merge key ("<<") takes a reference or a list of them, not "${body}"`
     );
   }
@@ -3413,6 +3459,10 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     // quoted key as the text inside its quotes, so only the bare spelling can be
     // the missing one, and `"": 1` stays the empty string.
     const quotedKey = lines[i].content[0] === '"' || lines[i].content[0] === "'";
+    // Whether the key was written in quotes is the same question on both sides of
+    // the `keyProp` branch below, and the merge key is asked of it, so it is
+    // asked once and the two spellings carry one answer.
+    let keyQuoted = quotedKey;
     let name = !keyProp && yamlKeyLeftOut(key, quotedKey) ? YAML_NULL_KEY : key;
     if (keyProp) {
       // A name can stand on the key too: `&k b: 2` names the field `b`, and
@@ -3431,6 +3481,7 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       // away: `!!int "1": 2` is the field `1`, and it used to be refused with
       // "is not a whole number" because it was handed the `"1"` with its quotes.
       const keyText = yamlKeyText(keyProp.rest);
+      keyQuoted = Boolean(keyText.quoted);
       name = keyProp.alias
         ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, lines[i].no), lines[i].no, ctx)
         : CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
@@ -3446,13 +3497,8 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       if (keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
     }
 
-    if (name === '<<') {
-      const fields = readYAMLMerge(split.rest, ctx, lines[i].no);
-      for (const field of Object.keys(fields)) {
-        if (seen.has(field) || merged.has(field)) continue;
-        merged.add(field);
-        setField(map, field, fields[field]);
-      }
+    if (isYAMLMergeKey(name, keyQuoted)) {
+      mergeYAMLFields(map, readYAMLMerge(split.rest, ctx, lines[i].no), seen, merged);
       i++;
       continue;
     }
@@ -4012,7 +4058,10 @@ function parseYAMLFlow(text, ctx) {
             ? YAML_NULL_KEY
             : rawName;
     if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
-    return name;
+    // The quotes travel with the name, because one question is asked of both: a
+    // `<<` written bare is the merge key and a `<<` written in quotes is the
+    // field name `<<`, and the block reader answers the same way.
+    return { name, quoted: Boolean(quoted) };
   };
 
   /**
@@ -4053,7 +4102,7 @@ function parseYAMLFlow(text, ctx) {
       if (isExplicitKey()) {
         i++;
         skipSpace();
-        const name = flowKeyName(readFlowKey());
+        const { name } = flowKeyName(readFlowKey());
         // An explicit key in a sequence is a one-key post, which is what PyYAML
         // hands back and what a `!!set` written on one line has to be.
         const post = {};
@@ -4086,29 +4135,54 @@ function parseYAMLFlow(text, ctx) {
     i++;
     const out = {};
     const seen = new Map();
+    // The two rules a `<<` merge obeys, the same two the block reader obeys and
+    // the same two `mergeYAMLFields` applies: a field the mapping writes itself
+    // wins, and between two merges the first to carry a field wins.
+    const merged = new Set();
     skipSpace();
     if (text[i] === '}') { i++; return out; }
     for (;;) {
       const explicit = isExplicitKey();
       if (explicit) { i++; skipSpace(); }
-      const key = flowKeyName(readFlowKey());
+      const { name: key, quoted } = flowKeyName(readFlowKey());
       let valueRead;
+      // Where the value starts, so a merge key can be handed the value as the
+      // file wrote it. The value is read either way — the collection has to know
+      // where it ends — but a merge is decided from the written text and not
+      // from the value, because `<<` merges a *name* and the block reader asks
+      // that question of the text as well.
+      let valueFrom = -1;
       if (explicit) {
         valueRead = explicitKeyValue();
       } else {
         skipSpace();
         if (text[i] !== ':') throw new SyntaxError('expected : in flow mapping');
         i++;
+        skipSpace();
+        valueFrom = i;
         valueRead = mappingValue();
       }
-      // A flow mapping is one fragment of one line, so it has no line number to
-      // give; the key and both values are what the reader needs.
-      if (seen.has(key)) {
-        noteDuplicateKey(ctx && ctx.warnings, 'YAML', key, seen.get(key), { value: valueRead, line: 0 });
+      // A `<<` written bare is the merge key, in a flow mapping as much as in a
+      // block one. It was an ordinary field here, so `{<<: *b, d: 2}` came back
+      // with a field called `<<` holding the anchor's own mapping — a key no
+      // file means by it, in the spelling a hand-written config and a compose
+      // file use when they share one block between two services.
+      //
+      // Only the `key: value` spelling asks it, and that is the block reader's
+      // own limit: `? <<` is the explicit form, where PyYAML refuses the file
+      // and the block reader reads it as the field `<<`, so the two agree.
+      if (!explicit && isYAMLMergeKey(key, quoted)) {
+        mergeYAMLFields(out, readYAMLMerge(text.slice(valueFrom, i), ctx, ctx.line), seen, merged);
       } else {
-        seen.set(key, { value: valueRead, line: 0 });
+        // A flow mapping is one fragment of one line, so it has no line number to
+        // give; the key and both values are what the reader needs.
+        if (seen.has(key)) {
+          noteDuplicateKey(ctx && ctx.warnings, 'YAML', key, seen.get(key), { value: valueRead, line: 0 });
+        } else {
+          seen.set(key, { value: valueRead, line: 0 });
+        }
+        setField(out, key, valueRead);
       }
-      setField(out, key, valueRead);
       skipSpace();
       if (text[i] === ',') {
         i++;

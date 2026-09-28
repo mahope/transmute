@@ -4471,6 +4471,92 @@ t('a merge key copies fields in, and the document\'s own fields win', () => {
   );
 });
 
+t('a merge key merges in a flow mapping too, and `<<` in quotes is a name', () => {
+  // A `<<` written on one line between braces is the same merge key, and it was
+  // read as an ordinary field: `a: {<<: *b, d: 2}` came back as the field `<<`
+  // holding the anchor's own mapping, so a child lost every inherited field and
+  // gained a key no file means by it. It is the spelling a hand-written config,
+  // a compose file and a CI matrix use when they share one block.
+  const cases = [
+    ['b: &b {x: 1}\na: {<<: *b, d: 2}\n', [{ b: { x: 1 }, a: { x: 1, d: 2 } }]],
+    ['b: &b {x: 1}\na: {<<: *b}\n', [{ b: { x: 1 }, a: { x: 1 } }]],
+    // From a block anchor, not only from one written on the same line.
+    ['b: &b\n  x: 1\na: {<<: *b, d: 2}\n', [{ b: { x: 1 }, a: { x: 1, d: 2 } }]],
+    // A list of references, first to carry a field wins.
+    ['b: &b {x: 1}\nc: &c {y: 2}\na: {<<: [*b, *c], d: 3}\n',
+      [{ b: { x: 1 }, c: { y: 2 }, a: { x: 1, y: 2, d: 3 } }]],
+    ['b: &b {x: 1}\nc: &c {x: 2}\na: {<<: [*b, *c]}\n',
+      [{ b: { x: 1 }, c: { x: 2 }, a: { x: 1 } }]],
+    ['b: &b {x: 1}\nc: &c {x: 2}\na: {<<: [*c, *b]}\n',
+      [{ b: { x: 1 }, c: { x: 2 }, a: { x: 2 } }]],
+    // A mapping written in line is a merge the file can mean, and refusing it
+    // turned away a file PyYAML reads — in the block spelling too, which had
+    // refused `{x: 1}` under `<<` since the merge key was built.
+    ['a: {<<: {x: 1}, d: 2}\n', [{ a: { x: 1, d: 2 } }]],
+    ['a:\n  <<: {x: 1}\n  d: 2\n', [{ a: { x: 1, d: 2 } }]],
+    // The written field is the one that counts, in either order, and a name may
+    // carry an anchor without becoming a different name.
+    ['b: &b {x: 1}\na: {<<: [*b], x: 9}\n', [{ b: { x: 1 }, a: { x: 9 } }]],
+    ['b: &b {x: 1}\na: {x: 9, <<: *b}\n', [{ b: { x: 1 }, a: { x: 9 } }]],
+    ['b: &b {x: 1}\na: {d: 2, <<: *b}\n', [{ b: { x: 1 }, a: { d: 2, x: 1 } }]],
+    ['b: &b {x: 1}\na: {&k <<: *b}\n', [{ b: { x: 1 }, a: { x: 1 } }]],
+    ['b: &b {x: 1}\nc: &c {y: 2}\na: {<<: *b, <<: *c}\n',
+      [{ b: { x: 1 }, c: { y: 2 }, a: { x: 1, y: 2 } }]],
+    // One anchor, two children on one line each.
+    ['b: &b {x: 1}\na: {<<: *b, d: 2}\nc: {<<: *b, e: 3}\n',
+      [{ b: { x: 1 }, a: { x: 1, d: 2 }, c: { x: 1, e: 3 } }]],
+    // A flow mapping is a value like any other, so a list element is one too.
+    ['b: &b {x: 1}\na: [{<<: *b, d: 2}]\n', [{ b: { x: 1 }, a: [{ x: 1, d: 2 }] }]]
+  ];
+  for (const [text, want] of cases) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+    assert.deepStrictEqual(r.warnings, [], JSON.stringify(text));
+  }
+
+  // `<<` in quotes is the field name `<<` and nothing else, in both spellings.
+  // The block reader merged the quoted one: a field the file wrote was thrown
+  // away and the anchor's fields took its place, with nothing on stderr.
+  for (const text of ['b: &b {x: 1}\na: {"<<": *b}\n', 'b: &b {x: 1}\na:\n  "<<": *b\n',
+                      'b: &b {x: 1}\na: {\'<<\': *b}\n', 'b: &b {x: 1}\na:\n  \'<<\': *b\n']) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, [{ b: { x: 1 }, a: { '<<': { x: 1 } } }], JSON.stringify(text));
+    assert.deepStrictEqual(r.warnings, [], JSON.stringify(text));
+  }
+
+  // The explicit form is not the merge key, in either spelling: PyYAML refuses
+  // it and the block reader reads it as the field `<<`, so the flow one agrees
+  // with the block rather than answering a question nobody asked.
+  for (const text of ['a: {? << : 1}\n', 'a:\n  ? <<\n  : 1\n']) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, [{ a: { '<<': 1 } }], JSON.stringify(text));
+  }
+
+  // A `<<` that is a value is a value, and it is a name that merges nothing:
+  // this reader has read the merge tag as text since the first flow
+  // collection, the same leniency it keeps for `&base.image`.
+  assert.deepStrictEqual(run('a: [<<]\n', 'yaml').data, [{ a: ['<<'] }]);
+  assert.deepStrictEqual(run('a: <<\n', 'yaml').data, [{ a: '<<' }]);
+
+  // What cannot be merged is named, in both spellings and with the same words
+  // the block reader uses, so one merge key has one answer.
+  assert.match(run('a: {<<: [1, 2]}\n', 'yaml').error,
+    /a merge key \("<<"\) can only merge a mapping/);
+  assert.match(run('a:\n  <<: [1, 2]\n', 'yaml').error,
+    /a merge key \("<<"\) can only merge a mapping/);
+  assert.match(run('a: {<<: x}\n', 'yaml').error,
+    /a merge key \("<<"\) takes a reference or a list of them, not "x"/);
+  assert.match(run('a:\n  <<: x\n', 'yaml').error,
+    /a merge key \("<<"\) takes a reference or a list of them, not "x"/);
+  assert.match(run('a: {<<:}\n', 'yaml').error,
+    /a merge key \("<<"\) takes a reference or a list of them, not ""/);
+  assert.match(run('b: &b {x: 1}\na: {<<: !!map *b}\n', 'yaml').error,
+    /a merge key \("<<"\) takes a reference or a list of them, not "!!map/);
+});
+
 t('a name is a name: anchors and references leave everything else alone', () => {
   // The control table, written because the fix reads a name where there was a
   // string. A `*` or `&` inside a value is text, a tab is still a tab, a `#` is
