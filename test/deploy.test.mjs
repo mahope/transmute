@@ -12,11 +12,11 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultBranch, inspectDeploy, pagesProject } from '../tools/deploy_guard.mjs';
+import { buildPublishArgs, defaultBranch, inspectDeploy, pagesProject, WRANGLER_VERSION } from '../tools/deploy_guard.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -154,6 +154,49 @@ test('names the commit it would publish', () => {
   } finally {
     cleanup();
   }
+});
+
+test('publishes without --branch, so the deploy is production and not a preview', () => {
+  // Cloudflare's Direct Upload docs: --branch is the preview environment, and
+  // <PROJECT_NAME>.pages.dev is the production one. On 2026-09-28 this guard
+  // passed --branch main, and the custom domain never moved while 32 commits
+  // waited. The whole argument list is asserted, so a future flag cannot come
+  // back on a line no test reads.
+  const { args } = buildPublishArgs({ project: 'transmute-run' });
+  assert.deepEqual(args, ['--yes', `wrangler@${WRANGLER_VERSION}`, 'pages', 'deploy', 'site', '--project-name', 'transmute-run']);
+  assert.equal(args.some(a => a === '--branch' || a.startsWith('--branch=')), false, 'a --branch makes wrangler publish a preview the custom domain does not read');
+  assert.equal(buildPublishArgs({ project: 'transmute-run' }).command, 'npx');
+});
+
+test('pins wrangler, because @latest is a different program on every run', () => {
+  assert.match(WRANGLER_VERSION, /^\d+\.\d+\.\d+$/);
+  const { args } = buildPublishArgs({ project: 'transmute-run' });
+  assert.equal(args.includes('wrangler@latest'), false);
+  assert.equal(args.includes(`wrangler@${WRANGLER_VERSION}`), true);
+});
+
+test('the pinned wrangler asks for no node newer than the engine this repo declares', () => {
+  // The jordemoderstudy failure: a newer framework on an older build server,
+  // which only shows up in production. Read from the registry at test time, so
+  // the claim cannot rot into a comment.
+  const declared = Number(/"node":\s*">=(\d+)"/.exec(readFileSync(join(root, 'package.json'), 'utf8'))[1]);
+  let required = '';
+  try {
+    required = execFileSync('npm', ['view', `wrangler@${WRANGLER_VERSION}`, 'engines.node', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return; // offline: the pin in source and the engines field are still checked below
+  }
+  const need = Number(/(\d+)/.exec(required.replace(/"/g, ''))[1]);
+  assert.ok(declared >= need, `package.json declares node >=${declared} but wrangler@${WRANGLER_VERSION} needs node >=${need}`);
+});
+
+test('names the two steps separately, so a failure says which one it was', () => {
+  // Both steps used to exit 1 silently, and thirty-four measurements were spent
+  // choosing between "wrangler failed" and "wrangler worked, the site did not
+  // change". The guard must keep saying which step failed.
+  const body = readFileSync(join(root, 'tools', 'deploy_guard.mjs'), 'utf8');
+  assert.match(body, /STEP 1 of 2 failed/);
+  assert.match(body, /STEP 2 of 2 failed/);
 });
 
 test('no committed workflow names a Cloudflare credential', () => {

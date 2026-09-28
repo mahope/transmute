@@ -30,6 +30,14 @@
 // The Pages project name is derived from the locked site_url instead of being a
 // second constant to keep in step: transmute.run -> transmute-run. If the
 // domain changes, the deploy follows it in the same commit.
+//
+// On 2026-09-28 the command still had not published 32 commits, and the reason
+// it could not be found from here was that main() returned wrangler's exit code
+// bare, so "wrangler failed" and "wrangler succeeded and the site did not
+// change" were the same 1. Thirty-four measurements had been spent choosing
+// between two causes the output never distinguished. So the two steps now say
+// which one they are, and buildPublishArgs is exported and tested like the rest
+// of the guard.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +49,40 @@ export const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 export function pagesProject(siteUrl) {
   const host = new URL(siteUrl).hostname;
   return host.replace(/\./g, '-');
+}
+
+/**
+ * Pinned, because this is the one command that publishes the site and
+ * `wrangler@latest` is a different program on every run. Its own engines field
+ * asks for node >=22, which is exactly what package.json declares, so the pin
+ * cannot outrun the declared runtime — the jordemoderstudy failure, where a
+ * newer framework met an older build server and only showed it in production.
+ * Bump it deliberately, and read the changelog while doing it.
+ */
+export const WRANGLER_VERSION = '4.143.0';
+
+/**
+ * The arguments that publish site/.
+ *
+ * There is deliberately no `--branch`. Cloudflare's own docs for Direct Upload
+ * are explicit about the difference: `npx wrangler pages deploy <BUILD_OUTPUT_DIRECTORY>`
+ * makes the *production* deployment, served at `<PROJECT_NAME>.pages.dev`, and
+ * "to deploy assets to a preview environment, run: npx wrangler pages deploy
+ * <OUTPUT_DIRECTORY> --branch=<BRANCH_NAME>", whose alias is
+ * `<BRANCH_NAME>.<PROJECT_NAME>.pages.dev`.
+ *
+ * This guard passed `--branch main`, so every run asked for a preview while the
+ * custom domain follows production. Measured on 2026-09-28: transmute-run.pages.dev
+ * — the documented production host — served the same bytes as transmute.run, and
+ * both were 32 commits stale.
+ *
+ * @returns {{command: string, args: string[]}}
+ */
+export function buildPublishArgs(state) {
+  return {
+    command: 'npx',
+    args: ['--yes', `wrangler@${WRANGLER_VERSION}`, 'pages', 'deploy', 'site', '--project-name', state.project],
+  };
 }
 
 const git = (repo, ...args) =>
@@ -134,8 +176,20 @@ function main() {
 
   console.log(`Publishing site/ from ${state.branch}@${state.commit} to the Pages project ${state.project}.`);
 
-  const deploy = spawnSync('npx', ['--yes', 'wrangler@latest', 'pages', 'deploy', 'site', '--project-name', state.project, '--branch', defaultBranch()], { stdio: 'inherit' });
+  // Two steps, and for thirty-four measurements they exited 1 the same way, so
+  // nobody could tell which one had failed. Each now names itself, because the
+  // answer decides what a human does next: a wrangler failure is a token, a
+  // project name or a network problem, and a freshness failure after a
+  // successful upload is the Pages production branch not being this branch.
+  const { command, args } = buildPublishArgs(state);
+  const deploy = spawnSync(command, args, { stdio: 'inherit' });
   if (deploy.status !== 0) {
+    console.error(
+      `\nSTEP 1 of 2 failed: wrangler did not publish site/ (exit ${deploy.status ?? 'none'}).\n` +
+        'Nothing was uploaded, so live is unchanged and this is a wrangler problem:\n' +
+        'a rejected CLOUDFLARE_API_TOKEN, a wrong account, or no project named\n' +
+        `${state.project}. The lines wrangler printed above are the answer.`,
+    );
     return deploy.status ?? 1;
   }
 
@@ -144,7 +198,21 @@ function main() {
   // it: two spellings of one check is how the site address drifted out of five
   // tools in the first place (see tools/verify_contract.mjs).
   const check = spawnSync('npm', ['run', 'check:deploy'], { stdio: 'inherit' });
-  return check.status ?? 1;
+  if (check.status !== 0) {
+    console.error(
+      '\nSTEP 2 of 2 failed: wrangler reported success, but the live site did not\n' +
+        'change. The upload went somewhere transmute.run does not read from, so the\n' +
+        `Pages project ${state.project} publishes a branch other than ${state.branch}.\n` +
+        'Set the production branch in the Cloudflare dashboard, or with\n' +
+        `  curl --request PATCH "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/${state.project}" \\\n` +
+        '    --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" --header "Content-Type: application/json" \\\n' +
+        `    --data '{"production_branch": "${state.branch}"}'\n` +
+        'and run this again. Do not raise a tag or a release: the site is not published from either.',
+    );
+    return check.status ?? 1;
+  }
+  console.log(`\nPublished and verified: transmute.run now serves ${state.branch}@${state.commit}.`);
+  return 0;
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
