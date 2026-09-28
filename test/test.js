@@ -5077,6 +5077,104 @@ test("a flow node behind a property is the whole node, not the run up to the fir
   }
 });
 
+test('a line less indented than the one the document began on is refused, not dropped', () => {
+  // The first line of a document says how far the whole document is indented,
+  // and a line at less indentation is not a sibling of what came before it — it
+  // is a second document that starts without a `---` between them. PyYAML 6.0.3
+  // answers `expected '<document start>', but found '<block mapping start>'` to
+  // exactly that, measured 2026-09-28 across 28 files in nine holds. The root
+  // block reader took the first block and stopped, because a block that is not
+  // the root one has a caller that reads the sibling and the root has none:
+  // `  a: 1` then ` b: 2` came back as `{"a": 1}` — the key `b` gone, exit 0 and
+  // an empty stderr, and nothing anywhere saying a line was dropped. `  - 1`
+  // then `- 2` lost the number the same way, and a whole field of siblings lost
+  // everything after the first one.
+  for (const [text, want] of [
+    ['  a: 1\n b: 2\n', 'YAML line 2:'],
+    ['  - 1\n- 2\n', 'YAML line 2:'],
+    ['   a: 1\n  b: 2\n', 'YAML line 2:'],
+    ['    - 1\n  - 2\n', 'YAML line 2:'],
+    // Two siblings out, and the answer was the first line and nothing else.
+    ['   a: 1\n  b: 2\n c: 3\n', 'YAML line 2:'],
+    ['  a: 1\n b: 2\n c: 3\n', 'YAML line 2:'],
+    ['  a: 1\n b: 2\nd: 4\n', 'YAML line 2:'],
+    // A blank line and a line of spaces between the two do not make the second
+    // one a sibling, and a comment above the document says nothing about it.
+    ['  a: 1\n\n b: 2\n', 'YAML line 3:'],
+    ['  a: 1\n   \n b: 2\n', 'YAML line 3:'],
+    ['# lead\n  a: 1\n b: 2\n', 'YAML line 3:'],
+    // An alias and an anchor on the lines that are refused, so the name is not
+    // what makes the difference.
+    ['  a: &x 1\n b: *x\n', 'YAML line 2:']
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${JSON.stringify(text)} was read as ${JSON.stringify(r.data)}`);
+    assert.match(
+      r.error,
+      /^YAML line \d+: this line is less indented than the line the document began on/,
+      `${JSON.stringify(text)}: ${r.error}`
+    );
+    assert.ok(
+      r.error.startsWith(want),
+      `${JSON.stringify(text)}: expected it to name ${want}, got ${r.error}`
+    );
+  }
+
+  // The same shape one level down was already a refusal, and it is a different
+  // refusal — the caller around a nested block reads the dedent as the end of
+  // that block and then finds a line that is not the key it expected. Locking
+  // both says the root is not being made to behave like the nested reader, and
+  // that the nested reader did not move.
+  const nested = run('root:\n   a: 1\n  b: 2\n', 'yaml');
+  assert.match(nested.error, /unexpected indentation/, nested.error);
+  assert.match(run('root:\n  - 1\n- 2\n', 'yaml').error, /expected "key: value"/);
+
+  // A deeper sibling, a tab, and a document that is a single mapping at column
+  // zero all keep the refusals they had, and none of them is the one above: the
+  // question is only about a line *outside* the block the document opened.
+  assert.match(run('  a: 1\n   b: 2\n', 'yaml').error, /unexpected indentation/);
+  assert.match(run('a: 1\n  b: 2\n', 'yaml').error, /unexpected indentation/);
+  assert.match(run('  a: 1\n\tb: 2\n', 'yaml').error, /a tab character cannot start a line/);
+
+  // And the files that are correctly indented are read exactly as they were, at
+  // every width, in both shapes, nested and at the root.
+  for (const [text, want] of [
+    ['  a: 1\n  b: 2\n', [{ a: 1, b: 2 }]],
+    ['  - 1\n  - 2\n', [1, 2]],
+    ['   a: 1\n   b: 2\n', [{ a: 1, b: 2 }]],
+    ['    - 1\n    - 2\n', [1, 2]],
+    ['root:\n   a: 1\n   b: 2\n', [{ root: { a: 1, b: 2 } }]],
+    ['root:\n  - 1\n  - 2\n', [{ root: [1, 2] }]],
+    // A value that owns lines of its own, at the width the document opened at
+    // and one deeper, which is where the second sibling is a key of its own.
+    ['  a:\n   - 1\n  b:\n   - 2\n', [{ a: [1], b: [2] }]],
+    // A comment at column zero between two of them, and a comment above the
+    // document: a comment is not a line of the document, so it is not one that
+    // stands outside the block either.
+    ['  a: 1\n# between\n  b: 2\n', [{ a: 1, b: 2 }]],
+    ['# lead\na: 1\nb: 2\n', [{ a: 1, b: 2 }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // A `---` at column zero is not a line outside the block: it ends this
+  // document and begins the next one, which is read as far as it is read and
+  // named as a warning, not refused. Both widths, because the boundary is the
+  // marker and not the indentation.
+  for (const [text, want] of [
+    ['  a: 1\n---\nb: 2\n', [{ a: 1 }]],
+    ['  - 1\n...\n- 2\n', [1]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+    assert.strictEqual(r.warnings.length, 1, JSON.stringify(text));
+    assert.match(r.warnings[0], /2 documents in file, only the first was read/);
+  }
+});
+
 test('a question mark opening a flow collection is a key, not a name', () => {
   // The rule the block reader got in the test above was never carried into the
   // flow reader, so the same document had two answers: `? x` + `: 1` over four

@@ -2414,10 +2414,45 @@ function parseYAML(text, opts) {
   }
 
   const parsed = parseYAMLBlock(lines, start, lines[start].indent, ctx);
+  refuseOutsideRootBlock(lines, parsed.end, lines[start].indent, lines[start].no);
   return finishYAML(
     lines,
     Array.isArray(parsed.value) ? parsed.value : parsed.value === null ? [] : [parsed.value]
   );
+}
+
+/**
+ * Is there a line that stands outside the block the document opened?
+ *
+ * A block that is not the root one is read by a caller that knows what is
+ * around it, so a line less indented than the block is simply where that block
+ * ends — the caller reads the sibling as the next thing. The root has no caller,
+ * and there is nothing left to read: the first line of a document sets how far
+ * the whole document is indented, so a line at *less* indentation is not a
+ * sibling of what came before, it is a second document that starts without a
+ * `---` between them. PyYAML answers `expected '<document start>', but found
+ * '<block mapping start>'` to exactly that, and this reader took the first block
+ * and stopped: `  a: 1` then ` b: 2` came back as `{"a": 1}` — the key `b`
+ * gone, exit 0, an empty stderr, and nothing anywhere saying a line was
+ * dropped. `  - 1` then `- 2` lost the number the same way.
+ *
+ * So the question is asked once, here, and it is asked of the same block
+ * reader's own answer: everything the block did not consume but the document
+ * did write. A `---` or `...` at column 0 is not a line outside the block — it
+ * is the end of this document and the start of a next one, which is read as
+ * far as it is read and named as a warning above.
+ */
+function refuseOutsideRootBlock(lines, from, rootIndent, rootNo) {
+  for (let i = from; i < lines.length; i++) {
+    if (lines[i].blank || isYAMLComment(lines[i].content)) continue;
+    if (lines[i].indent === 0 && (lines[i].content === '---' || lines[i].content === '...')) return;
+    if (lines[i].indent >= rootIndent) return;
+    throw new SyntaxError(
+      `YAML line ${lines[i].no}: this line is less indented than the line the document ` +
+      `began on, so it cannot be a line of the same document — line ${rootNo} opens it at ` +
+      `${rootIndent} space${rootIndent === 1 ? '' : 's'} and this one stands at ${lines[i].indent}`
+    );
+  }
 }
 
 /**
