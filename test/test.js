@@ -4882,6 +4882,106 @@ test('a colon in a flow scalar is the character it is, not the end of the node',
   assert.deepStrictEqual(run('a: {ip: ::1}\n', 'yaml').data, [{ a: { ip: '::1' } }]);
 });
 
+test('a line that is nothing but a name is the node under it, not a scalar', () => {
+  // `&k` on a line of its own is a name with nothing written after it, and YAML
+  // reads it as the node that follows: the mapping, the list or the value under
+  // it. This reader read it as a scalar, because that is all there was on the
+  // line — and then the rest of the file was never read. `&k` and then `a: 1`
+  // and `b: 2` came out as the one string "&k", exit 0, an empty stderr, in a
+  // file PyYAML 6.0.3 reads as `{a: 1, b: 2}`: a whole document replaced by the
+  // two characters meant to name it. Under a key it was the other kind of broken
+  // — `a:` / `  &k` / `  b: 1` died with "unexpected indentation", so the one
+  // writing that shape had no file at all. Seventeen of twenty measured files
+  // disagreed with PyYAML that way, in every spelling of the shape.
+  for (const [text, want] of [
+    ['&k\na: 1\n', [{ a: 1 }]],
+    ['&k\na: 1\nb: 2\n', [{ a: 1, b: 2 }]],
+    // The name is on a line of its own, so it says nothing about how far the node
+    // it names reaches: a mapping level in and a mapping two levels in are the
+    // same document, and PyYAML reads both.
+    ['&k\n  a: 1\n', [{ a: 1 }]],
+    ['&k # note\na: 1\n', [{ a: 1 }]],
+    ['&k\n\na: 1\n', [{ a: 1 }]],
+    ['---\n&k\na: 1\n', [{ a: 1 }]],
+    ['a:\n  &k\n  b: 1\n', [{ a: { b: 1 } }]],
+    // Not only a mapping: the node under the name is whatever the file wrote.
+    ['&k\n- a\n- b\n', ['a', 'b']],
+    ['&k\n- |\n  x\n', ['x\n']],
+    ['&k\n? x\n: 1\n', [{ x: 1 }]],
+    ['&k\n? x\n', [{ x: null }]],
+    // A whole flow collection under the name is that collection, read by the
+    // reader that knows the syntax — as a block mapping it was the field `{a`
+    // with the text `1}` for a value, and `{a` is a name no file writes.
+    ['&k\n{a: 1}\n', [{ a: 1 }]],
+    // Nothing under the name is nothing, and a name with text behind it is the
+    // text: `&k` alone is an empty document, `&k ?x` is the scalar `?x` — both
+    // read as the whole line before, string included.
+    ['&k\n', []],
+    ['&k ?x\n', ['?x']],
+    // The same question in the run of bare scalars the reader keeps for files
+    // that are not YAML at all: `&x 1` is the number 1 with a name on it, the
+    // answer a value in a mapping has given it since T82.
+    ['&x 1\n', [1]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // A name that stands on the whole document, used from inside it, is a value
+  // that holds itself — the answer T82 chose for `a: &k` + `b: *k` when a whole
+  // node cannot be carried in JSON. It has to be the same answer here, and before
+  // this the name was never registered at all, so `*k` was an undefined alias.
+  assert.match(
+    String(run('&k\na: &x 1\nb: *k\n', 'yaml').error),
+    /&k points at itself, and a value that holds itself is not one JSON can carry/
+  );
+  // A name the file never gave is the error every other reader of an alias gives
+  // — it used to be the text "*k", one record in a file with no answer in it.
+  assert.match(
+    String(run('*k\n', 'yaml').error),
+    /found undefined alias 'k' — an anchor is written &k and has to be named before it is used/
+  );
+
+  // A tag with nothing written after it says the type of the node under it, and a
+  // tag this tool cannot carry is *named* — the warning is the only place a reader
+  // learns this reader cannot deliver the type the file promised. It used to be
+  // the string "!custom" with an empty stderr and the mapping under it unread.
+  const tagged = run('!custom\na: 1\n', 'yaml');
+  assert.deepStrictEqual(tagged.data, [{ a: 1 }]);
+  assert.strictEqual(tagged.warnings.length, 1);
+  assert.match(
+    tagged.warnings[0],
+    /YAML line 1: the tag "!custom" is not a type JSON carries, so the value was read as it was written/,
+    tagged.warnings[0]
+  );
+  // A carried tag on a node that is not one value says so instead of reading on:
+  // `&k !!str` above a mapping asks for a string and gets a table.
+  assert.match(
+    String(run('&k !!str\na: 1\n', 'yaml').error),
+    /a "!!str" tag can only stand on one value, not on a table/
+  );
+
+  // Measured and left alone, in both directions, because PyYAML reads them the
+  // same way this reader does not: a bare name *inside* a mapping is not a node
+  // the file wrote — `a: 1` / `&k` / `b: 2` is two nodes in one mapping, and
+  // PyYAML refuses it too, so the loud refusal is the honest answer and stays.
+  assert.match(String(run('a: 1\n&k\nb: 2\n', 'yaml').error), /expected "key: value", got "&k"/);
+  // A name on a value and on a sequence entry is a different spelling of the same
+  // thing and is untouched: it has worked since T82 and must keep working.
+  for (const [text, want] of [
+    ['a: &k\n  b: 1\n', [{ a: { b: 1 } }]],
+    ['a: &k\n', [{ a: null }]],
+    ['- &k\n  a: 1\n', [{ a: 1 }]],
+    ['- &k\n- b\n', [null, 'b']],
+    ['a: &x 1\nb: *x\n', [{ a: 1, b: 1 }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

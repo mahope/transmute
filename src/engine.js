@@ -2028,34 +2028,40 @@ function parseYAML(text, opts) {
   // took `{a` for a key and the file's content came out as one field holding
   // the text `1, b: two}` — exit 0, empty stderr, a conversion of a document
   // nobody wrote. `parseYAMLFlow` is the reader for this syntax and already read
-  // the very same line correctly one level down, so the root gets it too.
-  //
-  // Two conditions, both there to keep today's behaviour for every other file:
-  // the flow has to *close* on the line (`parseYAMLFlow` only says ok when it
-  // consumed the whole line), and nothing may follow it, so a collection on the
-  // root line can never swallow the lines under it.
-  const rootLine = lines[start].content;
-  if (rootLine[0] === '{' || rootLine[0] === '[') {
-    const flow = parseYAMLFlow(stripYAMLComment(rootLine).trim(), ctx);
-    const rest = lines.slice(start + 1);
-    if (flow.ok && rest.every((l) => l.blank || isYAMLComment(l.content))) {
-      return finishYAML(lines, Array.isArray(flow.value) ? flow.value : [flow.value]);
-    }
+  // the very same line correctly one level down, so the root gets it too, and so
+  // does any block that starts with one.
+  const flow = yamlFlowLine(lines, start, ctx);
+  if (flow) {
+    return finishYAML(lines, Array.isArray(flow.value) ? flow.value : [flow.value]);
   }
 
   // The shapes a document can have for a pipeline: a sequence (one record per
   // item), a mapping (one record), or a run of bare scalars (one record per
   // line). The last one is not YAML, but the reader above it accepted it and
   // data in the wild is shaped that way.
+  //
+  // A line that is nothing but `&name` is none of the three: it is the node
+  // under it, and the block reader is the one that knows how to read that. It
+  // used to be a bare scalar — the string "&k" — and the mapping or the list
+  // below it was never read, so a file that names its own top level came out as
+  // the two characters meant to name it, exit 0 and an empty stderr.
   if (!isYAMLSequenceEntry(lines[start].content) && !splitYAMLKey(lines[start].content) &&
-      !isYAMLExplicitKey(lines[start].content)) {
+      !isYAMLExplicitKey(lines[start].content) && !yamlBareProperties(lines[start].content)) {
     const records = [];
     for (let i = start; i < lines.length; i++) {
       if (lines[i].blank || isYAMLComment(lines[i].content)) continue;
       if (lines[i].content === '---' || lines[i].content === '...') break;
       if (isYAMLSequenceEntry(lines[i].content) || splitYAMLKey(lines[i].content) ||
-          isYAMLExplicitKey(lines[i].content)) break;
-      records.push(parseYAMLScalar(lines[i].content));
+          isYAMLExplicitKey(lines[i].content) || yamlBareProperties(lines[i].content)) break;
+      // A scalar in this run may still carry a name: `&x 1` is the number 1 with
+      // a name on it, the same answer the value in a mapping gives it, and the
+      // string "&x 1" is the one this line used to be read as. An alias *is* the
+      // whole node, so `*k` stands in for what `k` names — and a name that was
+      // never given is the error every other reader of an alias gives.
+      const prop = readYAMLProperties(stripYAMLComment(lines[i].content).replace(/\s+$/, ''), lines[i].no);
+      if (!prop) records.push(parseYAMLScalar(lines[i].content));
+      else if (prop.alias) records.push(readYAMLAlias(prop.alias, ctx, lines[i].no));
+      else records.push(attachYAMLProperties(prop, parseYAMLScalar(prop.rest, ctx), ctx, lines[i].no));
     }
     return finishYAML(lines, records);
   }
@@ -2465,6 +2471,51 @@ function readYAMLProperties(raw, no, subject = 'value') {
 }
 
 /**
+ * Is this line nothing but properties — `&k`, `!tag`, `&k !!str`, each of them
+ * with a comment behind it and no text of its own? Such a line is not a scalar.
+ * It is the node that *follows*: an anchor with no value of its own names
+ * whatever stands under it, and a tag with no value of its own says the type of
+ * that same node. `&k` above a mapping names the mapping, and `!tag` above a
+ * value says what the value is.
+ *
+ * It was read as a scalar, because that is all there was on the line — and then
+ * the rest of the file was never read at all. `&k` + `a: 1` + `b: 2` came out as
+ * the one string "&k", exit 0, an empty stderr, in a file PyYAML reads as
+ * `{a: 1, b: 2}`: the whole document replaced by the two characters that were
+ * meant to name it. Under a key it was worse — `a:` + `  &k` + `  b: 1` died
+ * with "unexpected indentation", so the one writing that shape had no file at
+ * all. Both spellings put a name on a block, and they are the shapes a file that
+ * wants to refer to its own top level is written in.
+ *
+ * An alias is the one property that is not: `*k` *is* the whole node, so a line
+ * carrying one is complete and `yamlBareProperties` says no to it.
+ */
+function yamlBareProperties(content) {
+  if (!content || isYAMLComment(content)) return null;
+  const raw = stripYAMLComment(content).replace(/\s+$/, '');
+  if (!raw) return null;
+  const prop = readYAMLProperties(raw);
+  if (!prop || prop.alias || prop.rest !== '') return null;
+  return prop;
+}
+
+/**
+ * Hand a value the name and the type the properties in front of it asked for, and
+ * put the name in the document so `*name` later on finds it. The two readers that
+ * already did this inline — the mapping's and the sequence's — ask the same
+ * question here, so the value under a bare `&name` is named the way a value
+ * written as `&name 1` is.
+ */
+function attachYAMLProperties(prop, value, ctx, no) {
+  const tagged = prop.tag ? applyYAMLTag(prop.tag, value, ctx, no) : value;
+  if (prop.anchor) {
+    ctx.anchors.set(prop.anchor, tagged);
+    ctx.pending.delete(prop.anchor);
+  }
+  return tagged;
+}
+
+/**
  * The short name of a tag: `!!str` and `!<tag:yaml.org,2002:str>` are both `str`.
  * Anything else has no name JSON knows, and is dropped with a word about it.
  */
@@ -2693,6 +2744,28 @@ function scalarKeyName(value, no, ctx) {
 }
 
 /**
+ * A line that is one whole flow collection and nothing else: `{a: 1}` or `[1, 2]`
+ * with the closing bracket on the same line, and no other line behind it. Such a
+ * line is a node, not the first line of a block mapping — the block reader reads
+ * the colon inside the collection as a key separator, so `{a: 1}` came out as the
+ * field `{a` with the text `1}` for a value, and the field `{a` is a name no file
+ * writes. `parseYAMLFlow` reads this syntax and the condition it is asked under
+ * is what keeps it from swallowing the lines under it: the flow has to *close* on
+ * the line (`parseYAMLFlow` only says ok when it consumed the whole line) and
+ * nothing may follow it.
+ */
+function yamlFlowLine(lines, i, ctx) {
+  const content = lines[i].content;
+  if (content[0] !== '{' && content[0] !== '[') return null;
+  const flow = parseYAMLFlow(stripYAMLComment(content).trim(), ctx);
+  if (!flow.ok) return null;
+  for (let j = i + 1; j < lines.length; j++) {
+    if (!lines[j].blank && !isYAMLComment(lines[j].content)) return null;
+  }
+  return flow;
+}
+
+/**
  * Parse the block starting at `start`, indented by `indent`. Returns
  * `{ value, end }` so the caller can carry on after the block.
  */
@@ -2701,8 +2774,30 @@ function parseYAMLBlock(lines, start, indent, ctx) {
   if (i >= lines.length || lines[i].indent < indent) return { value: null, end: i };
   const content = lines[i].content;
   if (isYAMLSequenceEntry(content)) return parseYAMLSequence(lines, i, lines[i].indent, ctx);
+  // A block that opens with a whole flow collection is that collection, and the
+  // flow reader is the one that knows the syntax — the same line read as a
+  // mapping became the field `{a` with the text `1}` for a value.
+  const flow = yamlFlowLine(lines, i, ctx);
+  if (flow) return { value: flow.value, end: lines.length };
   if (splitYAMLKey(content, lines[i].no) || isYAMLExplicitKey(content)) {
     return parseYAMLMapping(lines, i, lines[i].indent, ctx);
+  }
+  // A line that is nothing but `&name` or `!tag` is the node under it, not a
+  // scalar, so the block that follows is read here — at its own indentation,
+  // because the name was written on a line of its own and says nothing about how
+  // far the node under it reaches. `&k` and then a mapping two levels in is the
+  // same document as `&k` and a mapping level in, and a name on a line cannot
+  // outrank the block it names.
+  const bare = yamlBareProperties(content);
+  if (bare) {
+    if (bare.anchor) ctx.pending.add(bare.anchor);
+    const j = skipYAMLBlanks(lines, i + 1);
+    if (j >= lines.length) {
+      if (bare.anchor) ctx.pending.delete(bare.anchor);
+      return { value: attachYAMLProperties(bare, null, ctx, lines[i].no), end: j };
+    }
+    const child = parseYAMLBlock(lines, j, lines[j].indent, ctx);
+    return { value: attachYAMLProperties(bare, child.value, ctx, lines[i].no), end: child.end };
   }
   return parseYAMLFoldedScalar(lines, i, lines[i].indent);
 }
