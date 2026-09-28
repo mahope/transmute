@@ -3293,7 +3293,28 @@ function unescapeYAML(ch) {
 function parseYAMLFlow(text, ctx) {
   let i = 0;
   const skipSpace = () => { while (i < text.length && /[ \t]/.test(text[i])) i++; };
-  const separators = ',]}:';
+
+  /**
+   * What ends a plain — unquoted — node inside a flow collection. The brackets
+   * and the comma always end it, and a colon ends it only when what follows says
+   * so: a space, a comma, the bracket that closes the collection, or the end of
+   * the text. A colon on its own is the character in `http://x/y`, `host:5432`
+   * and `12:30`, and taking it for a separator meant `{url: http://x/y}` and
+   * `a: [host:5432]` came back as the text they were written with — a mapping and
+   * a list that a hand-written config, a compose file and a health check all
+   * write, each of them lost with an empty stderr.
+   *
+   * A key asks the same question as a value, because PyYAML does: `{b: c:d}` is
+   * the field `b` with the value `c:d`, and `{b:c: 1}` is the field `b:c`.
+   */
+  const endsFlowNode = (at) => {
+    const ch = text[at];
+    if (ch === ',' || ch === ']' || ch === '}') return true;
+    if (ch !== ':') return false;
+    const next = text[at + 1];
+    return next === undefined || next === ' ' || next === '\t' ||
+      next === ',' || next === ']' || next === '}';
+  };
 
   const scalar = () => {
     skipSpace();
@@ -3304,7 +3325,7 @@ function parseYAMLFlow(text, ctx) {
       return quoted.value;
     }
     let raw = '';
-    while (i < text.length && !separators.includes(text[i])) raw += text[i++];
+    while (i < text.length && !endsFlowNode(i)) raw += text[i++];
     const body = raw.trim();
     // A flow item may name itself too — `[*a, *b]` is how a file shares one list
     // between two keys, and reading `*a` as the three characters `*a` puts a
@@ -3355,7 +3376,7 @@ function parseYAMLFlow(text, ctx) {
       return text.slice(from, quoted.end);
     }
     let raw = '';
-    while (i < text.length && !separators.includes(text[i])) raw += text[i++];
+    while (i < text.length && !endsFlowNode(i)) raw += text[i++];
     return raw.trim();
   };
 

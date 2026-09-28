@@ -4725,6 +4725,69 @@ test('a flow collection on a sequence entry is a list of tables', () => {
   }
 });
 
+test('a colon in a flow scalar is the character it is, not the end of the node', () => {
+  // `http://x/y`, `host:5432` and `12:30` are one value each, and they are what a
+  // hand-written config, a compose file and a health check put inside a flow
+  // collection. A colon that ends a plain node whatever follows it meant every
+  // one of them came back as the text the collection was written with — the
+  // mapping, the list and every field in it gone, exit 0 and an empty stderr.
+  for (const [text, want] of [
+    ['a: {url: http://x/y}\n', [{ a: { url: 'http://x/y' } }]],
+    ['a: {url: http://x}\n', [{ a: { url: 'http://x' } }]],
+    ['a: {addr: host:5432}\n', [{ a: { addr: 'host:5432' } }]],
+    ['a: [host:5432]\n', [{ a: ['host:5432'] }]],
+    ['a: [http://x/y]\n', [{ a: ['http://x/y'] }]],
+    // A colon is text in every position a value is written: in a nested table,
+    // in a list, and after an explicit key.
+    ['a: {b: {c: host:5432}}\n', [{ a: { b: { c: 'host:5432' } } }]],
+    ['a: [{b: host:1}]\n', [{ a: [{ b: 'host:1' }] }]],
+    ['a: {? b : host:1}\n', [{ a: { b: 'host:1' } }]],
+    ['a: {b: x:y:z}\n', [{ a: { b: 'x:y:z' } }]],
+    ['a: {b: "x", c: y:z}\n', [{ a: { b: 'x', c: 'y:z' } }]],
+    // A value with a colon in it is still a value after an anchor, and the
+    // reference is a copy, so the second field is the same one.
+    ['a: &x {b: host:1}\nc: *x\n', [{ a: { b: 'host:1' }, c: { b: 'host:1' } }]],
+    // Quoted is quoted, so a colon in there was never the question.
+    ['a: {url: "http://x/y"}\n', [{ a: { url: 'http://x/y' } }]],
+    // A key is asked the same question, and PyYAML asks it the same way:
+    // `{b:c: 1}` is one field called `b:c`, not two fields.
+    ['a: {b:c: 1}\n', [{ a: { 'b:c': 1 } }]],
+    // `12:30` is YAML 1.1's sexagesimal and PyYAML reads 750. This reader keeps
+    // the text, in a flow value as well as in a block one, so a clock stays a
+    // clock — see the note on the sexagesimal in docs/cli.md.
+    ['a: {t: 12:30}\n', [{ a: { t: '12:30' } }]],
+    ['a: [12:30]\n', [{ a: ['12:30'] }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // What follows a colon still decides. `: ` ends the node, so a value that is
+  // followed by a colon and a word is a document no parser reads, and the two
+  // readers still leave the collection as the text it was written with rather
+  // than guessing at a field nobody wrote. A flow set written without `?` is not
+  // a mapping at all, so it stays text for the same reason.
+  for (const [text, want] of [
+    ['a: {b: c: d}\n', '{b: c: d}'],
+    ['a: {b: 1: }\n', '{b: 1: }'],
+    ['a: {b: x:}\n', '{b: x:}'],
+    ['a: {x, y}\n', '{x, y}'],
+    ['a: {b\n', '{b'],
+    ['a: [1\n', '[1']
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, [{ a: want }], JSON.stringify(text));
+  }
+
+  // An IPv6 address is a colon that is text five times over, and PyYAML refuses
+  // the document. This reader has always preferred to read a file people have
+  // written over to refuse it (see the note on `&base.image`), and that is the
+  // answer the rule gives for free.
+  assert.deepStrictEqual(run('a: {ip: ::1}\n', 'yaml').data, [{ a: { ip: '::1' } }]);
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 
