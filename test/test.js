@@ -3407,6 +3407,40 @@ test('xml names the field whose null comes back as the text "null"', () => {
   assert.strictEqual(JSON.parse(back.text)[0].b, 'null', back.text);
 });
 
+test('xml names the field a step left empty, which comes back as the text "undefined"', () => {
+  // `flatten` blanks the field it removes — `{ ...item, [field]: undefined }` —
+  // and `String(undefined)` is nine letters, so the element reads back as the
+  // string "undefined": a value that was in no file. The null rule was measured
+  // and never asked about this value, so `<tags>undefined</tags>` was written
+  // with nothing on stderr. The two are counted apart: a real null is a value
+  // the file held, this is an absence a pipeline made.
+  const src = '[{"id":1,"customer":"alice","items":[{"sku":"a-1","qty":2}]},' +
+    '{"id":2,"customer":"bob","items":["b-1"]}]';
+  const r = run(src, 'json', [{ op: 'flatten', field: 'items' }], 'xml');
+  assert.ok(r.warnings.some(w => /hold a value no file had/.test(w)), JSON.stringify(r.warnings));
+  const said = r.warnings.find(w => /hold a value no file had/.test(w));
+  assert.ok(/"items" \(1\)/.test(said), said);
+  assert.match(r.text, /<items>undefined<\/items>/, r.text);
+  const back = run(r.text, 'xml', [], 'json');
+  assert.strictEqual(JSON.parse(back.text)[0].items, 'undefined', back.text);
+  // The same loss from the other step that produces it: an expression that read
+  // a field the record does not have yields the same empty value.
+  const added = run('[{"id":1}]', 'json', [{ op: 'add', fields: { z: 'item.nope' } }], 'xml');
+  assert.ok(added.warnings.some(w => /"z" \(1\)/.test(w)), JSON.stringify(added.warnings));
+  // The controls. A real null is still one warning of its own kind, the two
+  // never swallow each other, and a file with neither says nothing.
+  const nul = run('[{"a":1,"b":null}]', 'json', [], 'xml');
+  assert.ok(nul.warnings.some(w => /hold an explicit null/.test(w)), JSON.stringify(nul.warnings));
+  assert.ok(!nul.warnings.some(w => /hold a value no file had/.test(w)), JSON.stringify(nul.warnings));
+  assert.deepStrictEqual(run('[{"a":1,"b":"x"}]', 'json', [], 'xml').warnings, []);
+  // json and yaml have a spelling for the absence and drop the field, which is
+  // what the warning says they do — measured, not asserted.
+  for (const out of ['json', 'yaml']) {
+    const kept = run(src, 'json', [{ op: 'flatten', field: 'items' }], out);
+    assert.ok(!/undefined/.test(kept.text), `${out}: ${kept.text}`);
+  }
+});
+
 test('every place a null can sit in xml is named, and each by its own name', () => {
   const r = run('[{"a":{"b":null},"c":[1,null],"@d":null},[null]]', 'json', [], 'xml');
   assert.strictEqual(r.warnings.length, 1, JSON.stringify(r.warnings));

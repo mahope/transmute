@@ -2100,10 +2100,22 @@ function reportXMLListShape(data, warnings) {
 function reportXMLNulls(data, warnings) {
   if (!Array.isArray(warnings)) return;
   const nulls = new Map();
-  const note = (field) => nulls.set(field, (nulls.get(field) || 0) + 1);
+  // `undefined` is the same loss in the same place, and it is a value the engine
+  // writes itself: `flatten` blanks the list's own field with it, and `add`
+  // yields it for an expression that read a field the record does not have.
+  // `String(undefined)` is the nine letters, so `<tags>undefined</tags>` reads
+  // back as the string "undefined" — a value that was in no file. Counted apart
+  // from a real null, because it is a different thing: the file never held an
+  // absence, the pipeline made one.
+  const blanks = new Map();
+  const note = (map, field) => map.set(field, (map.get(field) || 0) + 1);
   const walk = (value, field) => {
     if (value === null) {
-      note(field === null ? 'item' : field);
+      note(nulls, field === null ? 'item' : field);
+      return;
+    }
+    if (value === undefined) {
+      note(blanks, field === null ? 'item' : field);
       return;
     }
     if (Array.isArray(value)) {
@@ -2113,20 +2125,34 @@ function reportXMLNulls(data, warnings) {
     if (typeof value !== 'object') return;
     for (const [name, member] of Object.entries(value)) {
       if (member === null) {
-        note(name);
+        note(nulls, name);
+        continue;
+      }
+      if (member === undefined) {
+        note(blanks, name);
         continue;
       }
       walk(member, name);
     }
   };
   walk(data, null);
-  if (nulls.size === 0) return;
-  const list = [...nulls].map(([field, n]) => `"${field}" (${n})`).join(', ');
-  warnings.push(
-    `xml: ${nulls.size} field(s) hold an explicit null, which XML has no spelling for: ${list}. ` +
-    'Each was written as text and reads back as a string — the element "null", an attribute "" — ' +
-    'so a value stands where the file had an absence. json and yaml keep the difference; no spelling in this format can.'
-  );
+  if (nulls.size > 0) {
+    const list = [...nulls].map(([field, n]) => `"${field}" (${n})`).join(', ');
+    warnings.push(
+      `xml: ${nulls.size} field(s) hold an explicit null, which XML has no spelling for: ${list}. ` +
+      'Each was written as text and reads back as a string — the element "null", an attribute "" — ' +
+      'so a value stands where the file had an absence. json and yaml keep the difference; no spelling in this format can.'
+    );
+  }
+  if (blanks.size > 0) {
+    const list = [...blanks].map(([field, n]) => `"${field}" (${n})`).join(', ');
+    warnings.push(
+      `xml: ${blanks.size} field(s) hold a value no file had, which XML writes as the text "undefined": ${list}. ` +
+      'A step left the field empty — flatten blanks the list it removes, and an add whose expression read a field ' +
+      'the record does not have yields the same — and the nine letters are read back as a string, so the reader ' +
+      'gets a value the input never contained. json and yaml drop the field instead; no spelling in this format can.'
+    );
+  }
 }
 
 /** Delimiters recognised when the caller does not force one. `,` wins a tie. */
