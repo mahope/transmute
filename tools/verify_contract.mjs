@@ -288,7 +288,7 @@ const PRO_PATH_EXEMPT = [
 check('every page a reader lands on gives them a way to the paid product', () => {
   const buying = new Set([
     pro.payment_link,
-    '/support/', '/support/#buying-pro', '/da/support/', '/da/support/#buying-pro',
+    '/support/', '/support/#buying-pro', '/da/support/', '/da/support/#kob-pro',
     '/#desktop', '/da/#desktop',
   ]);
   let measured = 0;
@@ -317,6 +317,87 @@ check('every page a reader lands on gives them a way to the paid product', () =>
 
   assert(measured >= 11,
     `only ${measured} pages are held to this rule, which is fewer than the eleven that were measured as missing a path; the rule has stopped covering the pages it was written for`);
+});
+
+// The rule above is a set of strings, and a set of strings cannot see where it
+// lands. Measured by tools/measure_t112.py on this repository: of the thirteen
+// pages it holds, twelve pointed at a page in their own language and **one — the
+// Danish front page — pointed at the English support page**, so a reader who had
+// decided to buy was handed the price in a language they did not ask for, at the
+// one step that states it. The same measurement found that the set above also
+// accepted `/da/support/#buying-pro`, a path that leads nowhere: the Danish
+// support page calls that section `kob-pro`, so whitelisting the English anchor
+// credited a page for a door that is not there and would have passed a fix that
+// simply translated the anchor name.
+//
+// So this asks the question the string set could not: not "is one of these paths
+// present" but "does the page it opens declare the same language as the page it
+// is written in". The payment link is off this site and has one language, so it
+// is exempt by being off-site rather than by being named here.
+const PRO_PATHS = new Set([
+  pro.payment_link,
+  '/support/', '/support/#buying-pro', '/da/support/', '/da/support/#kob-pro',
+  '/#desktop', '/da/#desktop',
+]);
+
+/** The language a page declares in its own `<html lang>`, or null if it has none. */
+function pageLang(text) {
+  return /<html[^>]*\blang="([^"]+)"/.exec(text)?.[1] ?? null;
+}
+
+/** The site-relative file a path such as `/da/support/#kob-pro` opens. */
+function pageForPath(path) {
+  const rel = path.replace(/^\//, '');
+  const file = rel === '' || rel.endsWith('/') ? join(root, 'site', rel, 'index.html') : null;
+  return file && existsSync(file) ? file : null;
+}
+
+check('the path to the paid product lands in the language the page is written in', () => {
+  const langs = new Map();
+  for (const file of collect(join(root, 'site'), ['.html'])) {
+    langs.set(file, pageLang(readFileSync(file, 'utf8')));
+  }
+
+  let measured = 0;
+  for (const [file, lang] of langs) {
+    const rel = label(file);
+    if (!lang || /noindex/.test(readFileSync(file, 'utf8'))) continue;
+    if (PRO_PATH_EXEMPT.find(e => e.match.test(rel))) continue;
+    measured += 1;
+
+    const body = readFileSync(file, 'utf8')
+      .replace(/<header\b[\s\S]*?<\/header>/g, '')
+      .replace(/<footer\b[\s\S]*?<\/footer>/g, '');
+
+    for (const [, href] of body.matchAll(/<a\b[^>]*href="([^"]+)"/g)) {
+      if (!PRO_PATHS.has(href)) continue;
+      const path = href.split('#')[0];
+      // The payment link is Stripe's, has no `lang` to compare, and cannot be
+      // written in two languages.
+      if (!path.startsWith('/')) continue;
+      const target = pageForPath(path);
+      assert(target, `${rel} sends a reader to ${href}, which is not a page of this site`);
+      const lands = pageLang(readFileSync(target, 'utf8'));
+      assert(lands === lang,
+        `${rel} is written in "${lang}" but its path to the paid product, ${href}, is a "${lands}" page; a reader who has decided to buy is handed the price in another language`);
+    }
+  }
+
+  assert(measured >= 11,
+    `only ${measured} pages are held to this rule, which is fewer than the thirteen that were measured; the rule has stopped covering the pages it was written for`);
+});
+
+check('every path the paid-product rule accepts leads somewhere', () => {
+  for (const href of PRO_PATHS) {
+    const [path, fragment] = href.split('#');
+    if (!path.startsWith('/')) continue;
+    const target = pageForPath(path);
+    assert(target, `the rule accepts ${href}, which is not a page of this site; a whitelisted path that leads nowhere credits a page for a door that is not there`);
+    if (!fragment) continue;
+    const ids = readFileSync(target, 'utf8').match(/\bid="([^"]+)"/g) ?? [];
+    assert(ids.includes(`id="${fragment}"`),
+      `the rule accepts ${href}, but the page it opens has no id="${fragment}"; the Danish support page calls that section "kob-pro", so the English anchor name leads nowhere`);
+  }
 });
 
 check('npm, the CLI and the site agree on the version', () => {

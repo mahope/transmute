@@ -402,5 +402,55 @@ test('deleting the derivation is refused, so the rule is not satisfied by absenc
   assert.match(output, /src\/cli\.js must bind `repository` from package\.json/);
 });
 
+test('a page whose path to the paid product crosses into another language is refused', () => {
+  // The measured fund, T112. Thirteen pages were held to this question, twelve
+  // pointed at a page in their own language, and the Danish front page pointed
+  // at the English support page — so a reader who had decided to buy was handed
+  // the price in a language they did not ask for. The rule that shipped with
+  // T105 is a set of strings and could not see it: the English path was in the
+  // set, so the page was credited for having a way through.
+  const dir = repo();
+  const page = join(dir, 'site', 'da', 'index.html');
+  const text = readFileSync(page, 'utf8');
+  assert.match(text, /href="\/da\/support\/#kob-pro"/, 'the Danish page is expected to point at the Danish path; this is the bug under test');
+  writeFileSync(page, text.replace('href="/da/support/#kob-pro"', 'href="/support/#buying-pro"'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a path to the paid product that changes language must not pass');
+  assert.match(output, /site\/da\/index\.html is written in "da" but its path to the paid product, \/support\/#buying-pro, is a "en" page/);
+});
+
+test('a path to a paid product that leads nowhere is refused', () => {
+  // The other half, and the reason the rule cannot simply be "is the English
+  // anchor name present". The set above also accepted `/da/support/#buying-pro`,
+  // a path that leads nowhere: the Danish support page calls that section
+  // `kob-pro`. So a fix that translated the anchor *name* and nothing else would
+  // have passed the gate and sent Danish readers to a dead link.
+  const dir = repo();
+  const rule = join(dir, 'tools', 'verify_contract.mjs');
+  const text = readFileSync(rule, 'utf8');
+  const at = text.indexOf('const PRO_PATHS');
+  assert.ok(at > 0, 'the paid-path set should be readable by this test');
+  writeFileSync(rule, text.slice(0, at)
+    + text.slice(at).replace("'/da/support/#kob-pro'", "'/da/support/#buying-pro'"));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a whitelisted path with no anchor behind it must not pass');
+  assert.match(output, /the rule accepts \/da\/support\/#buying-pro, but the page it opens has no id="buying-pro"/);
+});
+
+test('a Danish page may still link an English guide when it says so', () => {
+  // The rule that keeps the two above honest. It asks one question — does the
+  // path to the *paid product* stay in the reader's language — and a rule that
+    // read every link would force the Danish front page to drop the English
+  // guide it offers, or to hide that the guide is in English. The Danish page
+  // says "(engelsk)" next to that link; that has to stay legal.
+  const dir = repo();
+  const page = join(dir, 'site', 'da', 'index.html');
+  const text = readFileSync(page, 'utf8');
+  assert.match(text, /\(engelsk\)/, 'the Danish page is expected to label its English guide link');
+  assert.match(text, /href="\/guides\/join-two-files\/"/, 'the Danish page is expected to offer the English guide');
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 0, `an honestly labelled cross-language guide link is not a purchase-path bug: ${output}`);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
