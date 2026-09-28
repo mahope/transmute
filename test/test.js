@@ -295,6 +295,115 @@ test('flatten writes an expanded row in the order the file had', () => {
   assert.strictEqual(kept.text.trim(), 'id,2026,tags\n1,2,a');
 });
 
+// Two readers were left, and both are the same shape of problem: a JSON file and
+// a YAML file written as a flow mapping. Each of them ends up in JavaScript's own
+// object order, where a name that looks like a whole number comes first whatever
+// the file wrote, so `"2026"` led both files in all six writers and through every
+// step — the two answers were `("2026", "id", "name")` and `("year", "id", "name")`.
+// The CSV reader learns the order from its header line and the YAML block form
+// from the keys as they are read, so these were the pair that had none. JSON
+// cannot be asked for it: by the time `JSON.parse` hands the object back, the
+// object *is* in the language's order, so the order has to be read out of the
+// bytes — and the flow mapping carries the same `seen` map the block form reads
+// its keys into, one line further down the same reader.
+test('a quoted name in a JSON file and in a YAML flow mapping keeps its place', () => {
+  const json = '{"id":1,"2026":2,"name":"x"}';
+  const flow = '{id: 1, "2026": 2, name: x}';
+  // The column list out of the INSERT line, between the first `(` and the one
+  // before VALUES — the file's own words, not a guess about where they sit.
+  const cols = (text, format, pipeline = []) => {
+    const out = run(text, format, pipeline, 'sql').text;
+    return out.slice(out.indexOf('('), out.indexOf(') VALUES') + 1);
+  };
+  assert.strictEqual(cols(json, 'json'), '("id", "2026", "name")');
+  assert.strictEqual(cols(flow, 'yaml'), '("id", "2026", "name")');
+  // Every writer takes its columns from one list, so both files are written out
+  // as well — and the JSON writer, which is handed no list and reads the order
+  // through the proxy instead, is the one that had no way to answer before.
+  for (const [text, format] of [[json, 'json'], [flow, 'yaml']]) {
+    const out = serializers.json(run(text, format).data, { warnings: [] });
+    assert.ok(out.indexOf('"id"') < out.indexOf('"2026"'), out);
+    assert.ok(serializers.csv(run(text, format).data, { warnings: [] }).startsWith('id,2026,name'), text);
+  }
+  // A pipeline is the normal way in, and a step that builds the record field by
+  // field has to carry the order rather than read it: the renamed name stands
+  // where the old one stood, in both readers.
+  assert.strictEqual(cols(json, 'json', [{ op: 'rename', mapping: { 2026: 'year' } }]), '("id", "year", "name")');
+  assert.strictEqual(cols(flow, 'yaml', [{ op: 'rename', mapping: { 2026: 'year' } }]), '("id", "year", "name")');
+  // Each object keeps its own order, at every level, in both files: the record's
+  // fields where the record wrote them, then the field that holds another record.
+  assert.strictEqual(cols('{"id":1,"2026":2,"sub":{"2026":9,"q":8}}', 'json'), '("id", "2026", "sub")');
+  assert.strictEqual(serializers.json(run('{"id":1,"2026":2,"sub":{"2026":9,"q":8}}', 'json').data, { warnings: [] }),
+    '[\n  {\n    "id": 1,\n    "2026": 2,\n    "sub": {\n      "2026": 9,\n      "q": 8\n    }\n  }\n]');
+  // No value is lost and nothing is said on stderr: the order is a list of names,
+  // and a name is not a value. These two files are read and written, not named.
+  for (const [text, format] of [[json, 'json'], [flow, 'yaml']]) {
+    const r = run(text, format);
+    assert.deepStrictEqual(r.data, [{ id: 1, '2026': 2, name: 'x' }], format);
+    assert.deepStrictEqual(r.warnings, [], format);
+  }
+});
+
+// The boundary of the two readers above, locked from every side it can be
+// confused with. What the order is not: it is not the language's order, it is
+// not a second reading of the file, and it does not survive a file the reader
+// refuses. Measured against `git show 349831d:src/engine.js`, where every
+// "before" below is what that code answered.
+test('the order a file is read in is the file\'s, and nothing else', () => {
+  const json = '{"id":1,"2026":2,"name":"x"}';
+  // The language's own order is left exactly as it was, as everywhere else: the
+  // file's order is remembered beside the record, not written into it, so a
+  // record a step has made over keeps the language's answer to `Object.keys`.
+  assert.deepStrictEqual(Object.keys(run(json, 'json').data[0]), ['2026', 'id', 'name']);
+  assert.deepStrictEqual(Object.keys(run('{id: 1, "2026": 2, name: x}', 'yaml').data[0]), ['2026', 'id', 'name']);
+
+  // The order is read out of the text, so a byte inside a value must not move a
+  // name: braces, a colon and an escaped quote in a string are one value, and
+  // the walk has to say so rather than count them as structure. The file is
+  // written here as text, not as an object, because an object would write its
+  // own integer-like name first and the file would no longer be the one meant.
+  const written = (s) => {
+    const out = serializers.json(run(s, 'json').data, { warnings: [] });
+    return out.indexOf('"id"') < out.indexOf('"2026"');
+  };
+  for (const value of ['a { b } : c', 'quote " then { brace', '{"x":1}', 'a"b:c{d}']) {
+    const text = `{"id":1,"2026":2,"s":${JSON.stringify(value)}}`;
+    assert.ok(written(text), text);
+  }
+  // A value that is a list or nothing at all is still a value, so a name in front
+  // of it keeps its place: `[]` and `null` are not a hole in the record.
+  for (const [key, value] of [['l', '[]'], ['n', 'null']]) {
+    assert.ok(written(`{"id":1,"2026":2,"${key}":${value}}`), `${key}: ${value}`);
+  }
+
+  // A name the file wrote twice keeps the place it first stood — the first one
+  // is the one a reader looking at the file reads first — and the warning about
+  // the two values is the one that was already there, unchanged.
+  const repeated = run('{"a":1,"2026":2,"a":3}', 'json', [], 'sql').text;
+  assert.ok(repeated.includes('("a", "2026")'), repeated);
+  assert.deepStrictEqual(run('{"a":1,"2026":2,"a":3}', 'json').warnings, [
+    'JSON: key "a" has two different values (lines 1 and 1) — 1 and 3; the last one is kept. One of them is a mistake in the input.'
+  ]);
+
+  // A merged `<<` key is not a name the flow mapping wrote, so it takes the
+  // place the merge rule gives it — and the block form gives it the same one.
+  const flow = run('{<<: {2026: 2}, id: 1}', 'yaml', [], 'sql').text;
+  const block = run('<<: {2026: 2}\nid: 1\n', 'yaml', [], 'sql').text;
+  assert.ok(flow.includes('("id", "2026")'), flow);
+  assert.strictEqual(flow, block);
+
+  // Two documents in one file is still refused, and refused for the same reason
+  // as before: there are two walks of the file and one document, so no order can
+  // be claimed. The reader does not quietly read the first of them.
+  const two = run('{"id":1}\n{"id":2}\n', 'json');
+  assert.ok(two.error, `two documents in one file was read as ${JSON.stringify(two.data)}`);
+  assert.match(two.error, /Unexpected non-whitespace character after JSON/);
+
+  // And the reader this all came from is not moved by it: the same file as CSV
+  // gave this order before the two readers above learned to.
+  assert.ok(run('id,2026,name\n1,2,x\n', 'csv', [], 'sql').text.includes('("id", "2026", "name")'));
+});
+
 // The other half of the order's price, measured in `tools/measure_t109.py`: a
 // step that builds a record field by field copied the fields and not the order,
 // so a single `--rename` or `--pipe add` undid what the reader had just got
