@@ -399,6 +399,7 @@
     var inputEl = $('[data-role=input]', box), pipeEl = $('[data-role=pipeline]', box), outEl = $('[data-role=output]', box),
         fmtIn = $('[data-role=informat]', box), fmtOut = $('[data-role=outformat]', box), status = $('[data-role=status]', box),
         warnEl = $('[data-role=warnings]', box),
+        thanksEl = $('[data-role=thanks]', box),
         cmdEl = $('[data-role=command]', box), presets = $$('[data-preset]', box);
     var frame = el('iframe', { src: '/try', sandbox: 'allow-scripts', title: 'Transmute engine', 'aria-hidden': 'true', tabindex: '-1', hidden: '' });
     var ready = false, pending = null, seq = 0, timer;
@@ -423,9 +424,13 @@
     window.addEventListener('message', function (e) {
       if (e.source !== frame.contentWindow || !e.data) return;
       if (e.data.type === 'ready') { ready = true; if (pending) { frame.contentWindow.postMessage(pending, '*'); } return; }
+      /* The thanks line is written in the page, not here, so it is translated where
+         the rest of the prose is. It starts hidden and is shown by the first run that
+         succeeds: a reader who has not got a result yet has nothing to thank us for,
+         and the line has to be there exactly once, quietly, when there is. */
       if (e.data.type !== 'result' || e.data.id !== seq) return;
-      if (e.data.error) { outEl.textContent = e.data.error; box.classList.add('has-error'); status.textContent = ''; }
-      else { outEl.textContent = e.data.text || ''; box.classList.remove('has-error'); status.textContent = e.data.rows != null ? e.data.rows + ' ' + t.rows : ''; }
+      if (e.data.error) { outEl.textContent = e.data.error; box.classList.add('has-error'); status.textContent = ''; if (thanksEl) thanksEl.hidden = true; }
+      else { outEl.textContent = e.data.text || ''; box.classList.remove('has-error'); status.textContent = e.data.rows != null ? e.data.rows + ' ' + t.rows : ''; if (thanksEl) thanksEl.hidden = false; }
       warnings(e.data.warnings);
     });
     doc.body.appendChild(frame);

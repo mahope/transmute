@@ -639,6 +639,35 @@ check('only a version that describes the code and sits on the default branch can
   assert(readme.includes('npm run check:release'), 'README.md no longer mentions npm run check:release, so the drift report has no documented place in the checklist');
 });
 
+check('the playground says thank you only after a run has worked, in both languages', () => {
+  // Measured by tools/measure_t113.py on 2026-09-28: across the site's 20 pages the
+  // donation link appeared on exactly two, both of them /support/ — a page a reader
+  // visits when they have already decided. The playground is the one place on this
+  // site where a reader has just watched their own data come out right, which is the
+  // moment the product brief names for a thank you ("der, hvor en glad bruger
+  // naturligt ville sige tak, fx efter et vellykket resultat"). Nothing was there.
+  //
+  // Two things are asserted, and the second is the one that keeps it from being pushy:
+  // the line is `hidden` in the markup, so it is not on the page until site.js shows
+  // it on the first result that is not an error. A visitor who has not got a result
+  // yet has nothing to thank us for. It is written in the page rather than in
+  // site.js's string table, so it is translated where the rest of the prose is.
+  for (const [file, lang, other] of [['site/index.html', 'en', '/#desktop'], ['site/da/index.html', 'da', '/da/#desktop']]) {
+    const text = readFileSync(join(root, file), 'utf8');
+    const line = text.match(/<p class="try-thanks" data-role="thanks"([^>]*)>(.*?)<\/p>/s);
+    assert(line, `${file} has no thank-you line in the playground`);
+    assert(/\bhidden\b/.test(line[1]), `${file}'s thank-you line is not hidden in the markup, so it greets a reader who has not run anything yet`);
+    assert(line[2].includes(contract.donation_link), `${file}'s thank-you line does not link the contract's donation link`);
+    assert(line[2].includes(`href="${other}"`), `${file}'s thank-you line does not point at the desktop app in this language (${other})`);
+  }
+  // The two must say the same thing, in the same place, or the other language is a
+  // stub — the same rule the support pages are held to.
+  const thanks = f => (readFileSync(join(root, f), 'utf8').match(/<p class="try-thanks" data-role="thanks"[^>]*>(.*?)<\/p>/s) || [, ''])[1];
+  const en = thanks('site/index.html'), da = thanks('site/da/index.html');
+  const links = t => [...t.matchAll(/href="([^"]+)"/g)].map(m => m[1].replace('/da/', '/')).sort().join();
+  assert(links(en) === links(da), `the two playground thank-you lines link ${links(en)} and ${links(da)}: both languages must thank and sell through the same links`);
+});
+
 check('the Danish support page says what the English one says', () => {
   const en = readFileSync(join(root, 'site', 'support', 'index.html'), 'utf8');
   const da = readFileSync(join(root, 'site', 'da', 'support', 'index.html'), 'utf8');
