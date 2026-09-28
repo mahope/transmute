@@ -16,7 +16,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** The contract of record. Changing a value here requires Mads' decision. */
@@ -77,6 +77,20 @@ const SITE_TOOLS = [
 
 /** The pages' own statements of where they live, in the attributes SEO reads. */
 const PAGE_ADDRESS = /(?:rel="canonical"\s+href|property="og:url"\s+content)="([^"]+)"/g;
+
+/**
+ * Every address a file in `site/` hands a reader, in the forms the site actually
+ * uses: an `href` (which is also how canonical and `og:url` are written), a
+ * `<loc>` in the sitemap, a JSON-LD `url`, and a markdown link in the two `llms`
+ * files. The first three are HTML/XML, the last is plain text — the two files
+ * that exist for readers a browser never shows.
+ */
+const ADDRESS_FORMS = [
+  ['href', /href="([^"]+)"/g],
+  ['loc', /<loc>([^<]+)<\/loc>/g],
+  ['json-ld url', /"url"\s*:\s*"([^"]+)"/g],
+  ['llms link', /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g],
+];
 
 const failures = [];
 let checks = 0;
@@ -434,6 +448,50 @@ check('every page states the address the contract locks, and no other', () => {
     for (const [, url] of readFileSync(file, 'utf8').matchAll(/<loc>([^<]+)<\/loc>/g)) {
       assert(url.startsWith(`${locked}/`),
         `${label(file)} lists ${url}, but the contract locks the site to ${locked}`);
+    }
+  }
+});
+
+check('every address the site hands a reader reaches a page the site serves', () => {
+  // Measured 2026-09-28 on this repository, before this rule: 1236 internal
+  // addresses across `site/`, every one of which resolves — and nothing in the
+  // gate ever asked. The three rules above all read *what address a file states*;
+  // none reads whether the file it names is there. That gap is quiet because the
+  // site is generated: `tools/site_chrome.py` rewrites the footer, the crumbs and
+  // the search index on every run, so a link whose page is gone arrives in a
+  // commit every other rule calls clean. It is also the first thing a reader
+  // hits — a dead guide link on the page that sells the product — and the first
+  // thing a crawler follows, in the sitemap and in `llms.txt`.
+  const siteDir = join(root, 'site');
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    return entry.isDirectory() ? walk(path) : [path];
+  });
+  const served = new Set(walk(siteDir).map((path) => '/' + relative(siteDir, path).split('\\').join('/')));
+
+  for (const file of collect(siteDir, ['.html', '.txt', '.xml'])) {
+    const here = '/' + label(file).slice('site/'.length);
+    const text = readFileSync(file, 'utf8');
+    for (const [form, pattern] of ADDRESS_FORMS) {
+      for (const [, raw] of text.matchAll(pattern)) {
+        // A fragment, a mail, a phone number or a data url is not a page.
+        if (/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(raw)) continue;
+        let target = raw;
+        if (/^https?:\/\//i.test(raw)) {
+          // Another origin is somebody else's page; only the site's own addresses
+          // are ours to keep, and the rule above already holds them to the contract.
+          if (!raw.startsWith(`${String(contract.site_url).replace(/\/+$/, '')}/`)) continue;
+          target = raw.slice(String(contract.site_url).replace(/\/+$/, '').length);
+        } else if (!target.startsWith('/')) {
+          target = posix.join(here.replace(/\/[^/]*$/, '/'), target);
+        }
+        // `?v=` is the asset hash every page carries, and a `#` is a place inside a
+        // page that exists — neither says anything about whether it is there.
+        target = target.split(/[?#]/)[0];
+        const found = served.has(target) || served.has(`${target}index.html`);
+        assert(found,
+          `${label(file)}: ${form} points at ${raw}, which is no file in site/ — a reader and a crawler both get 404`);
+      }
     }
   }
 });

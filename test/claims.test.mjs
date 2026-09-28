@@ -402,5 +402,32 @@ test('deleting the derivation is refused, so the rule is not satisfied by absenc
   assert.match(output, /src\/cli\.js must bind `repository` from package\.json/);
 });
 
+test('a link to a page the site does not serve is refused', () => {
+  // The measured shape of the gap: every rule above reads what address a file
+  // states, and none read whether the file it names is there. A guide that links
+  // to a page the generator has stopped writing is what a reader and a crawler
+  // both hit, and it arrives in a commit that every other rule calls clean.
+  const dir = repo();
+  const file = join(dir, 'site', 'guides', 'csv-to-sql', 'index.html');
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('href="/cheatsheet/"', 'href="/cheatsheet-2027/"'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1);
+  assert.match(output, /site\/guides\/csv-to-sql\/index\.html: href points at \/cheatsheet-2027\/, which is no file in site\//);
+});
+
+test('a link that resolves is not a finding, whatever it carries', () => {
+  // The other half, and the reason the rule is a resolution and not a shape: the
+  // site carries an asset hash on every script and a fragment on every in-page
+  // link, and both are addresses whose *target* is what has to exist. A rule that
+  // compared the address to a filename would fail twenty clean pages.
+  const dir = repo();
+  const file = join(dir, 'site', 'guides', 'csv-to-xml', 'index.html');
+  const before = readFileSync(file, 'utf8');
+  writeFileSync(file, before.replace('href="/cheatsheet/"', 'href="/cheatsheet/index.html"'));
+  const { code } = contractCheck(dir);
+  assert.equal(code, 0);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
