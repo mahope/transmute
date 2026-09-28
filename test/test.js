@@ -707,6 +707,71 @@ test('xmlns is a declaration, so it is not written as an attribute', () => {
   assert.deepStrictEqual(run(ok.text, 'xml', [], 'json').data, [{ '@id': '7' }]);
 });
 
+test('the root element keeps its own attributes, on every record', () => {
+  // Measured against `xml.etree.ElementTree`: an attribute on a *child* has
+  // been a `@`-prefixed field since attributes were read at all, and an
+  // attribute on the *root* had nowhere to go — the loop over the root's content
+  // only ever looked for children. So `<rss version="2.0">` came back as its
+  // items with `version` gone: exit 0, empty stderr, a file that had said which
+  // version of itself it was turned into one that does not know. Every form
+  // below loses something without this, so every form is pinned.
+  assert.deepStrictEqual(run('<a id="1"><b>1</b></a>', 'xml').data, [{ '@id': '1', b: '1' }]);
+  assert.deepStrictEqual(run('<note id="1" lang="da"><body>x</body></note>', 'xml').data, [
+    { '@id': '1', '@lang': 'da', body: 'x' }
+  ]);
+  // The one that is not a child: the root's record is a single nested object, so
+  // this is the file that says `version` before the flatten runs and has nowhere
+  // to say it after.
+  assert.deepStrictEqual(run('<rss version="2.0"><channel><t>x</t></channel></rss>', 'xml').data, [
+    { '@version': '2.0', t: 'x' }
+  ]);
+  // Both of the shapes T95 added, with an attribute added on top: the root's own
+  // text and a root that holds nothing but its attributes.
+  assert.deepStrictEqual(run('<a id="1">hello</a>', 'xml').data, [{ '@id': '1', a: 'hello' }]);
+  assert.deepStrictEqual(run('<a id="1"/>', 'xml').data, [{ '@id': '1' }]);
+  // On every record, not on a record of its own: an attribute on no record
+  // cannot be written to CSV, joined, or seen in the playground.
+  assert.deepStrictEqual(run('<data v="1"><item><a>1</a></item><item><a>2</a></item></data>', 'xml').data, [
+    { '@v': '1', a: '1' },
+    { '@v': '1', a: '2' }
+  ]);
+  assert.ok(run('<data v="1"><item><a>1</a></item></data>', 'xml', [], 'csv').text.includes('@v'));
+  // A prefixed attribute name, and one spread over two lines, because a
+  // namespace-prefixed name on the root is how an Atom feed names its own
+  // `content` module.
+  assert.deepStrictEqual(run('<feed xmlns:content="http://x/"><entry>a</entry></feed>', 'xml').data, [
+    { '@xmlns:content': 'http://x/', entry: 'a' }
+  ]);
+  assert.deepStrictEqual(run('<a\n  id="1">\n  <b>1</b>\n</a>', 'xml').data, [{ '@id': '1', b: '1' }]);
+});
+
+test('a record keeps its own attribute when the root carries the same name', () => {
+  // The record is the more specific of the two answers and the document's is the
+  // one that repeats, so the record wins — and the name is on two levels of the
+  // file, which is a decision this reader made and the user did not, so it is
+  // said once.
+  const r = run('<a id="1"><b id="2">1</b></a>', 'xml');
+  assert.deepStrictEqual(r.data, [{ '@id': '2', '#text': '1' }]);
+  assert.strictEqual(r.warnings.length, 1);
+  assert.ok(r.warnings[0].includes('"@id"'), r.warnings[0]);
+  // Nothing to say when the two names do not meet.
+  assert.deepStrictEqual(run('<a id="1"><b>1</b></a>', 'xml').warnings, []);
+});
+
+test('an XML document without root attributes reads exactly as it did', () => {
+  // The rule is only about the root's own attributes, so every file without one
+  // has to be byte-for-byte the answer it was: no record invented for an empty
+  // root, no `@` field where the file has none, and the flatten unchanged.
+  assert.deepStrictEqual(run('<a><b>1</b></a>', 'xml').data, [{ b: '1' }]);
+  assert.deepStrictEqual(run('<a/>', 'xml').data, []);
+  assert.deepStrictEqual(run('<data><item><a>1</a></item><item><a>2</a></item></data>', 'xml').data, [
+    { a: '1' },
+    { a: '2' }
+  ]);
+  assert.deepStrictEqual(run('<data><item><a>1</a></item></data>', 'xml').data, [{ a: '1' }]);
+  assert.deepStrictEqual(run('<rss><channel><t>x</t></channel></rss>', 'xml').data, [{ t: 'x' }]);
+});
+
 test('the XML writer names the three list shapes XML cannot carry', () => {
   // Repeated elements are a complete answer for a list of several members, so
   // the ordinary case is silent — a file full of lists must not become a file
@@ -1272,7 +1337,12 @@ t('XML: 25 files read against ElementTree, and 11 CDATA and root-text answers', 
     ['<a><b id="1"><c>1</c><c>2</c></b><b id="2"><c>3</c></b></a>', [{ '@id': '1', c: ['1', '2'] }, { '@id': '2', c: '3' }]],
     ['<rows><row><a>1</a><a>2</a></row><row><a>3</a></row></rows>', [{ a: ['1', '2'] }, { a: '3' }]],
     ['<r><a>1</a><b>x</b></r>', [{ a: '1' }, { b: 'x' }]],
-    ['<r xmlns:ns="urn:x"><ns:i>1</ns:i><ns:i>2</ns:i></r>', [{ 'ns:i': '1' }, { 'ns:i': '2' }]],
+    // The root's own `xmlns:ns` is an attribute like any other and is now on both
+    // records, the same rule that has always held for an attribute on a child.
+    // `ElementTree` reports a namespace in the *tag* name instead of in
+    // `attrib`, so this is a thing the file really says and not one this reader
+    // made up.
+    ['<r xmlns:ns="urn:x"><ns:i>1</ns:i><ns:i>2</ns:i></r>', [{ '@xmlns:ns': 'urn:x', 'ns:i': '1' }, { '@xmlns:ns': 'urn:x', 'ns:i': '2' }]],
     ['<r><i><a>1</a><a>2</a></i><i><a>3</a><a>4</a></i><i><a>5</a></i></r>',
       [{ a: ['1', '2'] }, { a: ['3', '4'] }, { a: '5' }]],
     ['<r><i name="attr">text</i><i name="attr2">text2</i></r>', [{ '@name': 'attr', '#text': 'text' }, { '@name': 'attr2', '#text': 'text2' }]],
@@ -2495,7 +2565,12 @@ t('the root element ends where its own nesting ends, not at the last close tag',
   // "never closed", which is the one message about XML that was simply untrue.
   assert.deepStrictEqual(run('<rows/>', 'xml', []).data, []);
   assert.deepStrictEqual(run('<rows></rows>', 'xml', []).data, []);
-  assert.deepStrictEqual(run('<rows a="1"/>', 'xml', []).data, []);
+  // A self-closed root that carries an attribute is not an empty document. It
+  // was `[]` — no records, and the attribute gone with them — and it is now the
+  // one record that says what the element is. Measured: `ElementTree` reads
+  // `<rows a="1"/>` as an element whose `attrib` is `{"a": "1"}`, so the empty
+  // answer was the one that said the file held nothing.
+  assert.deepStrictEqual(run('<rows a="1"/>', 'xml', []).data, [{ '@a': '1' }]);
   // A close tag that does not match what it closes is still the child's problem
   // to name, not a claim that the root was never closed.
   const crossed = run('<data><item><a>1</a></b></data>', 'xml', []);

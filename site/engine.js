@@ -183,7 +183,7 @@ const parsers = {
   },
   csv: (text, opts) => parseCSV(text, opts),
   yaml: (text, opts) => parseYAML(text, opts),
-  xml: (text) => {
+  xml: (text, opts) => {
     // XML to array-of-objects conversion.
     // Strategy: find the root element's matching close tag, parse its direct
     // children; if each child has the same tag and contains sub-elements,
@@ -357,6 +357,7 @@ const parsers = {
     }
 
     // Flatten: <data><item>...</item><item>...</item></data> → records
+    let records = rows;
     if (
       rows.length > 0 &&
       rows.every((r) => Object.keys(r).length === 1) &&
@@ -365,12 +366,69 @@ const parsers = {
     ) {
       const key = Object.keys(rows[0])[0];
       const flat = rows.map((r) => r[key]);
-      if (flat.every((v) => typeof v === 'object' && !Array.isArray(v))) return flat;
+      if (flat.every((v) => typeof v === 'object' && !Array.isArray(v))) records = flat;
     }
 
-    return rows;
+    // After the shape of the records is decided, not before: the flatten above
+    // asks whether every record holds *one* field, and a document-level
+    // attribute put on them first would answer "no" for a file whose records are
+    // a single nested object each — which is most feeds. `<rss version="2.0">`
+    // lost its `version` here for exactly that reason, measured.
+    return carryRootAttributes(records, rootMatch[2], rootTag, opts);
   }
 };
+
+/**
+ * The root element's own attributes, on every record the document produced.
+ *
+ * An attribute on a child element was a field from the beginning, prefixed with
+ * `@`; an attribute on the *root* had no place to go, because the loop over the
+ * root's content only ever looked for children. So `<rss version="2.0">` came
+ * back as its items with `version` gone — no warning, exit 0, a file that had
+ * said which version of itself it was converted into a file that does not know.
+ * That is the silent half-loss this engine keeps failing into, and it is
+ * measured on the shapes people actually read: a feed's `version`, an Atom
+ * entry's `id`, a sitemap's `generator`, a document's own `schemaLocation`.
+ *
+ * On every record, not on a record of its own, because the output of this tool
+ * is a table: an attribute on no record cannot be written to CSV or SQL, cannot
+ * be joined, and cannot be seen in the playground. A document that carries them
+ * on all of its records keeps them the moment it leaves the reader.
+ *
+ * A record's own attribute of the same name wins — the record is the more
+ * specific of the two answers, and the document's is the one that may be
+ * repeated — and the collision is named on stderr, because a name on two levels
+ * is a decision this reader has made and the user has not.
+ */
+function carryRootAttributes(rows, rawAttrs, rootTag, opts) {
+  const attrs = {};
+  for (const m of String(rawAttrs).matchAll(new RegExp(XML_ATTR, 'g'))) {
+    const value = m[2] !== undefined ? m[2] : (m[3] !== undefined ? m[3] : m[4]);
+    attrs['@' + m[1]] = decodeXML(value);
+  }
+  const names = Object.keys(attrs);
+  if (names.length === 0) return rows;
+  // A root that holds nothing but its attributes — `<a id="1"/>` — is a record
+  // that says what it is and has no other content, and an empty result said
+  // nothing at all about a file that was not empty.
+  const out = rows.length === 0 ? [{}] : rows;
+  for (const row of out) {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) continue;
+    for (const name of names) {
+      if (hasField(row, name)) {
+        if (Array.isArray(opts && opts.warnings)) {
+          opts.warnings.push(
+            `xml: <${rootTag} ${name.slice(1)}="…"> and a record below it both carry "${name}" — ` +
+            'the record keeps its own, because it is the more specific of the two answers'
+          );
+        }
+        continue;
+      }
+      setField(row, name, attrs[name]);
+    }
+  }
+  return out;
+}
 
 /**
  * The one warning every reader in this file shares: a name the input gives
