@@ -273,12 +273,21 @@ const parsers = {
     // serve the binary and the browser playground, which share this reader.
     const source = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
     const data = JSON.parse(source);
+    // One walk of the text, for the two things `JSON.parse` cannot answer: the
+    // order the file wrote its keys in, and a key that appears twice. The order
+    // is asked for whether or not anybody wants a warning, because it is a
+    // property of the file and not of the question being asked about it — a
+    // reader that gave a different answer to the same file depending on who was
+    // listening would be the kind of bug this engine has spent a hundred
+    // iterations taking out one source at a time.
+    const walk = walkJSONText(source);
     if (opts && Array.isArray(opts.warnings)) {
-      for (const dup of duplicateJSONKeys(source)) opts.warnings.push(dup);
+      for (const dup of walk.warnings) opts.warnings.push(dup);
       for (const literal of jsonNumberLiterals(source)) {
         collectLostPrecision(opts.warnings, 'JSON', literal);
       }
     }
+    carryJSONFieldOrder(data, walk.orders);
     return Array.isArray(data) ? data : [data];
   },
   csv: (text, opts) => parseCSV(text, opts),
@@ -683,11 +692,18 @@ function noteDuplicateKey(warnings, format, key, first, second) {
 }
 
 /**
- * Find every key that appears twice in one JSON object.
+ * Walk a JSON document as text, once, for both things `JSON.parse` cannot tell
+ * us: which keys a single object holds twice, and what order every object wrote
+ * its keys in.
  *
  * `JSON.parse` has already thrown the first value away by the time this runs,
- * and a reviver cannot see the collision either, so the document is walked as
- * text. The walk only has to know two things: which strings are keys, and which
+ * and a reviver cannot see either the collision or the order — it walks the
+ * *object*, and the object is already in JavaScript's order, so a reviver sees
+ * the order the engine chose rather than the one the file has. Measured, not
+ * assumed: `tools/measure_t108.py`. The order is in the bytes, so the bytes are
+ * the only place left to read it from.
+ *
+ * The walk only has to know two things: which strings are keys, and which
  * object each key belongs to. Both are exact, not heuristics — a JSON key is
  * always a string followed by `:`, and `{`/`}` nest in the only order they can
  * — so this reports a collision that is really there and never one that is not.
@@ -695,11 +711,21 @@ function noteDuplicateKey(warnings, format, key, first, second) {
  * The value of a key is sliced out of the same text and parsed on its own, which
  * is what lets an identical repeat stay silent: `{"a":1,"a":1}` says the same
  * thing twice, and a warning for it would be noise on correct input.
+ *
+ * **The key order is one list per object, in the order the objects are opened**
+ * — which is the order a walk of the parsed document visits them in, so the two
+ * can be paired off by counting. `orders` holds the very arrays the walk fills,
+ * so a list is complete the moment its `}` goes past. The caller pairs them, and
+ * a count that does not match means the two walks disagree about the file, in
+ * which case no order is claimed at all — see `carryJSONFieldOrder`.
  */
-function duplicateJSONKeys(text) {
+function walkJSONText(text) {
   const warnings = [];
-  // One entry per open object, innermost last.
+  // One entry per open object, innermost last. `seen` remembers the value a key
+  // carried, for the repeat; `frame` is that object's key list.
   const stack = [new Map()];
+  const frames = [[]];
+  const orders = [];
   let i = 0;
   let line = 1;
 
@@ -758,8 +784,17 @@ function duplicateJSONKeys(text) {
   while (i < text.length) {
     const ch = text[i];
     if (ch === '\n') { line++; i++; continue; }
-    if (ch === '{') { stack.push(new Map()); i++; continue; }
-    if (ch === '}') { if (stack.length > 1) stack.pop(); i++; continue; }
+    if (ch === '{') {
+      stack.push(new Map());
+      // The list is registered as it is opened and filled as the keys go past,
+      // so it is in the order the objects appear in the text and needs no
+      // sorting afterwards.
+      frames.push([]);
+      orders.push(frames[frames.length - 1]);
+      i++;
+      continue;
+    }
+    if (ch === '}') { if (stack.length > 1) { stack.pop(); frames.pop(); } i++; continue; }
     if (ch !== '"') { i++; continue; }
 
     const str = readString();
@@ -770,7 +805,11 @@ function duplicateJSONKeys(text) {
     while (j < text.length && /[ \t\r\n]/.test(text[j])) j++;
     if (text[j] !== ':') { advanceTo(i, after); continue; }
 
-    // A key: remember the value it carries so a later repeat can be compared.
+    // A key: the order the file wrote it in, and the value it carries so a
+    // later repeat can be compared. A repeated name keeps the place it first
+    // stood, because that is where `JSON.parse` puts it as well.
+    const frame = frames[frames.length - 1];
+    if (!frame.includes(key)) frame.push(key);
     const valueStart = j + 1;
     let v = valueStart;
     while (v < text.length && /[ \t\r\n]/.test(text[v])) v++;
@@ -786,7 +825,8 @@ function duplicateJSONKeys(text) {
     const nested = text[v] === '{' || text[v] === '[';
     advanceTo(i, nested ? v : (valueEnd > 0 ? valueEnd : after));
   }
-  return warnings;
+  return { warnings, orders };
+
 }
 
 /**
@@ -1283,6 +1323,55 @@ function carryFieldOrder(record, written, source) {
   const order = names.filter((name, i) => names.indexOf(name) === i && hasField(record, name));
   if (!order.length) return record;
   return withFieldOrder(record, order);
+}
+
+/**
+ * Put the text's own key order on every object a JSON document holds.
+ *
+ * `JSON.parse` hands back JavaScript's order — a name that looks like a whole
+ * number comes first, whatever the file wrote — and a reviver cannot undo it,
+ * because by then the object *is* in that order. So the order is read out of the
+ * text by `walkJSONText`, which is a walk of the bytes, and paired onto the
+ * parsed document here.
+ *
+ * **Pairing is by count, and a count that does not match claims nothing.** The
+ * two walks are of the same file, so they should agree; when they do not, the
+ * text walk stopped early (an unreadable string, a fragment the document does
+ * not really have) and every list after the point where they parted would name
+ * the wrong object. Rather than hint a record with another record's order, the
+ * reader says nothing and the record falls back to the order the engine has
+ * always given — a fallback, not a failure, and the same one the record would
+ * have had anyway.
+ *
+ * A name is a name, not a value: nothing here can drop a field, and the lists
+ * are handed to `withFieldOrder`, which nothing that reads a record can see.
+ * `hasField` in `ownNames` then drops a name a record no longer has, so a stale
+ * list can only hide a key that is already gone.
+ */
+function carryJSONFieldOrder(data, orders) {
+  if (!Array.isArray(orders) || !orders.length) return data;
+  let objects = 0;
+  const count = (value) => {
+    if (Array.isArray(value)) { for (const item of value) count(item); return; }
+    if (!value || typeof value !== 'object') return;
+    objects++;
+    for (const key of Object.keys(value)) count(value[key]);
+  };
+  count(data);
+  // The frames the walk registered for the document's own object, and the
+  // objects the parse produced, have to be the same number — see above.
+  if (objects !== orders.length) return data;
+  let at = 0;
+  const hint = (value) => {
+    if (Array.isArray(value)) { for (const item of value) hint(item); return; }
+    if (!value || typeof value !== 'object') return;
+    // A walk of the parsed document visits the objects in the order the text
+    // opens them, so this is the object that list belongs to.
+    withFieldOrder(value, orders[at++]);
+    for (const key of Object.keys(value)) hint(value[key]);
+  };
+  hint(data);
+  return data;
 }
 
 /**
@@ -4505,6 +4594,18 @@ function parseYAMLFlow(text, ctx) {
     // the same two `mergeYAMLFields` applies: a field the mapping writes itself
     // wins, and between two merges the first to carry a field wins.
     const merged = new Set();
+    // The order the file wrote this mapping's keys in, the same answer the
+    // block reader hands on since T110 and for the same reason: `seen` inserts
+    // the keys in the order they came in, and it was there all along. A flow
+    // mapping is one fragment of one line, so this is the only place a YAML
+    // document can put `{"2026": 2, id: 1}` on a line and lose the order —
+    // `{id: 1, "2026": 2}` is what every compose file, every config and every
+    // `docker run --label` writes, and the column led all six writers.
+    //
+    // Merged fields are not in `seen`, so they keep the place the language's own
+    // merge rule gives them — measured and written down, and the same answer the
+    // block reader gives for the same construct.
+    const written = () => carryFieldOrder(out, [...seen.keys()]);
     skipSpace();
     if (text[i] === '}') { i++; return out; }
     for (;;) {
@@ -4557,10 +4658,10 @@ function parseYAMLFlow(text, ctx) {
         // `{b: 1}`, and reading the empty tail as an entry failed the whole
         // collection, so a valid line came back as the text it was written with.
         skipSpace();
-        if (text[i] === '}') { i++; return out; }
+        if (text[i] === '}') { i++; return written(); }
         continue;
       }
-      if (text[i] === '}') { i++; return out; }
+      if (text[i] === '}') { i++; return written(); }
       // The counterpart of the sequence's rule, and it is the same question: a
       // flow mapping that is still open when the text runs out is a file broken
       // in the middle of a table, not a field whose value is a table. `a: {b: 1`
