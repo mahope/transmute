@@ -3957,6 +3957,7 @@ function parseYAMLFlow(text, ctx) {
       return quoted.value;
     }
     let raw = '';
+    const from = i;
     while (i < text.length && !endsFlowNode(i)) raw += text[i++];
     const body = raw.trim();
     // A flow item may name itself too — `[*a, *b]` is how a file shares one list
@@ -3965,10 +3966,30 @@ function parseYAMLFlow(text, ctx) {
     // read, and an alias standing alone *is* the item.
     const prop = readYAMLProperties(body, ctx.line);
     if (prop) {
-      const value = prop.alias
-        ? readYAMLAlias(prop.alias, ctx, ctx.line)
-        : prop.rest === '' ? null : parseYAMLValue(prop.rest, ctx);
-      const tagged = prop.tag ? applyYAMLTag(prop.tag, value, ctx, ctx.line, prop.rest) : value;
+      if (prop.alias) {
+        // An alias stands for the whole node and leaves no text behind it, so
+        // there is nothing to read again and nothing to rewind to.
+        const aliased = readYAMLAlias(prop.alias, ctx, ctx.line);
+        const tagged = prop.tag ? applyYAMLTag(prop.tag, aliased, ctx, ctx.line, prop.rest) : aliased;
+        if (prop.anchor) ctx.anchors.set(prop.anchor, tagged);
+        return tagged;
+      }
+      // The value is read from the source, from just past the properties, and
+      // the text handed to the tag is what that value was written with.
+      //
+      // The text above is a *cut* of the node, because `endsFlowNode` stops at the
+      // first comma or bracket — and a comma or a bracket is exactly what a value
+      // behind a property is allowed to hold. `!!int [1, 2]` left `!!int [1`, so
+      // the tag was told `"[1" is not a whole number`, naming a value the file
+      // never wrote, and `!!str "x, y"` kept the half of the text in front of the
+      // comma. The block reader has taken the properties off before it reads the
+      // value since T82, so a tag on a collection is now refused in the same
+      // words on both sides — both refusals come from `applyYAMLTag`.
+      const valueFrom = from + body.length - prop.rest.length;
+      i = valueFrom;
+      const held = prop.rest === '' ? null : value();
+      const written = text.slice(valueFrom, i);
+      const tagged = prop.tag ? applyYAMLTag(prop.tag, held, ctx, ctx.line, written) : held;
       if (prop.anchor) ctx.anchors.set(prop.anchor, tagged);
       return tagged;
     }

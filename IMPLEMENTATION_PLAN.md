@@ -1,9 +1,30 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-28 (T102)
+Opdateret: 2026-09-28 (T103)
 
 
 ## Mission
+
+**Næste iteration (T103): T103 er færdig på `ceo/yaml-flow-node-text` (fra `main`), MERGERET til `main`.** Den tog punkt 102's (b) ordret — **beskeden i `a: {b: !!int [1, 2]}` sagde `"[1"`, fordi `endsFlowNode` skærer råteksten ved klammen** — og målingen sagde at opgaven var **en klasse på ni filer med to symptomer, og at årsagen lå én linje længere inde end beskeden.** Se punkt 103.
+
+**Først de to målinger alleiterationer gør.** CI med ét kald: `success`, `success` — **tooghalvtredsindstyvende og treoghalvtredsindstyvende grønne kørsel i træk** siden T83's rettelse. `npm run check:deploy`: **`DEPLOY-MISSING` uændret igen**, live svarer til `83f6d02` (2026-09-27 16:29:56 +0200), **25 site-commit ikke deployet**, de samme syv afvigende filer. Se `❓ Til Mads` punkt 1.
+
+**Målingen.** 42 filer i tretten hold, PyYAML 6.0.3 som dommer gennem `run(text, 'yaml')` på den rigtige binary, og **to spørgsmål holdt adskilt hele vejen**: *afviser dommeren filen overhovedet, og hvis ja — peger beskeden på en hel node eller på en del af en?* Før: **otte af 42 faldt i den anden klasse**, altså beskeder der navngiver en værdi filen ikke har. **Efter: 0 af 42.**
+
+**Årsagen var ikke beskeden, men rækkefølgen.** `parseYAMLFlow`s `scalar()` skrev noden til rå tekst *før* den tog `&navn` og `!tag` af forsiden — og `endsFlowNode` stopper ved komma, klamme eller krølle. **Så snittet landede inde i værdien, og værdien er præcis det en egenskab må stå foran.** To symptomer, én årsag: `a: {b: !!int [1, 2]}` blev afvist med *"`"[1"` is not a whole number"* — en værdi filen aldrig skrev, fordi `[1` er hvad snittet efterlod; og `a: {b: !!str "x, y"}` blev læst som `"x`, altså **halvdelen af teksten væk med exit 0 og tom stderr**. Den niende fil er den værre af de to: `a: {b: !!binary [1, 2]}` læste **feltet `b` med værdien `"[1"`** — `!!binary` er en advarsel og ikke en afvisning, så snittet nåede data og ikke ord, i stilhed.
+
+**Rettelsen læser værdien fra kilden, lige bag egenskaberne** — samme rækkefølge bloklæseren har brugt siden T82. En samling er derfor en samling for begge læsere, så **en `!!int` på en liste afvises nu med `applyYAMLTag`s egne ord, `a "!!int" tag can only stand on one value, not on a list`** — bloklæserens egen sætning, fordi begge afviselser kommer fra den samme funktion, så de to kan ikke svare forskelligt. Fire læsere kan ikke svare forskelligt, fordi de to kalder én.
+
+**To målefejl i min egen måling, og begge er samme klasse som de fjorten tidligere.** (1) Mit spørgsmål var *"er citatet en delstreng i filen?"* — og `[1` **er** en delstreng i `[1, 2]`, så alle otte forhundrede procenter lå i som ren. Spørgsmålet der kan se det er *"hvor holder citatet op?"* — filen fortsætter med et skilletegn lige bag det, og det er præcis snittet `endsFlowNode` laver. (2) Fragment-prøven kørte også på **læsninger**, hvor ingenting citeres, så `a: {b: !!str x, c: 2}` blev dømt som en del af en node fordi `x` bare efterfølges af et komma. **En målingstabel skal kunne skelne mellem de to ting den sammenligner** — og her måtte den ikke spørge om noget, den ikke vidste.
+
+**Én testblok, 296 tests (295 → 296), rød mod `git show HEAD:src/engine.js`** med præcis det målte symptom (`"[1" is not a whole number`). Den låser de elleve afvisninger, de fire `sameWords`-par mellem strøm- og bloklæseren, de ni læsninger der før tabte data (fire med komma i et citeret felt, to med en klamme derfori, to ankre på en samling, én der ligger i en liste), den ene `!!binary`-advarsel med sin advarsel og sit felt, og **syv kontroller på den almindelige vej, der ikke flyttede sig.**
+
+**Baseline for den ændrede kode (uændret af en læserrettelse):** Plausible `transmute.run` 28 dage: **1 besøgende, 1 sidevisning**, bounce 100 %, besøgstid 0 s. Cloudflare 28 d: 3772 unikke besøg-dage, 7358 sidevisninger, 21267 requests, **946 unikke sidste 7 dage**. En læserrettelse kan ikke måles i trafik; den kan måles i at **ni filer, der læste `!tag` foran en værdi med komma eller klamme i den, ikke længere gør det** — **otte af dem i ordene, én i data, alle med det samme exit-signal som dommeren giver** — og at **296 engine-tests** nu låser svarene.
+
+**Næste opgave, målt før den skrives.** (a) **Den værste af de syv der er tilbage i tabellen, og den er fra en anden læser end denne iterations**: `  a: 1` + ` b: 2` læses som `{"a": 1}` — **hele nøglen `b` væk, exit 0, tom stderr**, mens PyYAML afviser filen. Samme for `  - 1` + `- 2`, der læses som `[1]`. Det er T26's klasse i dens værre form (den fjerner data) og den er målt her, men ikke rettet. (b) Punkt 102's (a) — **`expected : in flow mapping`** — er **et valg, ikke en fejl**, så det hører til `❓ Til Mads` punkt 19 og bliver liggende. (c) Punkt 102's (c): **`#`-kommentaren er målt i CSV; samme spørgsmål i YAML og TSV er ulæst** — YAML har `#` i forvejen, TSV har det ikke. (d) `tools/measure_t103.py` ligger i repoet, så næste måling af denne læser behøver ikke bygges fra nul — den skal bare få sit spørgsmål til det punkt den er skrevet for.
+
+**Site-filer rørt** (`site/engine.js` byte-identisk + `try.html`'s asset-hash `acff926d` → `c298ac5f`), så der er én `VERIFICÉR DEPLOY`-note til denne iteration.
+
 
 **Næste iteration (T102): T102 er færdig på `ceo/yaml-flow-merge-key` (fra `main`), commits `0efec7d` + `118fabc`, MERGERET til `main`.** Den tog punkt 99's (b) ordret — **`<<` i en strømsamling var ikke en sammenlægningsnøgle** — og målingen sagde at opgaven var **en mangel PLUS to fejl i bloklæseren som lå under den**, og at punktet havde skrevet den som *mangler* alene. Se punkt 102.
 
@@ -1020,6 +1041,10 @@ Følgende baseline-kommandoer blev kørt mod commit `3d90812`:
 - Den automatiske site-deploy er stadig aktiv i kode, selv om kontrakten siger, at den er slået fra. Den afvigelse bliver T5, før sitearbejde merges.
 
 ## Prioriteret opgavekø
+
+- 2026-09-28 ca. 11:4x–12:2x CEST: **T103 gennemført på `ceo/yaml-flow-node-text` (fra `main`), MERGERET til `main`, pushet.** `npm run check:deploy` kørt først: **`DEPLOY-MISSING` uændret igen**, live svarer til `83f6d02` (2026-09-27 16:29:56 +0200), **25 site-commit ikke deployet**, de samme syv afvigende filer (`/da/index.html`, `/da/privacy/index.html`, `/engine.js`, `/index.html`, `/privacy/index.html`, `/sitemap.xml`, `/try.html`). CI målt med ét kald: `success`, `success` — **tooghalvtredsindstyvende og treoghalvtredsindstyvende grønne kørsel i træk** siden T83's rettelse. Emnet var punkt 102's (b) ordret: **beskeden i `a: {b: !!int [1, 2]}` siger `"[1"`, fordi `endsFlowNode` skærer råteksten ved klammen.** **Målingen sagde at opgaven var en klasse på ni filer med to symptomer, og at årsagen lå én linje længere inde end beskeden.** 42 filer i tretten hold, PyYAML 6.0.3 som dommer gennem `run(text, 'yaml')` på den rigtige binary, med **to spørgsmål holdt adskilt hele vejen**: afviser dommeren filen overhovedet, og hvis ja — peger beskeden på en hel node eller på en del af en? Før: **otte af 42 i den anden klasse. Efter: 0 af 42.** Årsagen var ikke beskeden, men rækkefølgen: `parseYAMLFlow`s `scalar()` skrev noden til rå tekst *før* den tog `&navn` og `!tag` af forsiden, og `endsFlowNode` stopper ved komma, klamme eller krølle — **så snittet landede inde i værdien, og værdien er præcis det en egenskab må stå foran.** To symptomer, én årsag: `a: {b: !!int [1, 2]}` blev afvist med *"`"[1"` is not a whole number"*, en værdi filen aldrig skrev; `a: {b: !!str "x, y"}` blev læst som `"x`, **halvdelen af teksten væk med exit 0 og tom stderr**; og den niende fil er den værre af de to — `a: {b: !!binary [1, 2]}` læste **feltet `b` med værdien `"[1"`**, fordi `!!binary` er en advarsel og ikke en afvisning, så snittet nåede **data og ikke ord**, i stilhed. Rettelsen læser værdien fra kilden lige bag egenskaberne — bloklæserens egen rækkefølge siden T82 — så **en `!!int` på en liste afvises nu med `applyYAMLTag`s egne ord** (*a "!!int" tag can only stand on one value, not on a list*), bloklæserens sætning, fordi begge afviselser kommer fra den samme funktion. Én ny test (295 → 296) med de elleve afvisninger, fire `sameWords`-par mellem de to læsere, ni læsninger der før tabte data, den ene `!!binary`-advarsel og syv kontroller på den almindelige vej; **rød mod `git show HEAD:src/engine.js` med præcis det målte symptom** (`"[1" is not a whole number`). **To målefejl i min egen måling**, begge i femtende udgave af "tabellen skal kunne skelne mellem de to ting den sammenligner": spørgsmålet *"er citatet en delstreng i filen?"* kan ikke se et snit, fordi `[1` **er** en delstreng i `[1, 2]` — det spørgsmål, der kan, er *"hvor holder citatet op?"*; og fragment-prøven løb også på læsninger, hvor ingenting citeres. Lokalt grøn: `npm test` exit 0 i alle tolv trin (296+168+89+6+39+10+10+11+24 tests, 4 workflows, **184 kontraktontroller**), `npm pack --dry-run` 5 filer uændret, `site/engine.js` byte-identisk med `src/engine.js` (`cmp`), `try.html`'s asset-hash regenereret til `c298ac5f`. Ingen publish, ingen tag, ingen release. **Næste opgave er målt og skrevet ned i Mission:** (a) **den værste af de syv tilbage i tabellen, i en anden læser** — `  a: 1` + ` b: 2` læses som `{"a": 1}`, altså **hele nøglen væk med exit 0 og tom stderr**, (b) punkt 102's (a) er et valg og hører til `❓ Til Mads` punkt 19, (c) `#`-kommentaren er målt i CSV men ulæst i YAML og TSV, (d) `tools/measure_t103.py` ligger i repoet.
+
+VERIFICÉR DEPLOY: **`!tag` foran en værdi med et komma eller en klamme i den læser hele værdien, ikke stykket foran skilletegnet** — `a: {b: !!int [1, 2]}` giver nu *"a "!!int" tag can only stand on one value, not on a list"*, før **`"[1" is not a whole number`**, altså en værdi filen aldrig skrev; `a: {b: !!str "x, y", c: 2}` giver nu `{"a":{"b":"x, y","c":2}}`, før **feltet `b` med værdien `"x`, halvdelen af teksten væk med exit 0 og tom stderr**; `a: {b: !!binary [1, 2]}` giver nu `{"a":{"b":[1,2]}}` med præcis én advarsel, før **feltet `b` med værdien `"[1"`**; samme for `!!float`, `!!bool`, `!!null` og `!!str` på en liste, for `{x: 1, y: 2}` i stedet for `[1, 2]`, og for de samme otte i rod, i en liste og i en liste inde i en liste. `src/engine.js` + `site/engine.js` (byte-identiske) + `try.html`'s asset-hash, commit på `ceo/yaml-flow-node-text`, MERGERET til `main`, pushet 2026-09-28 ca. 12:1x CEST.
 
 - 2026-09-28 ca. 10:4x–11:2x CEST: **T102 gennemført på `ceo/yaml-flow-merge-key` (fra `main`), commits `0efec7d` + `118fabc`, MERGERET til `main`, pushet.** `npm run check:deploy` kørt først: **`DEPLOY-MISSING` uændret for halvtredsindstyvende gang i træk**, de samme syv afvigende filer. CI målt med ét kald: `success`, `success` — **nioghalvtredsindstyvende og halvfemsindstyvende grønne kørsel i træk** siden T83's rettelse. Emnet var punkt 99's (b) ordret: **`<<` i en strømsamling er ikke en sammenlægningsnøgle**, som punktet skrev som *en manglende funktion*. **Målingen siger at den var en mangel PLUS to fejl i bloklæseren.** 23 filer + 18 kontrolfiler mod PyYAML 6.0.3: **før 2 af 23 enige og 11 afveg i én klasse, efter 13 af 23 og 0 afviger.** `a: {<<: *b, d: 2}` gav feltet `<<` med ankerets egne felter som værdi. **Kontrollen målte bloklæseren som sund i alle dens former** og fandt de to fejl under opgaven: et `<<` **i citattegn** blev flettet ind (et felt filen skrev væk, ankerets felter i dets sted, exit 0, tom stderr), og en **inline-mapping under `<<` blev afvist** på en fil dommeren læser. Rettelsen er `isYAMLMergeKey` (nøglens egen skrevne tekst, begge læsere) + `mergeYAMLFields` (rækkefølgen, én sted) + inline-mappingen læst + **de fire `throw`s i `readYAMLMerge` blev `YAMLRefusal`**, fordi kun blokformen lå uden for strømlæserens `catch` — ellers kom `{<<: [1, 2]}` tilbage som den tekst linjen var skrevet med. Én testblok (294 → 295), **rød mod `git show HEAD:src/engine.js`** med det målte symptom. `docs/cli.md` fik de tre former med kørte kommandoer og rigtig output. Lokalt grøn: `npm test` exit 0 i alle tolv trin, `npm run check:site` exit 0 med `0 finding(s) across 20 pages`, `deviations: 0` og grøn selftest, `site/engine.js` byte-identisk med `src/engine.js` (`cmp`). Ingen publish, ingen tag, ingen release. Se punkt 102.
 
@@ -4961,6 +4986,34 @@ giver exit 0 og `[ "a", "b" ]`. Hele `server`-objektet er **vækket fra filen**,
   **De tre valg er uændrede:** (a) `❓ Til Mads` punkt 1, deploy-kommandoen, den eneste blokering for både købssiden og alle 0.3.0-rettelser; (b) `❓ Til Mads` punkt 18, `npm run release -- 0.3.0`; (c) punkt 15's tabsfri læser, som kræver Mads' svar om typen.
 
 ## Beslutninger og fund
+
+- **Et snit skal måles ved hvor det holder op, ikke ved om det er en delstreng (T103).**
+  Punkt 102 skrev op at beskeden i `a: {b: !!int [1, 2]}` sagde `"[1"`. Min første
+  måling spurgte *"er citatet en delstreng i filen?"* — og `[1` **er** en delstreng
+  i `[1, 2]`, så de otte filer lå i som rene og tabellen målte ingenting. Det
+  spørgsmål, der kan se et snit, er *"hvor holder citatet op?"*: filen fortsætter
+  med et skilletegn lige bag det, og det er præcis den afskæring `endsFlowNode`
+  laver. *Samme slags som de anden tyve målefejl i denne plan, og den skarpeste
+  endnu: målingen havde ét kriterium, og det var det forkerte.*
+
+- **Den besked, der så forkert ud, var ikke fejlen — den var det sidste sted, den
+  blev synlig (T103).** Punktet pegede på `endsFlowNode`s skæring som *årsagen*.
+  Skæringen er rigtig — den er det, der gør at `a: [1 2]` er to skalare og ikke en
+  fejl. Fejlen var at `scalar()` skrev noden til rå tekst **før** den tog `&navn`
+  og `!tag` af forsiden, så snittet kom til at ligge inde i værdien. Én fejl, to
+  symptomer med en helt forskellig karakter: **otte filer fik en besked der
+  navngiver en værdi filen ikke har, og én fik data der ikke er i filen, i
+  stilhed** (`!!binary` er en advarsel, så snittet nåede værdien og ikke ordene).
+  *En måling skal spørge efter de steder, hvor en fejl kan være usynlig, ikke
+  kun efter dem hvor den er højlydt.*
+
+- **Én læser, to kaldersteder, så kan de to ikke svare forskelligt (T103).**
+  `applyYAMLTag` afviser en samling med de samme ord for blok- og strømlæseren,
+  fordi de begge ender i den. Før sagde strømlæseren *"`"[1"` is not a whole
+  number"* og bloklæseren *"a "!!int" tag can only stand on one value, not on a
+  list"* om den **samme fil**. Fjerde udgave af det samme idiom (T90's
+  `yamlKeyText`, T92's `yamlTagNamesKey`, T102's `isYAMLMergeKey`), og anden gang
+  det fjerner en hel klasse i stedet for at lukke ét tilfælde.
 
 - **`<<` er nøglen i begge stavemåder, og det er spørgsmålet om nøglens *egen
   skrevne tekst* der afgør det (T102).** Punktet skrev opgaven som *en manglende

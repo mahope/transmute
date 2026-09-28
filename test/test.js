@@ -4908,15 +4908,21 @@ test('a refusal inside a flow collection is refused, not read as the line\'s own
     // and both readers say so.
     ['a: [*k]\nb: &k 1\n', /found undefined alias 'k'/],
     ['a: {b: *k}\nk: &k 1\n', /found undefined alias 'k'/],
-    // A tag that asks for a type the text is not. The wording quotes the value as
-    // the reader sliced it, which inside a collection is the run up to the
-    // bracket — so the message says `"[1"`, not the list. The answer is the one
-    // that matters and it is the block reader's; the fragment is the next thing
-    // to measure, not this one.
+    // A tag that asks for a type the text is not. The value is quoted as the file
+    // wrote it, which is the point of the whole rule: a quoted scalar behind a
+    // tag keeps its own text, because the tag has to be told what the file said.
     ['a: {b: !!int "x"}\n', /so "!!int" has nothing to make of it/],
     ['a: [!!float "x"]\n', /so "!!float" has nothing to make of it/],
     ['a: {b: !!bool "maybe"}\n', /so "!!bool" has nothing to make of it/],
-    ['a: {b: !!int [1, 2]}\n', /so "!!int" has nothing to make of it/],
+    // A tag on a collection is not a tag on a bad number — it is a tag on two
+    // values, which is the rule `applyYAMLTag` has always stated for the block
+    // reader. PyYAML refuses all four with `expected a scalar node, but found
+    // sequence`; the flow reader said `"[1" is not a whole number`, which named a
+    // value the file never wrote. Both now answer with the tag's own rule.
+    ['a: {b: !!int [1, 2]}\n', /a "!!int" tag can only stand on one value, not on a list/],
+    ['a: {b: !!float [1, 2]}\n', /a "!!float" tag can only stand on one value, not on a list/],
+    ['a: {b: !!bool [1, 2]}\n', /a "!!bool" tag can only stand on one value, not on a list/],
+    ['a: {b: !!null [1, 2]}\n', /a "!!null" tag can only stand on one value, not on a list/],
     // A node named twice, named and a reference at once, or carrying two tags —
     // the three rules `readYAMLProperties` states, reached from inside a
     // collection where they used to be swallowed with everything else.
@@ -4968,6 +4974,102 @@ test('a refusal inside a flow collection is refused, not read as the line\'s own
     ['a: {b: !!str 01}\n', [{ a: { b: '01' } }]],
     ['x: &k {b: 1}\ny: *k\n', [{ x: { b: 1 }, y: { b: 1 } }]],
     ['a: {b: &x 1, c: *x}\n', [{ a: { b: 1, c: 1 } }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
+test("a flow node behind a property is the whole node, not the run up to the first bracket", () => {
+  // `endsFlowNode` stops a plain flow node at a comma, a bracket or a brace, and
+  // the reader used to cut the node into raw text *before* taking the `&name` and
+  // the `!tag` off the front of it. So the cut landed inside the value — and the
+  // value is exactly what a property is allowed to stand in front of. Measured
+  // 2026-09-28 with PyYAML 6.0.3 as the judge, 42 files, three questions kept
+  // apart: eight files whose refusal named a piece of a node rather than the node,
+  // and four that lost the text after a comma inside a quoted value.
+  //
+  // Two symptoms, one cause. `a: {b: !!int [1, 2]}` was refused with `"[1" is not
+  // a whole number` — a value the file never wrote, because `[1` is what the cut
+  // left behind. And `a: {b: !!str "x, y"}` was read as `"x`, so half the text was
+  // gone with an empty stderr. Both are now read from the source, from just past
+  // the properties, which is the order the block reader has used since T82.
+  for (const [text, want] of [
+    // The types JSON carries, each on a list and on a table. The judge refuses all
+    // of them with `expected a scalar node, but found …`; the words are
+    // `applyYAMLTag`'s, the same ones the block reader has always said.
+    ['a: {b: !!int [1, 2]}\n', /a "!!int" tag can only stand on one value, not on a list/],
+    ['a: {b: !!float [1, 2]}\n', /a "!!float" tag can only stand on one value, not on a list/],
+    ['a: {b: !!bool [1, 2]}\n', /a "!!bool" tag can only stand on one value, not on a list/],
+    ['a: {b: !!null [1, 2]}\n', /a "!!null" tag can only stand on one value, not on a list/],
+    ['a: {b: !!int {x: 1, y: 2}}\n', /a "!!int" tag can only stand on one value, not on a table/],
+    ['a: {b: !!str [1, 2]}\n', /a "!!str" tag can only stand on one value, not on a list/],
+    ['{b: !!int [1, 2]}\n', /a "!!int" tag can only stand on one value, not on a list/],
+    ['[!!int [1, 2]]\n', /a "!!int" tag can only stand on one value, not on a list/],
+    // Beside a field that reads fine, and a collection nested in a collection.
+    ['a: {b: !!int [1, 2], c: 3}\n', /a "!!int" tag can only stand on one value, not on a list/],
+    ['a: {b: !!int [[1, 2], 3]}\n', /a "!!int" tag can only stand on one value, not on a list/]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${JSON.stringify(text)} was read as ${JSON.stringify(r.data)}`);
+    assert.match(r.error, want, `${JSON.stringify(text)}: ${r.error}`);
+  }
+
+  // The same file in the two spellings, refused with the same words. The line
+  // number is the only thing a flow collection has no room for.
+  const sameWords = (flow, block) => {
+    const a = run(flow, 'yaml').error.replace(/YAML line \d+: /, '');
+    const b = run(block, 'yaml').error.replace(/YAML line \d+: /, '');
+    assert.strictEqual(a, b, `${JSON.stringify(flow)} vs ${JSON.stringify(block)}`);
+  };
+  sameWords('a: {b: !!int [1, 2]}\n', 'b: !!int [1, 2]\n');
+  sameWords('a: {b: !!int {x: 1}}\n', 'b: !!int {x: 1}\n');
+  sameWords('a: {b: !!bool [1, 2]}\n', 'b: !!bool [1, 2]\n');
+  sameWords('a: {b: !!str [1, 2]}\n', 'b: !!str [1, 2]\n');
+
+  // What the cut used to take, and what stands there instead: a comma and a
+  // bracket inside a quoted value, and an anchor on a collection. PyYAML reads
+  // all of these, and the two quoted ones were read as the half of the text in
+  // front of the comma — silently, with an empty stderr.
+  for (const [text, want] of [
+    ['a: {b: !!str "x, y", c: 2}\n', [{ a: { b: 'x, y', c: 2 } }]],
+    ["a: {b: !!str 'x, y', c: 2}\n", [{ a: { b: 'x, y', c: 2 } }]],
+    ['a: {b: !!str "a}b", c: 2}\n', [{ a: { b: 'a}b', c: 2 } }]],
+    ['a: {b: !!str "a]b", c: 2}\n', [{ a: { b: 'a]b', c: 2 } }]],
+    ['a: {b: !!str x, c: 2}\n', [{ a: { b: 'x', c: 2 } }]],
+    ['a: {b: !!int 1, c: 2}\n', [{ a: { b: 1, c: 2 } }]],
+    ['a: [{b: !!str "p, q"}, 2]\n', [{ a: [{ b: 'p, q' }, 2] }]],
+    ['a: {b: &x [1, 2], c: *x}\n', [{ a: { b: [1, 2], c: [1, 2] } }]],
+    ['a: {b: &x {p: 1}, c: 2}\n', [{ a: { b: { p: 1 }, c: 2 } }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+  // A quoted number behind `!!int` is still a number the file wrote in quotes, so
+  // the message quotes the whole quoted text this time.
+  const quotedInt = run('a: {b: !!int "1, 2", c: 3}\n', 'yaml');
+  assert.match(quotedInt.error, /"1, 2" is not a whole number/, quotedInt.error);
+
+  // A tag JSON cannot carry is a warning and not a refusal, so it is the one case
+  // where the cut changed the *data* and not the words: `a: {b: !!binary [1, 2]}`
+  // was the field `b` with the value `"[1"`, with an empty stderr, and is now the
+  // whole list the file wrote.
+  const binary = run('a: {b: !!binary [1, 2]}\n', 'yaml');
+  assert.deepStrictEqual(binary.data, [{ a: { b: [1, 2] } }]);
+  assert.strictEqual(binary.warnings.length, 1);
+  assert.match(binary.warnings[0], /the tag "!!binary" is not a type JSON carries/);
+
+  // And the plain path did not move: a value with no property in front of it is
+  // read exactly as it was, so this changes what a property may stand in front of
+  // and not what a flow collection means.
+  for (const [text, want] of [
+    ['a: {b: "x, y", c: 2}\n', [{ a: { b: 'x, y', c: 2 } }]],
+    ['a: {b: 1, c: 2}\n', [{ a: { b: 1, c: 2 } }]],
+    ['a: [1, 2, 3]\n', [{ a: [1, 2, 3] }]],
+    ['a: {b: [1, 2], c: 3}\n', [{ a: { b: [1, 2], c: 3 } }]],
+    ['a: {b: {c: 1}, d: 2}\n', [{ a: { b: { c: 1 }, d: 2 } }]]
   ]) {
     const r = run(text, 'yaml');
     assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
