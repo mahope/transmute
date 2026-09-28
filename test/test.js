@@ -4982,6 +4982,79 @@ test('a line that is nothing but a name is the node under it, not a scalar', () 
   }
 });
 
+test('a key that carries a tag and no text of its own is named, not left out', () => {
+  // A tag is a property of the node it stands in front of, and the node is there
+  // even when no text follows the tag. The key-left-out question was asked first
+  // and answered `null` before the tag was ever reached, so `? !custom` and
+  // `a: {? !custom : 1}` dropped it *with nothing on stderr* — while the four
+  // spellings that carry text are named and warned about. `!custom: 1` already
+  // gave the field `!custom`, so the reader had two answers to one question.
+  for (const text of [
+    '? !custom\n: 1\n',
+    '? !custom\n: {a: 1}\n',
+    'a: {? !custom : 1}\n',
+    'a: {? !custom : {x: 1}}\n',
+    'a: {!custom : 1}\n',
+    '- ? !custom\n  : 1\n'
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    const names = JSON.stringify(r.data).match(/"!custom"/g) || [];
+    assert.strictEqual(names.length, 1, `${JSON.stringify(text)} did not name the key: ${JSON.stringify(r.data)}`);
+    assert.strictEqual(r.warnings.length, 1, `${JSON.stringify(text)} warned ${r.warnings.length} times`);
+    assert.match(
+      r.warnings[0],
+      /YAML line \d+: the tag "!custom" is not a type JSON carries, so the key was read as it was written/,
+      `${JSON.stringify(text)}: ${r.warnings[0]}`
+    );
+  }
+  // The value the entry carries is untouched by the naming of its key: a key
+  // written as `!custom` above a mapping is a key with a table under it, and
+  // reading it as a scalar is the mistake this rule exists next to.
+  assert.deepStrictEqual(run('? !custom\n: {a: 1}\n', 'yaml').data, [{ '!custom': { a: 1 } }]);
+  assert.deepStrictEqual(run('a: {? !custom : {x: 1}}\n', 'yaml').data, [{ a: { '!custom': { x: 1 } } }]);
+
+  // A tag that asks for a type JSON *does* carry is PyYAML's own answer, and the
+  // measured one is that the node is not nothing: `!!str` with no text behind it
+  // is the empty string and `!!null` is `null`. Both were the key left out
+  // before, which is a different field.
+  assert.deepStrictEqual(run('? !!str\n: 1\n', 'yaml').data, [{ '': 1 }]);
+  assert.deepStrictEqual(run('a: {? !!str : 1}\n', 'yaml').data, [{ a: { '': 1 } }]);
+  assert.deepStrictEqual(run('? !!null\n: 1\n', 'yaml').data, [{ null: 1 }]);
+  assert.deepStrictEqual(run('a: {? !!null : 1}\n', 'yaml').data, [{ a: { null: 1 } }]);
+  // A carried tag that has no value to convert says so, which is what PyYAML's
+  // own answer is for these three: it refuses the file as well.
+  for (const tag of ['!!int', '!!float', '!!bool']) {
+    assert.match(String(run(`? ${tag}\n: 1\n`, 'yaml').error), new RegExp(`"${tag}"`), tag);
+  }
+
+  // A bare `!` asks for no type at all, so it says nothing about the key and is
+  // not part of its name — it named one, and `!` is a name no JSON file has.
+  // `? !` is the key left out and `? ! x` is the key `x`, both as PyYAML reads.
+  assert.deepStrictEqual(run('? !\n: 1\n', 'yaml').data, [{ null: 1 }]);
+  assert.deepStrictEqual(run('? ! x\n: 1\n', 'yaml').data, [{ x: 1 }]);
+  assert.deepStrictEqual(run('a: {? ! : 1}\n', 'yaml').data, [{ a: { null: 1 } }]);
+  assert.strictEqual(run('? !\n: 1\n', 'yaml').warnings.length, 0);
+
+  // A key left out with no property in front of it is untouched, in both
+  // readers, and so is a property with no tag to name it: `~` is the other
+  // spelling of nothing and an anchor renames the node, it does not name it.
+  for (const [text, want] of [
+    ['? : 1\n', [{ null: 1 }]],
+    ['?\n: 1\n', [{ null: 1 }]],
+    ['? ~\n: 1\n', [{ null: 1 }]],
+    ['? &k ~\n: 1\n', [{ null: 1 }]],
+    ['? x\n: 1\n', [{ x: 1 }]],
+    ['a: {? x : 1}\n', [{ a: { x: 1 } }]],
+    ['? !!str x\n: 1\n', [{ x: 1 }]],
+    ['? ""\n: 1\n', [{ '': 1 }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
 

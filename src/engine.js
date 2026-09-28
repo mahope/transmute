@@ -2516,6 +2516,23 @@ function attachYAMLProperties(prop, value, ctx, no) {
 }
 
 /**
+ * Does this tag belong in the name of the key it stands on? A carried tag does,
+ * because it is the type the file asked for — `? !!str` with nothing behind it is
+ * the empty string, and `? !!null` is `null`, which is what PyYAML reads both as.
+ * A tag this tool cannot carry does too, because naming the key is the one place
+ * the warning is given: `!custom: 1` is the field `!custom`, and `? !custom` is
+ * that same field.
+ *
+ * A bare `!` is neither. It is the non-specific tag — it asks for no type at
+ * all, so it says nothing about the key and is not part of its name. `? !` is
+ * the key left out, which is `null`, and `? ! x` is the key `x`; both are what
+ * PyYAML reads, and naming a key `!` gave a name no JSON file has.
+ */
+function yamlTagNamesKey(tag) {
+  return !!tag && tag !== '!';
+}
+
+/**
  * The short name of a tag: `!!str` and `!<tag:yaml.org,2002:str>` are both `str`.
  * Anything else has no name JSON knows, and is dropped with a word about it.
  */
@@ -2875,14 +2892,27 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       // the value `z` holds, and testing for the missing key first called it a
       // key YAML never wrote. This is the order the flow reader asks in, and the
       // reason is the same there.
+      //
+      // The tag is asked about before the key left out for the same reason: a
+      // tag is a property of the node, and the node is there even when no text
+      // stands behind the tag. Asking the missing key first answered `null` for
+      // `? !custom` and `a: {? !custom : 1}` and never reached the tag, so those
+      // two spellings dropped it *without a word* while the four that carry text
+      // are named and warned about. PyYAML has no answer to compare — it refuses
+      // the file — so the question is which of this reader's own six spellings
+      // is right, and the `k: v` line above already answers it: `!custom: 1` is
+      // the field `!custom` with a warning. A tag that asks for a type JSON
+      // carries is asked the same way, and it is PyYAML's own answer: `!!str`
+      // with no text behind it is the empty string, `!!null` is `null`, and
+      // `!!int` has no whole number to make of nothing and says so.
       const name = keyProp && keyProp.alias
         ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, keyNo), keyNo, ctx)
-        : yamlKeyLeftOut(rawName, quotedKey)
-          ? YAML_NULL_KEY
-          : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
-            ? String(applyYAMLTag(keyProp.tag, rawName, ctx, keyNo, rawName, 'key'))
-            : keyProp && keyProp.tag
-              ? String(applyYAMLTag(keyProp.tag, written, ctx, keyNo, written, 'key'))
+        : keyProp && yamlTagNamesKey(keyProp.tag) && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
+          ? String(applyYAMLTag(keyProp.tag, rawName, ctx, keyNo, rawName, 'key'))
+          : keyProp && yamlTagNamesKey(keyProp.tag)
+            ? String(applyYAMLTag(keyProp.tag, written, ctx, keyNo, written, 'key'))
+            : yamlKeyLeftOut(rawName, quotedKey)
+              ? YAML_NULL_KEY
               : rawName;
       if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
       const named = value => {
@@ -3547,15 +3577,19 @@ function parseYAMLFlow(text, ctx) {
     // The alias is asked about first, because an alias *is* the whole key and
     // leaves no text behind it: `{*z : 2}` is a field named after the value `z`
     // holds, and testing for the empty name first would call it a field with
-    // no name at all.
+    // no name at all. The tag is asked about next, before the key left out, for
+    // the reason the block reader gives in the same words: a tag is a property
+    // of the node and the node is there without text behind it, so `!custom`
+    // alone is the field `!custom` with a warning — as `!custom: 1` already was
+    // — and not the key left out, which dropped the tag with nothing on stderr.
     const name = keyProp && keyProp.alias
       ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, ctx.line), ctx.line, ctx)
-      : yamlKeyLeftOut(rawName, quoted)
-        ? YAML_NULL_KEY
-        : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
-          ? String(applyYAMLTag(keyProp.tag, rawName, ctx, ctx.line, rawName, 'key'))
-          : keyProp && keyProp.tag
-            ? String(applyYAMLTag(keyProp.tag, keyText, ctx, ctx.line, keyText, 'key'))
+      : keyProp && yamlTagNamesKey(keyProp.tag) && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
+        ? String(applyYAMLTag(keyProp.tag, rawName, ctx, ctx.line, rawName, 'key'))
+        : keyProp && yamlTagNamesKey(keyProp.tag)
+          ? String(applyYAMLTag(keyProp.tag, keyText, ctx, ctx.line, keyText, 'key'))
+          : yamlKeyLeftOut(rawName, quoted)
+            ? YAML_NULL_KEY
             : rawName;
     if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
     return name;
