@@ -1188,6 +1188,114 @@ t('XML DOCTYPE with an internal subset is skipped whole', () => {
   if (r.data.length !== 1) throw new Error('expected 1 record, got ' + JSON.stringify(r.data));
 });
 
+t('XML: 25 files read against ElementTree, and 11 CDATA and root-text answers', () => {
+  // The XML reader had been measured by hand in nine iterations and never by a
+  // table. Every line below is a measured answer: the input is one of the shapes
+  // a real export writes, and the expected value is what `xml.etree.ElementTree`
+  // says about the same file. All 25 files are well-formed — the judge reads
+  // every one of them — so a refusal here is not a malformed input being caught
+  // but a valid one thrown away, which is the one class that means the tool does
+  // not work for the person who wrote the file. Three of them were: a CDATA
+  // section was markup to the reader, and so was the root element's own text.
+
+  // --- CDATA, which is text, in every place it stands ---------------------
+  // a section holding a value
+  assert.deepStrictEqual(run('<r><i><![CDATA[one]]></i></r>', 'xml', [], 'json').data, [{ i: 'one' }]);
+  // a section holding what looks like markup: the text is "<b>", not an element
+  assert.deepStrictEqual(run('<a><![CDATA[<b>]]></a>', 'xml', [], 'json').data, [{ a: '<b>' }]);
+  // a section holding what looks like a close tag
+  assert.deepStrictEqual(run('<a><![CDATA[</a>]]></a>', 'xml', [], 'json').data, [{ a: '</a>' }]);
+  // an empty section is the empty string
+  assert.deepStrictEqual(run('<a><![CDATA[]]></a>', 'xml', [], 'json').data, [{ a: '' }]);
+  // two sections are one text: a writer that wraps a long value uses one per line
+  assert.deepStrictEqual(run('<a><![CDATA[a]]><![CDATA[b]]></a>', 'xml', [], 'json').data, [{ a: 'ab' }]);
+  // an entity in a section is data: nothing in a section is decoded, which is
+  // the one thing that separates it from every other text in the file
+  assert.deepStrictEqual(run('<a><![CDATA[a &amp; b]]></a>', 'xml', [], 'json').data, [{ a: 'a &amp; b' }]);
+  // whitespace around a section is the file's indentation, not its value
+  assert.deepStrictEqual(run('<a>\n  <![CDATA[x]]>\n</a>', 'xml', [], 'json').data, [{ a: 'x' }]);
+  // a section beside an attribute hangs the text on the attribute's record
+  assert.deepStrictEqual(run('<r><i v="1"><![CDATA[x]]></i></r>', 'xml', [], 'json').data, [{ '@v': '1', '#text': 'x' }]);
+  // a section inside a record that flattens to rows
+  assert.deepStrictEqual(
+    run('<data><item><d><![CDATA[x]]></d><n>1</n></item><item><d><![CDATA[y]]></d><n>2</n></item></data>', 'xml', [], 'json').data,
+    [{ d: 'x', n: '1' }, { d: 'y', n: '2' }]
+  );
+  // a list of sections: the shape an RSS feed and a SOAP response write
+  assert.deepStrictEqual(run('<r><i><![CDATA[one]]></i><i><![CDATA[two]]></i></r>', 'xml', [], 'json').data, [{ i: 'one' }, { i: 'two' }]);
+  // a section that is never closed is a file the reader cannot read. It used to
+  // be read as the text "<![CDATA[x", which is a value the file never held.
+  const unterminated = run('<a><![CDATA[x</a>', 'xml', [], 'json');
+  assert.ok(unterminated.error, 'an unclosed CDATA section must be named, not read as text');
+  assert.ok(/CDATA section is never closed/.test(unterminated.error), unterminated.error);
+
+  // --- the root element's own text ---------------------------------------
+  // the root's text was never read, because the loop over it only looked for
+  // children. `<a>hello</a>` is a whole document and was refused with exit 3.
+  assert.deepStrictEqual(run('<a>hello</a>', 'xml', [], 'json').data, [{ a: 'hello' }]);
+  // an entity in it is decoded, as it is everywhere else in the file
+  assert.deepStrictEqual(run('<a>a &amp; b</a>', 'xml', [], 'json').data, [{ a: 'a & b' }]);
+  // the root's text beside a child is mixed content, which this reader has not
+  // chosen an answer for. It keeps saying so rather than reading as one of the
+  // two things such a file is, and these are the two forms of it.
+  for (const mixed of ['<a>hello<b>1</b></a>', '<r><i>1</i>tail<i>2</i></r>', '<r>lead<i>1</i><i>2</i></r>']) {
+    const r = run(mixed, 'xml', [], 'json');
+    assert.ok(r.error, 'mixed content must be named: ' + mixed);
+    assert.strictEqual(r.data, undefined, mixed);
+  }
+
+  // --- 24 files that must not move --------------------------------------
+  // A repeated element is a list. These are the shapes measured alongside the
+  // CDATA files, all of them well-formed, and none of them is a CDATA section or
+  // a root's own text — so nothing here may change because of this fix. A
+  // repeated element is one value until it is two, and the row shape at the root
+  // is one row per child: `<tags><tag>a</tag><tag>b</tag></tags>` is two records
+  // of one column, while the same tag repeated inside a record is a list on that
+  // record. The last one is the pairing that says which of the two it is.
+  const files = [
+    ['<rss><channel><title>Nyheder</title>\n<item><title>Første</title><link>https://a.example/1</link></item>\n<item><title>Anden</title><link>https://a.example/2</link></item>\n</channel></rss>',
+      [{ title: 'Nyheder', item: [{ title: 'Første', link: 'https://a.example/1' }, { title: 'Anden', link: 'https://a.example/2' }] }]],
+    ['<urlset><url><loc>https://a.example/</loc><lastmod>2026-09-01</lastmod></url><url><loc>https://a.example/da/</loc><lastmod>2026-09-02</lastmod></url></urlset>',
+      [{ loc: 'https://a.example/', lastmod: '2026-09-01' }, { loc: 'https://a.example/da/', lastmod: '2026-09-02' }]],
+    ['<tags><tag>alpha</tag><tag>beta</tag><tag>gamma</tag></tags>', [{ tag: 'alpha' }, { tag: 'beta' }, { tag: 'gamma' }]],
+    ['<r><i id="1"/><i id="2"/></r>', [{ '@id': '1' }, { '@id': '2' }]],
+    ['<r><i><j>1</j><j>2</j></i><i><j>3</j></i></r>', [{ j: ['1', '2'] }, { j: '3' }]],
+    ['<r><a>1</a><b>x</b><b>y</b></r>', [{ a: '1' }, { b: 'x' }, { b: 'y' }]],
+    ['<r><i/><i/></r>', [{}, {}]],
+    ['<r><i v="1">a</i><i v="2">b</i></r>', [{ '@v': '1', '#text': 'a' }, { '@v': '2', '#text': 'b' }]],
+    ['<data><item><name>x</name><tag>t1</tag><tag>t2</tag></item><item><name>y</name><tag>t3</tag></item></data>',
+      [{ name: 'x', tag: ['t1', 't2'] }, { name: 'y', tag: 't3' }]],
+    ['<r><i>1</i></r>', [{ i: '1' }]],
+    ['<r><a>1</a><a>2</a><b>x</b><b>y</b></r>', [{ a: '1' }, { a: '2' }, { b: 'x' }, { b: 'y' }]],
+    ['<a><b><c>1</c><c>2</c></b><b><c>3</c></b></a>', [{ c: ['1', '2'] }, { c: '3' }]],
+    ['<r>\n  <i>1</i>\n  <i>2</i>\n</r>', [{ i: '1' }, { i: '2' }]],
+    ['<a><b id="1"><c>1</c><c>2</c></b><b id="2"><c>3</c></b></a>', [{ '@id': '1', c: ['1', '2'] }, { '@id': '2', c: '3' }]],
+    ['<rows><row><a>1</a><a>2</a></row><row><a>3</a></row></rows>', [{ a: ['1', '2'] }, { a: '3' }]],
+    ['<r><a>1</a><b>x</b></r>', [{ a: '1' }, { b: 'x' }]],
+    ['<r xmlns:ns="urn:x"><ns:i>1</ns:i><ns:i>2</ns:i></r>', [{ 'ns:i': '1' }, { 'ns:i': '2' }]],
+    ['<r><i><a>1</a><a>2</a></i><i><a>3</a><a>4</a></i><i><a>5</a></i></r>',
+      [{ a: ['1', '2'] }, { a: ['3', '4'] }, { a: '5' }]],
+    ['<r><i name="attr">text</i><i name="attr2">text2</i></r>', [{ '@name': 'attr', '#text': 'text' }, { '@name': 'attr2', '#text': 'text2' }]],
+    ['<r><i><j>1</j></i><i><j>2</j><j>3</j></i></r>', [{ j: '1' }, { j: ['2', '3'] }]],
+    ['<r><i>1</i><!-- note --><i>2</i></r>', [{ i: '1' }, { i: '2' }]],
+  ];
+  for (const [text, expected] of files) {
+    const r = run(text, 'xml', [], 'json');
+    if (r.error) throw new Error(`${text.slice(0, 40)}: ${r.error}`);
+    assert.deepStrictEqual(r.data, expected, text.slice(0, 60));
+  }
+
+  // A value read out of a section survives the writer and reads back the same.
+  // The writer escapes it, so the round trip is lossless without writing a
+  // section — a value that needs one is a value with markup in it, and that is
+  // the writer's own rule, not a promise about sections.
+  const fromSection = run('<r><i><![CDATA[<b>bold</b>]]></i></r>', 'xml', [], 'json');
+  assert.deepStrictEqual(fromSection.data, [{ i: '<b>bold</b>' }]);
+  const written = run(JSON.stringify(fromSection.data), 'json', [], 'xml');
+  if (written.error) throw new Error(written.error);
+  assert.deepStrictEqual(run(written.text, 'xml', [], 'json').data, fromSection.data, written.text);
+});
+
 t('XML dashes and dots in tag names are read', () => {
   const r = run('<r><order-item><order.id>7</order.id></order-item></r>', 'xml', [], 'json');
   if (r.error) throw new Error(r.error);

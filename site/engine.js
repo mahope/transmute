@@ -99,6 +99,31 @@ function findRootClose(text, from, rootTag) {
 }
 
 /**
+ * The text of `content` when it is nothing but CDATA sections, and null when it
+ * is not — so the caller can tell "this is text" from "this is markup" without
+ * reading the first character twice.
+ *
+ * One section or several, with whitespace between them, because a writer that
+ * wraps a long value puts each line in its own section. An unterminated
+ * section is not one this reader can read, and it says so by answering null:
+ * the caller's own check then names it, instead of a section swallowing the
+ * rest of the file as its text.
+ */
+function cdataText(content) {
+  let rest = content.trim();
+  if (!rest.startsWith('<![CDATA[')) return null;
+  let out = '';
+  for (;;) {
+    const end = rest.indexOf(']]>');
+    if (end === -1) return null;
+    out += rest.slice('<![CDATA['.length, end);
+    rest = rest.slice(end + 3).trim();
+    if (!rest) return out;
+    if (!rest.startsWith('<![CDATA[')) return null;
+  }
+}
+
+/**
  * Where the element named `tag`, opened at `from - 1`, actually ends.
  *
  * Not the first `</tag>` in the text. An element that contains a child of its
@@ -253,7 +278,17 @@ const parsers = {
       if (closeIdx === -1) return null;
       const content = inner.slice(contentStart, closeIdx).trim();
       let value;
-      if (content.startsWith('<')) {
+      // A CDATA section is text, and the element content begins with a `<` for
+      // two unrelated reasons: it holds markup, or it holds a section. Reading
+      // the second as the first sent a well-formed document down the markup path
+      // with nothing to parse, so `<i><![CDATA[one]]></i>` — the shape an RSS
+      // description, a SOAP string and every export that embeds markup writes —
+      // failed the whole file with "Could not read the XML element" on a
+      // document `xml.etree.ElementTree` reads. The text of a section is
+      // literal: no entity in it is decoded, which is the one thing that
+      // separates it from every other text in the file.
+      const literal = cdataText(content);
+      if (content.startsWith('<') && literal === null) {
         value = { ...attrs };
         let pos = 0;
         while (pos < content.length) {
@@ -276,7 +311,8 @@ const parsers = {
           pos = next;
         }
       } else {
-        value = Object.keys(attrs).length ? { ...attrs, '#text': decodeXML(content) } : decodeXML(content);
+        const text = literal === null ? decodeXML(content) : literal;
+        value = Object.keys(attrs).length ? { ...attrs, '#text': text } : text;
       }
       return [{ tag, value }, closeIdx + closeTag.length];
     };
@@ -289,7 +325,32 @@ const parsers = {
       if (!rest.trim()) break;
       const offset = pos + (rest.length - rest.trimStart().length);
       const parsed = parseElement(inner, offset);
-      if (!parsed) throw new Error(`Could not read the XML element at "${inner.slice(offset, offset + 40).trim()}"`);
+      if (!parsed) {
+        // The root element's own text. This loop only ever looked for children,
+        // so an element whose content is text was refused whatever the text was
+        // — `<a>hello</a>` and `<a><![CDATA[x]]></a>` failed the same way, and
+        // the second is how an RSS description, a SOAP string and every export
+        // that embeds markup spells its value. Sections come out first, because
+        // a `<` inside one is data and not an element. A section left open is
+        // not read as text either: an unterminated `<![CDATA[` would otherwise
+        // spell its own opening marker into a value, and a value the file never
+        // held is the one thing this reader may not answer with. It is the
+        // root's text only when no element is left in it — text beside markup is
+        // mixed content, which this reader has not chosen an answer for, and a
+        // file holding it keeps the message below rather than being read as one
+        // of the two things it is.
+        const body = inner.trim();
+        const literal = cdataText(body);
+        const rest = body.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '');
+        if (rest.includes('<![CDATA[')) {
+          throw new Error(`XML CDATA section is never closed: "${body.slice(0, 40)}"`);
+        }
+        if (!rest.trim() || !/<[A-Za-z_]/.test(rest)) {
+          rows.push({ [rootTag]: literal === null ? decodeXML(rest) : literal });
+          break;
+        }
+        throw new Error(`Could not read the XML element at "${inner.slice(offset, offset + 40).trim()}"`);
+      }
       const [{ tag, value }, next] = parsed;
       rows.push({ [tag]: value });
       pos = next;
