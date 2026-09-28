@@ -102,9 +102,16 @@ test('no flags prints a preview table and exits 0', () => {
 test('--delimiter is honoured in the preview, not only with --output', () => {
   // The preview used to call the engine without the flag, so the same command
   // showed the auto-detected `;` as three columns and the real export as one.
-  const out = expectOk(sh(`transmute --delimiter ,`, { input: 'a;b;c\n1;2;3\n' }));
-  assert.equal(out.includes('(1 rows, 1 columns)'), true, `preview ignored --delimiter:\n${out}`);
-  assert.equal(out.includes('| a;b;c |'), true, `preview ignored --delimiter:\n${out}`);
+  const out = sh(`transmute --delimiter ,`, { input: 'a;b;c\n1;2;3\n' });
+  assert.equal(out.stdout.includes('(1 rows, 1 columns)'), true, `preview ignored --delimiter:\n${out}`);
+  assert.equal(out.stdout.includes('| a;b;c |'), true, `preview ignored --delimiter:\n${out}`);
+  // A delimiter forced onto a file that holds another one is read as one
+  // column, and the reader says which delimiter it saw instead of leaving one
+  // column of `a;b;c` to be wondered at. The flag is still honoured: the
+  // preview and the real run give the same answer.
+  assert.equal(out.status, 0, `forcing the wrong delimiter should warn, not fail:\n${out.stderr}`);
+  assert.equal(out.stderr.includes('2 ";" sit outside quotes'), true, `no warning about the forced delimiter:\n${out}`);
+  assert.equal(out.stderr.includes('--delimiter ;'), true, `the warning does not say what to do:\n${out}`);
 });
 
 test('50 records in one run — no purchase, no run limit', () => {

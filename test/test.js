@@ -162,6 +162,53 @@ test('a well-formed CSV produces no warnings', () => {
   assert.deepStrictEqual(r.warnings, []);
 });
 
+// Measured with `tools/measure_t106.py`, whose detector table gave 1 of 12: a
+// file whose first line carries no delimiter is read as one column, because
+// `detectDelimiter` counts the delimiters on that one line. A tab- or
+// `;`-separated export behind a title row — a report name, a header that is one
+// quoted cell — is exactly that file, and it came back as one field per row with
+// the delimiters inside the value, exit 0 and no stderr: every column boundary
+// in the file gone, and nothing said.
+test('a file read as one column says so, and names the delimiter it saw', () => {
+  const tab = run('Report\nid\tname\tprice\n1\tx\t2\n', 'csv', [], 'json');
+  // The shape is not changed: which reading is right depends on the data, and a
+  // one-column file of prose has commas in it too. What the reader can do is
+  // report what it saw, the way it does for every other data-dependent
+  // collision.
+  assert.deepStrictEqual(Object.keys(tab.data[0]), ['Report']);
+  assert.strictEqual(tab.warnings.length, 1);
+  assert.ok(tab.warnings[0].includes('read as one column'), tab.warnings[0]);
+  assert.ok(tab.warnings[0].includes('4 tabs sit outside quotes'), tab.warnings[0]);
+  assert.ok(tab.warnings[0].includes('--delimiter tab'), tab.warnings[0]);
+  // The same three stavemåder the measurement wrote down, and the one form that
+  // is a `;` file with the header as a single quoted cell.
+  const semi = run('Report\nid;name;price\n1;x;2\n', 'csv', [], 'json');
+  assert.ok(semi.warnings[0].includes('4 ";" sit outside quotes'), semi.warnings[0]);
+  assert.ok(semi.warnings[0].includes('--delimiter ;'), semi.warnings[0]);
+  const quoted = run('"Report"\nid\tname\n1\tx\n', 'csv', [], 'json');
+  assert.ok(quoted.warnings[0].includes('2 tabs sit'), quoted.warnings[0]);
+  const cell = run('"a;b;c"\n1;2;3\n', 'csv', [], 'json');
+  assert.ok(cell.warnings[0].includes('2 ";" sit'), cell.warnings[0]);
+});
+
+test('a file that is not one column is never told it is', () => {
+  // The three shapes that came out of the table, each of which must stay quiet:
+  // a file with a delimiter on the first line, a file with no delimiter anywhere,
+  // and a file whose quoted field spans lines — a line cannot see a delimiter
+  // that sits inside one it does not own, so the scan stops where the quotes
+  // stop pairing up.
+  assert.deepStrictEqual(run('id,name\n1,Alice', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('a;b\n1;2\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('id\tname\n1\tx\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('name\nAlice\nBob\n', 'csv', [], 'json').warnings, []);
+  assert.deepStrictEqual(run('a,b\n"one\ntwo",2\n', 'csv', [], 'json').warnings, []);
+  // A `#` line above the header is not a delimiter, and its own warning is the
+  // only one: two warnings would make the first one unfindable.
+  const commented = run('# note\nid\tname\n1\tx\n', 'csv', [], 'json');
+  assert.strictEqual(commented.warnings.length, 1);
+  assert.ok(commented.warnings[0].includes('skipped as comments'), commented.warnings[0]);
+});
+
 // Measured against `csv` in the reader, not against a wish. Every case below
 // read as data on the real binary before T98: the line above the header became
 // the header, so every real column name in the file was gone, and a `;` file

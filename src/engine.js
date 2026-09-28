@@ -2062,6 +2062,77 @@ function extraFieldsWarning(rowCount, lines, columns) {
   return `${lines.size} of ${rowCount} CSV rows ${verb} more fields than the header (${where}); the extra values are kept in ${cols.join(', ')}${rest}`;
 }
 
+/**
+ * Name the columns whose values are written as text and read back as a number
+ * — see `reportCSVTypeLoss` below. This one is about the file's *shape*.
+ */
+function singleColumnWarning(candidate, occurrences) {
+  const name = candidate === '\t' ? 'tab' : `"${candidate}"`;
+  const shown = candidate === '\t' && occurrences > 1 ? 'tabs' : name;
+  const verb = occurrences === 1 ? 'sits' : 'sit';
+  const flag = candidate === '\t' ? '--delimiter tab' : `--delimiter ${candidate}`;
+  return `CSV: this file was read as one column, because its first line holds no delimiter; ` +
+    `${occurrences} ${shown} ${verb} outside quotes in the lines below it, so it may be a ` +
+    `${name}-separated file. Pass ${flag} to split it.`;
+}
+
+/**
+ * A file that is read as one column because its first line carries no delimiter
+ * says nothing at all today, and a delimited file behind a title row — `Report`
+ * above a tab-separated export, a header that is one quoted cell, a report name
+ * written by the tool that produced the file — is exactly that file. Measured
+ * with `tools/measure_t106.py`: `Report` + `id\tname\tprice` came back as one
+ * field per row with the tabs inside the value, exit 0, no stderr, every column
+ * boundary in the file gone.
+ *
+ * The shape is *not* changed here. A one-column file of prose has commas in it
+ * too, and no count of delimiters tells the two apart, so choosing the other
+ * reading would be a guess made on the user's data. What the reader can do is
+ * say what it saw, and a warning is the same answer the tool gives everywhere
+ * else a collision depends on the data (`reportFlattenCollisions`,
+ * `reportJoinCollisions`, `reportCSVTypeLoss`).
+ *
+ * The question is asked only about a file that really was read as one column —
+ * every record a single field — and a file that holds a quoted field spanning
+ * lines is left alone, because a line cannot see a delimiter that sits inside
+ * one it does not own.
+ */
+function reportSingleColumn(text, records, delimiter, warnings) {
+  if (!Array.isArray(warnings)) return;
+  if (records.length === 0 || !records.every(r => r.values.length <= 1)) return;
+  const lines = csvDataLines(text);
+  if (lines.length < 2) return;
+  const counts = new Map();
+  for (const line of lines.slice(1)) {
+    // A quoted field that opens here and closes two lines down makes every
+    // later line unreadable on its own, so the scan stops at the line where the
+    // quotes stop pairing up. A quoted field that opens and closes on one line
+    // has an even count, and `countUnquoted` already looks past it.
+    if (countQuotes(line) % 2 === 1) break;
+    for (const candidate of CSV_DELIMITERS) {
+      if (candidate === delimiter) continue;
+      const n = countUnquoted(line, candidate);
+      if (n === 0) continue;
+      counts.set(candidate, (counts.get(candidate) || 0) + n);
+    }
+  }
+  if (counts.size === 0) return;
+  const ranked = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || CSV_DELIMITERS.indexOf(a[0]) - CSV_DELIMITERS.indexOf(b[0]));
+  warnings.push(singleColumnWarning(ranked[0][0], ranked[0][1]));
+}
+
+/** The quotes in a line that are not a doubled pair, so a half-open field shows. */
+function countQuotes(line) {
+  let n = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== '"') continue;
+    if (line[i + 1] === '"') i++;
+    else n++;
+  }
+  return n;
+}
+
 function csvCommentWarning(count, records) {
   const first = records.find(r => csvComment(r.values, r.quoted));
   const shown = first ? first.values.join(' ') : '';
@@ -2148,6 +2219,7 @@ function parseCSV(text, opts = {}) {
   if (skipped.length > 0 && Array.isArray(opts.warnings)) {
     opts.warnings.push(csvCommentWarning(skipped.length, records));
   }
+  reportSingleColumn(text, records, delimiter, opts.warnings);
   if (recordsWithIndex.length === 0) return [];
   const headers = recordsWithIndex[0].values.map((h, i) => (i === 0 ? h.replace(/^﻿/, '') : h));
 
