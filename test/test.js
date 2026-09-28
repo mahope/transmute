@@ -2346,10 +2346,12 @@ t('a flow collection that is the whole document is read as its content', () => {
   assert.deepStrictEqual(run('{a: 1} # a note', 'yaml', []).data, [{ a: 1 }]);
   // An unbalanced `{` is a different file, and it reads the way it reads today.
   assert.deepStrictEqual(run('{a: 1', 'yaml', []).data, [{ '{a': 1 }]);
-  // Nor does a collection on the root line swallow the lines under it, and a
-  // collection spread over several lines is not a document this rule reaches.
+  // Nor does a collection on the root line swallow the lines under it. A
+  // collection spread over several lines *is* a document this rule reaches,
+  // since the lines are folded together before it is asked — the old answer
+  // here was the one string `[`, and PyYAML reads the list.
   assert.deepStrictEqual(run('{a: 1}\nb: 2', 'yaml', []).data, [{ '{a': '1}', b: 2 }]);
-  assert.deepStrictEqual(run('[\n  {a: 1},\n  {a: 2}\n]', 'yaml', []).data, ['[']);
+  assert.deepStrictEqual(run('[\n  {a: 1},\n  {a: 2}\n]', 'yaml', []).data, [{ a: 1 }, { a: 2 }]);
   // A flow collection under an explicit document marker is the same document.
   assert.deepStrictEqual(run('---\n{a: 1}\n', 'yaml', []).data, [{ a: 1 }]);
 });
@@ -4524,6 +4526,110 @@ test('a flow collection reads a key as the name it stands for', () => {
     ['a: {}\n', [{ a: {} }]],
     ['a: []\n', [{ a: [] }]],
     ['a: {b: 1, b: 2}\n', [{ a: { b: 2 } }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
+test('a flow collection is read over the lines it is written on', () => {
+  // A collection may be wrapped, and a wrapped one is how a hand-written CI
+  // config, a compose file or a Kubernetes manifest keeps a list readable. This
+  // reader reads one line at a time, so the continuation was an indentation it
+  // could not explain: eleven of the twelve measured files were *refused* —
+  // "unexpected indentation", exit 3, on files PyYAML 6.0.3 reads — and the
+  // twelfth came out as a field called `{a`. A line break inside a flow is
+  // separation and not content, the same folding a quoted scalar gets, so the
+  // lines are joined with one space and the one-line reader reads them.
+  for (const [text, want] of [
+    ['a: {b:\n  1}\n', [{ a: { b: 1 } }]],
+    ['a: [1,\n  2]\n', [{ a: [1, 2] }]],
+    ['a: {\n  b: 1\n}\n', [{ a: { b: 1 } }]],
+    ['a: [\n  1\n]\n', [{ a: [1] }]],
+    ['a:\n  b: {c:\n    1}\n', [{ a: { b: { c: 1 } } }]],
+    ['- {a:\n    1}\n', [{ a: 1 }]],
+    ['a: {b: 1,\n  c: 2}\n', [{ a: { b: 1, c: 2 } }]],
+    ['a: {b: 1\n  }\n', [{ a: { b: 1 } }]],
+    ['a: [\n  1,\n  2,\n  3\n]\n', [{ a: [1, 2, 3] }]],
+    ['a: {b: &x\n  1}\nc: *x\n', [{ a: { b: 1 }, c: 1 }]],
+    // A quote that runs over the line break folds the way it folds inside one
+    // line, and a comment on a continuation line hides only its own line.
+    ['a: ["one\n  two"]\n', [{ a: ['one two'] }]],
+    ['a: {\n  b: 1  # note\n}\n', [{ a: { b: 1 } }]],
+    // And on the document's first line too, where the reader only takes a flow
+    // that closes on its line.
+    ['{a: 1,\n b: 2}\n', [{ a: 1, b: 2 }]],
+    ['{\n  a: 1\n}\n', [{ a: 1 }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // A collection that is still open when its own indented lines run out is
+  // left exactly as it was: a stray bracket in a file meant to be read as text
+  // is still read as text, and never as a value that half exists.
+  for (const text of ['a: {b\n', 'a: [1\n', '- {a\n']) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.ok(typeof r.data[0].a === 'string' || typeof r.data[0] === 'string', JSON.stringify(text));
+  }
+
+  // The lines of a block scalar are a value and not syntax, so an unbalanced
+  // `[` in one is a letter: `v: |` with `a: [1` under it reads back as the text
+  // the file carries, in every form the header is written in.
+  for (const [text, want] of [
+    ['v: |\n  a: [1\n  b: 2\n', [{ v: 'a: [1\nb: 2\n' }]],
+    ['v: >\n  a: {b\n  c: 1\n', [{ v: 'a: {b c: 1\n' }]],
+    ['v: &x |\n  a: [1\n', [{ v: 'a: [1\n' }]],
+    ['v: |2\n    a: [1\n    b\n', [{ v: '  a: [1\n  b\n' }]],
+    ['- |\n  a: [1\n  b\n', ['a: [1\nb\n']],
+    // A folded block keeps the comment as content, and so does this one.
+    ['v: |\n  # note\n  a\n', [{ v: '# note\na\n' }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // And a tab is still refused on the line it is written on, whether that line
+  // was folded into the collection above it or is a block scalar's own content.
+  assert.match(run('a: [1,\n  \t2\n]\n', 'yaml').error || '', /cannot start any token/);
+  assert.deepStrictEqual(run('v: |\n  a\tb\n', 'yaml').data, [{ v: 'a\tb\n' }]);
+});
+
+test('a flow collection on a sequence entry is a list of tables', () => {
+  // `- {a: 1}` and `- [1, 2]` are the two ways a list is written with tables or
+  // lists in it, and the third is `- key: value`, which the entry is rewritten
+  // into. Read as that rewrite, the first was not a record with one field: it
+  // was a record with a field called `{a` holding `1` — a name nobody wrote,
+  // exit 0 and an empty stderr, in a file PyYAML reads as a list of one table.
+  for (const [text, want] of [
+    ['- {a: 1}\n', [{ a: 1 }]],
+    ['- [1, 2]\n', [[1, 2]]],
+    ['- {}\n', [{}]],
+    ['- []\n', [[]]],
+    ['- {a: 1, b: 2}\n', [{ a: 1, b: 2 }]],
+    ['- {a: {b: 1}}\n', [{ a: { b: 1 } }]],
+    ['- &x {a: 1}\n- *x\n', [{ a: 1 }, { a: 1 }]],
+    // Wrapped, because the line above is not the only way to write it.
+    ['- {a:\n    1}\n', [{ a: 1 }]],
+    ['- {\n  a: 1\n}\n', [{ a: 1 }]],
+    ['- [\n    1,\n    2\n  ]\n', [[1, 2]]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // The three ways an entry is written keep their own answers: a block under a
+  // bare dash, a mapping after the dash, and a plain scalar after the dash.
+  for (const [text, want] of [
+    ['-\n  a: 1\n', [{ a: 1 }]],
+    ['- a: 1\n', [{ a: 1 }]],
+    ['- 1\n- 2\n', [1, 2]],
+    ['- a [1] text\n', ['a [1] text']]
   ]) {
     const r = run(text, 'yaml');
     assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);

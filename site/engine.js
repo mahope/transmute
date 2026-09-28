@@ -1971,7 +1971,7 @@ function parseYAML(text, opts) {
   // YAML is a superset of JSON, so a JSON document never needs this reader.
   try { return parsers.json(text); } catch {}
 
-  const lines = tokenizeYAML(text);
+  const lines = joinYAMLFlowLines(tokenizeYAML(text));
 
   // A directive line starts with `%` in the first column — `%YAML 1.2`,
   // `%TAG !e! tag:example.com,2000:`. Kubernetes manifests, Ansible playbooks
@@ -2152,6 +2152,143 @@ function yamlTabTokenStart(content, tail) {
     if (ch === '#' && (i === 0 || /\s/.test(content[i - 1]))) return -1;
   }
   return tail && tail.includes('\t') ? content.length : -1;
+}
+
+/**
+ * How deep a flow collection is at the end of `text`. The walk is
+ * `stripYAMLComment`'s, because it is the same question: a `#` that starts a
+ * comment hides the rest of the line, so `a: {b: 1  # }` is a collection that is
+ * still open with a comment after it, and not a closed one. A negative depth
+ * means a closing bracket nobody opened, which is left to the flow reader — it
+ * is the one that has the error to give.
+ */
+function yamlFlowDepth(text) {
+  let quote = null;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '#' && (i === 0 || /\s/.test(text[i - 1]))) break;
+    if (ch === '[' || ch === '{') depth++;
+    else if (ch === ']' || ch === '}') depth--;
+  }
+  return depth;
+}
+
+/**
+ * The value a line carries, asked the way the readers ask it: the part after
+ * the key's colon, or the part after a sequence dash. It is asked here without
+ * `splitYAMLKey`, because that one reads the key's properties and so can name a
+ * line and complain about a name — questions that belong to the reader and not
+ * to a walk that only wants to know whether a `|` stands on the line. The colon
+ * is therefore found the way `splitYAMLKey` finds it: a space or the end of the
+ * line after it, so `12:30` and `a:b` are not keys. Only the block scalar marker
+ * is looked for in the answer, and it is looked for generously — `v: &x |`
+ * keeps its `&x` and is read as the header it is.
+ */
+function yamlLineValue(content) {
+  if (!content || isYAMLComment(content) || isYAMLSequenceEntry(content)) {
+    return isYAMLSequenceEntry(content) ? content.replace(/^-(?:[ \t]+|$)/, '') : null;
+  }
+  if (content[0] === '"' || content[0] === "'") {
+    const quoted = readYAMLQuoted(content, 0);
+    if (!quoted) return null;
+    const after = content.slice(quoted.end);
+    return /^[ \t]*:([ \t]|$)/.test(after) ? after.replace(/^[ \t]*:[ \t]*/, '') : null;
+  }
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === '#' && i > 0 && /\s/.test(content[i - 1])) return null;
+    if (ch === ':' && (i === content.length - 1 || /\s/.test(content[i + 1]))) {
+      return content.slice(i + 1).replace(/^[ \t]+/, '');
+    }
+  }
+  return null;
+}
+
+/**
+ * The lines that are a block scalar's own text, and so data rather than
+ * syntax. A block scalar is the one place in a YAML file where an unbalanced
+ * `[` is a letter and not a bracket — `v: |` with `a: [1` under it is a value,
+ * and a reader that joined those lines would be rewriting the value. The walk
+ * is `readYAMLBlockScalar`'s: a header takes the lines that follow it until one
+ * comes back to its own indentation or the file runs out.
+ */
+function yamlBlockScalarLines(lines) {
+  const body = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].blank) continue;
+    const value = yamlLineValue(lines[i].content);
+    if (!value || !/[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*(?:#.*)?$/.test(value)) continue;
+    for (let j = i + 1; j < lines.length && (lines[j].blank || lines[j].indent > lines[i].indent); j++) {
+      body.add(j);
+    }
+  }
+  return body;
+}
+
+/**
+ * A flow collection may be written over several lines. `a: {`, `  b: 1`, `}` is
+ * three lines and one value, and the hand-wrapped lists in a CI config, a
+ * compose file or a Kubernetes manifest are written that way because one long
+ * line stops being readable. This reader reads one line at a time, so the
+ * continuation was an indentation it could not explain: eleven of the twelve
+ * measured files were *refused* — "unexpected indentation", on files PyYAML
+ * reads — and the twelfth, `- {a:` + `    1}`, came out as a field called `{a`.
+ *
+ * A line break inside a flow is separation and not content, the same folding a
+ * quoted scalar gets, so the lines are joined with one space and the one-line
+ * reader reads them. That is why every rule about a flow that took three lines
+ * to write is the rule that took one: the same quotes, the same comments, the
+ * same anchors, the same explicit keys.
+ *
+ * Two rules keep everything that reads today reading the same. A line that
+ * continues the collection is one indented under the line that opened it, or
+ * one that is nothing but the collection's own closing punctuation — a `}` may
+ * sit at the indentation its `{` was written at, which is how the mapping is
+ * written when the writer counts its own braces. And a collection that is still
+ * open when such lines run out is left exactly as it was, so a stray bracket in
+ * a file meant to be read as text is still read as text.
+ */
+function joinYAMLFlowLines(lines) {
+  const block = yamlBlockScalarLines(lines);
+  const out = lines.slice();
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].blank || block.has(i)) continue;
+    if (yamlFlowDepth(out[i].content) <= 0) continue;
+    const host = out[i];
+    const taken = [];
+    const takenAt = [];
+    let end = -1;
+    for (let j = i + 1; j < out.length; j++) {
+      if (block.has(j)) break;
+      const line = out[j];
+      // A blank line and a comment of its own end the run: the first is not
+      // text, and the second would swallow the closing bracket behind it,
+      // because a `#` hides the rest of the line from everyone who reads it.
+      if (line.blank || isYAMLComment(line.content)) break;
+      const text = stripYAMLComment(line.content).trim();
+      if (text === '') break;
+      const closing = line.indent > host.indent ? text : /^[,\]}]+$/.test(text) ? text : null;
+      if (closing === null) break;
+      taken.push(closing);
+      takenAt.push(j);
+      if (yamlFlowDepth(`${host.content} ${closing}`) <= 0) { end = j; break; }
+    }
+    if (end < 0) continue;
+    host.content = [host.content, ...taken].join(' ');
+    host.raw = [host.raw, ...taken].join(' ');
+    // The lines that were taken keep their number and their tab mark, so a tab
+    // that cannot start a token is still refused on the line it is written on.
+    for (const j of takenAt) out[j] = { ...out[j], blank: true };
+    i = end;
+  }
+  return out;
 }
 
 /**
@@ -2777,6 +2914,18 @@ function parseYAMLSequence(lines, start, indent, ctx) {
       i = child.end;
       continue;
     }
+    // `- {a: 1}` and `- [1, 2]` are the other two ways a list is written with
+    // tables or lists in it, and the rewrite below is for the third
+    // (`- key: value`). Read as that rewrite, the entry was not a record with
+    // one field: it was a record with a field called `{a` holding `1` — a name
+    // nobody wrote, in a file PyYAML reads as a list of one table. So the flow
+    // is asked first, with the same reader every other place asks.
+    const flow = flowValue(body, ctx);
+    if (flow !== undefined) {
+      arr.push(named(flow));
+      i++;
+      continue;
+    }
     lines[i] = { indent: childIndent, content: body, blank: false, no: lines[i].no, tabAt: lines[i].tabAt };
     ctx.line = lines[i].no;
     const child = parseYAMLBlock(lines, i, childIndent, ctx);
@@ -2990,6 +3139,21 @@ function stripYAMLComment(text) {
     if (ch === '#' && (i === 0 || /\s/.test(text[i - 1]))) return text.slice(0, i);
   }
   return text;
+}
+
+/**
+ * A value that is written as a flow collection where it stands, or `undefined`
+ * when it is written any other way — the caller's own path, untouched. Every
+ * reader that can meet a collection asks it this, so `[a, b]` and `{k: v}` mean
+ * the same thing in a mapping's value, in a sequence entry and on the
+ * document's first line, and mean it over several lines too once
+ * `joinYAMLFlowLines` has put the lines back together.
+ */
+function flowValue(text, ctx) {
+  const body = stripYAMLComment(text).trim();
+  if (body[0] !== '[' && body[0] !== '{') return undefined;
+  const flow = parseYAMLFlow(body, ctx);
+  return flow.ok ? flow.value : undefined;
 }
 
 function parseYAMLScalar(raw, ctx) {
