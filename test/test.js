@@ -5220,10 +5220,15 @@ test('a flow collection is read over the lines it is written on', () => {
     assert.deepStrictEqual(r.data, want, JSON.stringify(text));
   }
 
-  // A collection that is still open when its own indented lines run out is
-  // left exactly as it was: a stray bracket in a file meant to be read as text
-  // is still read as text, and never as a value that half exists.
-  for (const text of ['a: {b\n', 'a: [1\n', '- {a\n']) {
+  // A list that is still open when the text runs out is a file broken in the
+  // middle of a list, and PyYAML 6.0.3 refuses all three of these. Read as the
+  // text they were written with, `a: [1` put the list's own contents in a field
+  // and every other field in the file with it, exit 0 and an empty stderr. A
+  // brace is a different question and keeps its answer: a `{` with no colon in
+  // it is not a mapping, so those two are read as text — see the block below,
+  // which says what is measured and what is still an open one.
+  assert.match(run('a: [1\n', 'yaml').error || '', /expected , or \] in flow sequence/);
+  for (const text of ['a: {b\n', '- {a\n']) {
     const r = run(text, 'yaml');
     assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
     assert.ok(typeof r.data[0].a === 'string' || typeof r.data[0] === 'string', JSON.stringify(text));
@@ -5329,17 +5334,31 @@ test('a colon in a flow scalar is the character it is, not the end of the node',
   }
 
   // What follows a colon still decides. `: ` ends the node, so a value that is
-  // followed by a colon and a word is a document no parser reads, and the two
-  // readers still leave the collection as the text it was written with rather
-  // than guessing at a field nobody wrote. A flow set written without `?` is not
-  // a mapping at all, so it stays text for the same reason.
+  // followed by a colon and a word is a document PyYAML refuses, and so is a
+  // collection whose table never closes. All four of these were read as the text
+  // they were written with — the whole file came back as one field — and the
+  // three with a colon in them are now refused with the reader's own words.
   for (const [text, want] of [
-    ['a: {b: c: d}\n', '{b: c: d}'],
-    ['a: {b: 1: }\n', '{b: 1: }'],
-    ['a: {b: x:}\n', '{b: x:}'],
+    ['a: {b: c: d}\n', /expected , or \} in flow mapping/],
+    ['a: {b: 1: }\n', /expected , or \} in flow mapping/],
+    ['a: {b: x:}\n', /expected , or \} in flow mapping/],
+    ['a: [1\n', /expected , or \] in flow sequence/]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.match(r.error || '', want, JSON.stringify(text));
+    assert.strictEqual(r.data, undefined, JSON.stringify(text));
+  }
+
+  // The other two are the open question, and they are open on purpose. A `{` with
+  // no colon in it never becomes a mapping, so this reader asks a question the
+  // file does not answer and reads the line as the text it is — `a: {b` and
+  // `- {a` come back as `{b` and `{a`. PyYAML refuses both. Turning that around
+  // means answering `{b 1}` as `{"b 1": null}`, because a missing value is `null`
+  // and not an error, so a JSON object gets a name no file wrote in it. That is a
+  // choice and not a bug, and it is asked in the plan rather than decided here.
+  for (const [text, want] of [
     ['a: {x, y}\n', '{x, y}'],
-    ['a: {b\n', '{b'],
-    ['a: [1\n', '[1']
+    ['a: {b\n', '{b']
   ]) {
     const r = run(text, 'yaml');
     assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);

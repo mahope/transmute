@@ -4073,7 +4073,12 @@ function parseYAMLFlow(text, ctx) {
         continue;
       }
       if (text[i] === ']') { i++; return out; }
-      throw new SyntaxError('expected , or ] in flow sequence');
+      // Nothing is left that could end this entry or the next one, so the
+      // collection is not a collection that runs off its line — the file stops in
+      // the middle of one. `[1, 2` and `- [1, 2` are documents PyYAML refuses, and
+      // reading them as the text they were written with put the collection's own
+      // contents in a field and lost every other field in the file with it.
+      throw new YAMLRefusal('expected , or ] in flow sequence');
     }
   };
 
@@ -4116,7 +4121,11 @@ function parseYAMLFlow(text, ctx) {
         continue;
       }
       if (text[i] === '}') { i++; return out; }
-      throw new SyntaxError('expected , or } in flow mapping');
+      // The counterpart of the sequence's rule, and it is the same question: a
+      // flow mapping that is still open when the text runs out is a file broken
+      // in the middle of a table, not a field whose value is a table. `a: {b: 1`
+      // and `a: {b` are documents PyYAML refuses.
+      throw new YAMLRefusal('expected , or } in flow mapping');
     }
   };
 

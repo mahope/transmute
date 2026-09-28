@@ -1545,11 +1545,20 @@ test('a flow collection that is the whole yaml file is read as its content', () 
     assert.equal(dup.stdout, '[\n  {\n    "a": 2\n  }\n]\n');
     assert.ok(dup.stderr.includes('key "a"'), dup.stderr);
     // An unbalanced brace is not a flow document, and PyYAML refuses the file
-    // too — so it is refused by name here, where it used to be the field `{a`
-    // holding the text `1`. A name this tool invented, and the whole line as a
-    // value. Same for a collection used as the key: a JSON object has no key
-    // that is not a string, and PyYAML says `found unhashable key`.
-    for (const bad of ['{a: 1\n', '{a: 1}: 2\n', '? [x, y]\n: 1\n']) {
+    // too. It says which of the two questions was the wrong one: `{a: 1` is a
+    // table that never closes, so it is named as that. It used to be named by
+    // the key rule below — a rule about names, for a file that has no name in
+    // it — and before that it was the field `{a` holding the text `1`, a name
+    // this tool invented, the whole line as a value.
+    writeFileSync(path, '{a: 1\n', 'utf-8');
+    const unclosed = spawnSync(process.execPath, [cli, '-f', 'yaml', path, '-o', 'json'], { encoding: 'utf-8' });
+    assert.equal(unclosed.status, 3, unclosed.stdout);
+    assert.match(unclosed.stderr, /expected , or \} in flow mapping/, unclosed.stderr);
+    assert.equal(unclosed.stdout, '');
+
+    // A collection used as a key is a different question: a JSON object has no
+    // key that is not a string, and PyYAML says `found unhashable key`.
+    for (const bad of ['{a: 1}: 2\n', '? [x, y]\n: 1\n']) {
       writeFileSync(path, bad, 'utf-8');
       const r = spawnSync(process.execPath, [cli, '-f', 'yaml', path, '-o', 'json'], { encoding: 'utf-8' });
       assert.equal(r.status, 3, `${JSON.stringify(bad)} was not refused: ${r.stdout}`);
