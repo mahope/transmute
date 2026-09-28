@@ -2761,6 +2761,33 @@ function splitYAMLKey(content, no) {
 }
 
 /**
+ * A file the reader refuses, said in a way the flow reader must not swallow.
+ * `parseYAMLFlow` catches everything and answers "this text is not a flow
+ * collection", so the caller reads the line as the text it was written with —
+ * the right answer for `a: [not a collection]`, which is a list of one text. But
+ * a file that is *wrong* cannot be answered that way: it came back as its own
+ * text, every field in it gone and nothing on stderr. So the refusals carry their
+ * own type and the catch passes those on.
+ *
+ * Eleven places throw this, and every one of them already said the same thing in
+ * the block reader: a reference with no anchor (`readYAMLAlias`), a node named
+ * twice or both named and a reference (`readYAMLProperties`), a tag that asks for
+ * a number the text is not or stands on a whole table (`applyYAMLTag`), and a
+ * table or a list where a field name belongs (`refuseCollectionKey`). The block
+ * reader has no catch, so it never needed the type; the flow reader does, and it
+ * was swallowing all eleven, so a `{b: !!int "x"}` or a `{b: *nope}` came back as
+ * the text `{b: !!int "x"}` with every field of the document gone and an empty
+ * stderr — the same file written in two lines was refused with the same words.
+ * Measured 2026-09-28, 22 files: 16 read a file the judge refused, and the block
+ * reader refused every one of the 16 that had a block spelling.
+ *
+ * A half-open quote is deliberately *not* one of them: `readYAMLQuoted` answers
+ * "this is a typo, not a reason to throw away the rest of a file" and the block
+ * reader has always gone on reading the text, so the flow reader goes on too.
+ */
+class YAMLRefusal extends SyntaxError {}
+
+/**
  * `&name`, `*name` and `!tag` are properties of the node they stand in front of,
  * not the node itself. PyYAML reads `a: &x 1` as the number 1 with a name
  * attached to it, `b: *x` as that same 1 written a second time, and `a: !!str 1`
@@ -2797,17 +2824,17 @@ function readYAMLProperties(raw, no, subject = 'value') {
     const name = m[1] === '!' ? (m[2] ? `!${m[2]}` : '!') : m[2];
     if (m[1] === '&') {
       if (anchor || alias) {
-        throw new SyntaxError(`${where}one node can only be named once, but "${rest}" names it twice`);
+        throw new YAMLRefusal(`${where}one node can only be named once, but "${rest}" names it twice`);
       }
       anchor = name;
     } else if (m[1] === '*') {
       if (alias || anchor) {
-        throw new SyntaxError(`${where}one node cannot be both named and be a reference, but "${rest}" is both`);
+        throw new YAMLRefusal(`${where}one node cannot be both named and be a reference, but "${rest}" is both`);
       }
       alias = name;
     } else {
       if (tag) {
-        throw new SyntaxError(`${where}one ${subject} can only carry one tag, but "${rest}" carries two`);
+        throw new YAMLRefusal(`${where}one ${subject} can only carry one tag, but "${rest}" carries two`);
       }
       tag = name;
     }
@@ -2964,7 +2991,7 @@ function applyYAMLTag(tag, value, ctx, no, raw, subject = 'value') {
     return value;
   }
   if (value !== null && typeof value === 'object') {
-    throw new SyntaxError(
+    throw new YAMLRefusal(
       `${where}a "${tag}" tag can only stand on one value, not on a ${Array.isArray(value) ? 'list' : 'table'}`
     );
   }
@@ -2990,17 +3017,17 @@ function applyYAMLTag(tag, value, ctx, no, raw, subject = 'value') {
     const low = text.toLowerCase();
     if (YAML_TRUE.has(low)) return true;
     if (YAML_FALSE.has(low)) return false;
-    throw new SyntaxError(`${where}"${text}" is not a yes/no value, so "!!bool" has nothing to make of it`);
+    throw new YAMLRefusal(`${where}"${text}" is not a yes/no value, so "!!bool" has nothing to make of it`);
   }
   if (name === 'null') {
     if (text === '' || text === '~' || text.toLowerCase() === 'null') return null;
-    throw new SyntaxError(`${where}"${text}" is not empty, so "!!null" has nothing to make of it`);
+    throw new YAMLRefusal(`${where}"${text}" is not empty, so "!!null" has nothing to make of it`);
   }
   const digits = text.replace(/_/g, '');
   if (name === 'int') {
     const int = /^[-+]?(0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+|\d+)$/.exec(digits);
     if (!int) {
-      throw new SyntaxError(`${where}"${text}" is not a whole number, so "!!int" has nothing to make of it`);
+      throw new YAMLRefusal(`${where}"${text}" is not a whole number, so "!!int" has nothing to make of it`);
     }
     const body = digits.replace(/^[-+]/, '');
     const radix = /^0b/.test(body) ? 2 : /^0o/.test(body) ? 8 : /^0x/.test(body) ? 16 : 10;
@@ -3010,11 +3037,11 @@ function applyYAMLTag(tag, value, ctx, no, raw, subject = 'value') {
     return num;
   }
   if (digits === '' || !/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(digits)) {
-    throw new SyntaxError(`${where}"${text}" is not a number, so "!!float" has nothing to make of it`);
+    throw new YAMLRefusal(`${where}"${text}" is not a number, so "!!float" has nothing to make of it`);
   }
   const num = Number(digits);
   if (!isFinite(num)) {
-    throw new SyntaxError(
+    throw new YAMLRefusal(
       `${where}"!!float" asked for a number JSON cannot hold, and JSON has no way to write infinity or NaN`
     );
   }
@@ -3030,12 +3057,12 @@ function applyYAMLTag(tag, value, ctx, no, raw, subject = 'value') {
 function readYAMLAlias(name, ctx, no) {
   const where = no ? `YAML line ${no}: ` : '';
   if (ctx.pending.has(name)) {
-    throw new SyntaxError(
+    throw new YAMLRefusal(
       `${where}&${name} points at itself, and a value that holds itself is not one JSON can carry`
     );
   }
   if (!ctx.anchors.has(name)) {
-    throw new SyntaxError(
+    throw new YAMLRefusal(
       `${where}found undefined alias '${name}' — an anchor is written &${name} and has to be named before it is used`
     );
   }
@@ -3092,17 +3119,6 @@ function readYAMLMerge(text, ctx, no) {
   take(readYAMLAlias(prop.alias, ctx, no));
   return fields;
 }
-
-/**
- * A file the reader refuses, said in a way the flow reader must not swallow.
- * `parseYAMLFlow` catches everything and answers "this text is not a flow
- * collection", so the caller reads the line as the text it was written with —
- * the right answer for `a: [not a collection]`, which is a list of one text. But
- * a file that is *wrong* cannot be answered that way: it came back as its own
- * text, every field in it gone and nothing on stderr. So the refusals carry their
- * own type and the catch passes those on.
- */
-class YAMLRefusal extends SyntaxError {}
 
 /**
  * Refuse a key that opens a flow collection — `? [x, y]`, `{a: 1} : 1`,

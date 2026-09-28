@@ -4795,6 +4795,100 @@ t('a key that is a flow collection is refused, because a field name is text', ()
   }
 });
 
+test('a refusal inside a flow collection is refused, not read as the line\'s own text', () => {
+  // `parseYAMLFlow` catches everything so it can answer "this line is not a flow
+  // collection", which is the right answer for `a: [not a collection]`. But it
+  // caught the reader's *own* refusals with it, so every one of them came back as
+  // the text the collection was written with, every field of the document gone
+  // and an empty stderr — `{b: !!int "x"}` as the field `a` with the value
+  // `{b: !!int "x"}`. The same file written in two lines was refused with the same
+  // words, so the two readers could not answer the same question the same way.
+  // Measured 2026-09-28, 22 files with PyYAML 6.0.3 as the judge: 16 read a file
+  // the judge refused, and the block reader refused all 16 of the ones that have
+  // a block spelling. 16 of 16 after.
+  const flowRefusals = [
+    // A reference with no anchor, in every place a flow collection can stand:
+    // the value of a key, an item in a list, the whole document, an item nested
+    // in an item, beside a field that reads fine, one level down, and behind a
+    // merge key. The block reader refuses each of these with the same words.
+    ['a: {b: *nope}\n', /found undefined alias 'nope'/],
+    ['a: [*nope]\n', /found undefined alias 'nope'/],
+    ['[*nope]\n', /found undefined alias 'nope'/],
+    ['a: {b: [*nope, 1]}\n', /found undefined alias 'nope'/],
+    ['a: {b: !!int 1, c: *nope}\n', /found undefined alias 'nope'/],
+    ['a:\n  b: {c: *nope}\n', /found undefined alias 'nope'/],
+    ['a: {<<: *nope}\n', /found undefined alias 'nope'/],
+    // An anchor named below the line that uses it is a reference with no anchor,
+    // and both readers say so.
+    ['a: [*k]\nb: &k 1\n', /found undefined alias 'k'/],
+    ['a: {b: *k}\nk: &k 1\n', /found undefined alias 'k'/],
+    // A tag that asks for a type the text is not. The wording quotes the value as
+    // the reader sliced it, which inside a collection is the run up to the
+    // bracket — so the message says `"[1"`, not the list. The answer is the one
+    // that matters and it is the block reader's; the fragment is the next thing
+    // to measure, not this one.
+    ['a: {b: !!int "x"}\n', /so "!!int" has nothing to make of it/],
+    ['a: [!!float "x"]\n', /so "!!float" has nothing to make of it/],
+    ['a: {b: !!bool "maybe"}\n', /so "!!bool" has nothing to make of it/],
+    ['a: {b: !!int [1, 2]}\n', /so "!!int" has nothing to make of it/],
+    // A node named twice, named and a reference at once, or carrying two tags —
+    // the three rules `readYAMLProperties` states, reached from inside a
+    // collection where they used to be swallowed with everything else.
+    ['a: {b: &x &y 1}\n', /can only be named once/],
+    ['a: {b: &x *x}\n', /cannot be both named and be a reference/],
+    ['a: {b: !t1 !t2 1}\n', /can only carry one tag/]
+  ];
+  for (const [text, want] of flowRefusals) {
+    const r = run(text, 'yaml');
+    assert.ok(r.error, `${JSON.stringify(text)} was read as ${JSON.stringify(r.data)}`);
+    assert.match(r.error, want, `${JSON.stringify(text)}: ${r.error}`);
+  }
+
+  // The whole point: the flow reader and the block reader now say the *same*
+  // thing about the same construct, with the same words. They differ only in the
+  // line number, which a flow collection has no room for.
+  const sameWords = (flow, block) => {
+    const a = run(flow, 'yaml').error.replace(/YAML line \d+: /, '');
+    const b = run(block, 'yaml').error.replace(/YAML line \d+: /, '');
+    assert.strictEqual(a, b, `${JSON.stringify(flow)} vs ${JSON.stringify(block)}`);
+  };
+  sameWords('a: {b: *nope}\n', 'a:\n  b: *nope\n');
+  sameWords('a: [*nope]\n', 'a:\n  - *nope\n');
+  sameWords('a: {b: !!int "x"}\n', 'a:\n  b: !!int "x"\n');
+  sameWords('a: {b: !!bool "maybe"}\n', 'a:\n  b: !!bool "maybe"\n');
+  sameWords('a: {b: &x &y 1}\n', 'a:\n  b: &x &y 1\n');
+  sameWords('a: {b: !t1 !t2 1}\n', 'a:\n  b: !t1 !t2 1\n');
+  sameWords('a: [*k]\nb: &k 1\n', 'a:\n  - *k\nb: &k 1\n');
+
+  // A half-open quote is deliberately *not* one of the eleven: `readYAMLQuoted`
+  // answers "this is a typo, not a reason to throw away the rest of a file", and
+  // the block reader has always gone on reading the text. This is the control
+  // that says the catch is still there for the thing it is actually for — PyYAML
+  // refuses both, and this tool reads both, and says so in neither.
+  for (const [flow, block] of [['a: {b: "x}\n', 'a: "x\n'], ['a: [ \'x ]\n', "a:\n  b: 'x\n"]]) {
+    assert.ok(!run(flow, 'yaml').error, `${JSON.stringify(flow)} was refused`);
+    assert.ok(!run(block, 'yaml').error, `${JSON.stringify(block)} was refused`);
+  }
+
+  // And the catch is still there for its own answer: a line that is not one whole
+  // flow collection is read as a block, and every collection that *is* one is
+  // still read, with its tag, its anchor, its reference and its two lines.
+  for (const [text, want] of [
+    ['a: [not a collection]\n', [{ a: ['not a collection'] }]],
+    ['a: {b: 1}\n', [{ a: { b: 1 } }]],
+    ['a: [1, 2]\n', [{ a: [1, 2] }]],
+    ['a: [1,\n  2]\n', [{ a: [1, 2] }]],
+    ['a: {b: !!int 5}\n', [{ a: { b: 5 } }]],
+    ['a: {b: !!str 01}\n', [{ a: { b: '01' } }]],
+    ['x: &k {b: 1}\ny: *k\n', [{ x: { b: 1 }, y: { b: 1 } }]],
+    ['a: {b: &x 1, c: *x}\n', [{ a: { b: 1, c: 1 } }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+});
+
 test('a question mark opening a flow collection is a key, not a name', () => {
   // The rule the block reader got in the test above was never carried into the
   // flow reader, so the same document had two answers: `? x` + `: 1` over four
