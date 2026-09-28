@@ -712,6 +712,87 @@ cannot resolve stays inside the name it was written in — `%TAG !e! …` plus
 `!e!foo: bar` is still the field `!e!foo`, because splitting it into a namespace
 and a local name would invent a shape nobody wrote.
 
+That name is *named*, because a name like `!Ref` is one no file has and no
+lookup will find — and the tag is named on the key exactly as it is on a value,
+with one word different:
+
+```bash
+printf '!Ref: bar\na: !Ref bar\n' | transmute --format yaml --output json
+```
+
+```
+Warning: YAML line 1: the tag "!Ref" is not a type JSON carries, so the key was read as it was written; something that reads this file with that tag will not get the same value
+Warning: YAML line 2: the tag "!Ref" is not a type JSON carries, so the value was read as it was written; something that reads this file with that tag will not get the same value
+```
+
+```json
+[
+  {
+    "!Ref": "bar",
+    "a": "bar"
+  }
+]
+```
+
+PyYAML has no answer to ask for here — it refuses the whole file with
+`could not determine a constructor for the tag '!Ref'` — so the warning is the
+only place a reader learns that this reader made the name up. A tag on a key
+also gets the text *inside* the quotes, not the quotes: `&k "x": 1` is the field
+`x`, and `!!int "1": 2` is the field `1`.
+
+### A clock time stays text: YAML 1.1 reads it as base 60
+
+`12:30` is YAML 1.1's sexagesimal, and a YAML 1.1 reader resolves it to the
+number **750**. This reader does not, and that is a deliberate choice rather than
+an omission — a clock time, a version range, a `host:port` and a duration in a
+compose file are all written `12:30`, and turning them into numbers is the kind
+of change a conversion may not make quietly:
+
+```bash
+printf 'opens: 12:30\nvarighed: 12:30:45\nkort: 1:2\n' | transmute --format yaml --output json
+```
+
+```json
+[
+  {
+    "opens": "12:30",
+    "varighed": "12:30:45",
+    "kort": "1:2"
+  }
+]
+```
+
+PyYAML 6.0.3 answers `750`, `5445` and `62` for those three lines. The rule is
+in one place, and it is the same in a block value, in a flow value
+(`{t: 12:30}`), after an anchor and in a field name — `12:30: 1` is the field
+`12:30`, not the field `12:30` read as `750`:
+
+| In the file | Here | PyYAML (YAML 1.1) |
+|---|---|---|
+| `12:30` | `"12:30"` | `750` |
+| `12:30:45` | `"12:30:45"` | `5445` |
+| `1:2` | `"1:2"` | `62` |
+| `09:05` | `"09:05"` | `545` |
+| `host:5432` | `"host:5432"` | not a number — text to both |
+
+**The writer is stricter than the reader, on purpose.** A value that another
+reader *would* resolve is written in quotes, so this tool's own output survives
+PyYAML; a value no production resolves is written bare, so a file does not turn
+into noise:
+
+```
+- "12:30": 1
+  a: "1:2"
+  b: 09:05
+  c: "12:30:45"
+```
+
+So a round trip through this tool keeps a clock time a clock time, and a field
+name `12:30` comes back under the name the file wrote. What does not happen is a
+file another tool wrote, with `12:30` unquoted, being read here as a different
+*type* — that is the difference from PyYAML, and it is the reason the writing
+side quotes so much.
+
 ### A cell that cannot be shown: `table` and `sql`
 
 The refusals above are about a character **no** file can hold. This is the other
@@ -1755,8 +1836,9 @@ written as YAML wants it, with a `.` and a signed exponent so `1e-7` goes out as
 `1.0e-7` and reads back as a float.
 
 This tool's own YAML reader is more permissive than PyYAML here — it reads `yes`
-and `12:30` back as strings — so a round trip through this tool is not evidence
-that another reader agrees. The rule is the productions PyYAML ships in
+and `12:30` back as strings, which is a deliberate choice and has its own
+section (*A clock time stays text*) — so a round trip through this tool is not
+evidence that another reader agrees. The rule is the productions PyYAML ships in
 `yaml/resolver.py`, transcribed whole.
 
 ### A row that is not a record: `csv`, `table` and `sql`

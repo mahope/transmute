@@ -4621,6 +4621,100 @@ test('a flow collection reads a key as the name it stands for', () => {
   }
 });
 
+test('a key that carries properties is read as a key, in every spelling', () => {
+  // A key may carry an anchor and a tag, and when it does, the quotes were read
+  // off the wrong side of them: every reader asked "is this key quoted?" about
+  // the text *before* the `&k` and the `!tag`, so a quoted key that carried
+  // either of them came out with its two quote characters in the name — a field
+  // called `"x"`, which no JSON file has — and a tag on such a key was handed
+  // `"1"` with the quotes still on, so `!!int "1": 2` was *refused* with "is not
+  // a whole number" on a file PyYAML 6.0.3 reads as the field `1`. That is the
+  // only class of bug that means the tool does not work at all, and it sat in
+  // all three readers of a key: the block entry, the explicit `?` key and the
+  // flow key.
+  for (const [text, want] of [
+    // A quoted key is the text inside its quotes, anchor and all.
+    ['&k "x": 1\n', [{ x: 1 }]],
+    ["&k 'x': 1\n", [{ x: 1 }]],
+    ['? &k "x"\n: 1\n', [{ x: 1 }]],
+    ['a: {&k "x": 1}\n', [{ a: { x: 1 } }]],
+    ['a: {? &k "x" : 1}\n', [{ a: { x: 1 } }]],
+    // And a tag on it is applied to that text, not to the quotes around it.
+    ['!!int "1": 2\n', [{ 1: 2 }]],
+    ['&k !!int "1": 2\n', [{ 1: 2 }]],
+    ['? !!int "1"\n: 2\n', [{ 1: 2 }]],
+    ['? !!int "1" : 2\n', [{ 1: 2 }]],
+    ['a: {!!int "1": 2}\n', [{ a: { 1: 2 } }]],
+    // A key written as the empty string is still the empty string, tag or not.
+    ['!!str "": 1\n', [{ '': 1 }]],
+    ['? !!str ""\n: 1\n', [{ '': 1 }]]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, want, JSON.stringify(text));
+  }
+
+  // A tag this tool cannot carry is a name the file wrote and a warning says so.
+  // The warning was only ever written for a *value*, so `!custom x: 1` gave the
+  // field `!custom x` with an empty stderr — an invented name nobody can look up,
+  // on a file PyYAML refuses outright, so the warning is the only place a reader
+  // learns this reader made the name up. The same key over two lines and on one
+  // line has to say the same thing; the one-line entry used to read the tag off
+  // the key a second time, found nothing, and dropped it without a word.
+  for (const [text, want] of [
+    ['!custom x: 1\n', { '!custom x': 1 }],
+    ['? !custom x\n: 1\n', { '!custom x': 1 }],
+    ['? !custom x : 1\n', { '!custom x': 1 }],
+    ['&k !custom x: 1\n', { '&k !custom x': 1 }],
+    ['? &k !custom x : 1\n', { '&k !custom x': 1 }],
+    ['a: {? !custom x : 1}\n', { a: { '!custom x': 1 } }]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, [want], JSON.stringify(text));
+    assert.strictEqual(r.warnings.length, 1, `${JSON.stringify(text)} warned ${r.warnings.length} times`);
+    assert.match(
+      r.warnings[0],
+      /YAML line 1: the tag "!custom" is not a type JSON carries, so the key was read as it was written/,
+      r.warnings[0]
+    );
+  }
+
+  // An anchor on a key names the key node; it does not rename it, and it does
+  // not take its place in the reader's own order. `&k ~: 1` was a field called
+  // `~` while `~: 1`, `? &k ~` and `a: {&k ~: 1}` were all the key YAML leaves
+  // out — the same rule, with a name in front of it. And on the one-line `?` key
+  // the anchor never registered at all, so the `*k` two lines down was an
+  // undefined alias and the whole file was refused: exit 3 on a file this reader
+  // accepts, which is the one class where the tool simply does not work.
+  assert.deepStrictEqual(run('&k ~: 1\n', 'yaml').data, run('~: 1\n', 'yaml').data);
+  assert.deepStrictEqual(run('? &k ~ : 1\n', 'yaml').data, run('~: 1\n', 'yaml').data);
+  assert.deepStrictEqual(run('? &k ~\n: 1\n', 'yaml').data, [{ null: 1 }]);
+  assert.deepStrictEqual(run('a: {&k ~: 1}\n', 'yaml').data, [{ a: { null: 1 } }]);
+  assert.deepStrictEqual(run('? &k x : 1\nz: *k\n', 'yaml').data, [{ x: 1, z: 1 }]);
+  // All four spellings of the anchor on a `?` key register the same node, and
+  // the node is the whole entry: `*k` is the entry's value, and nothing at all
+  // for the two spellings that write no value — measured, not guessed.
+  for (const [text, want] of [
+    ['? &k x : 1\nz: *k\n', 1],
+    ['? &k x\n: 1\nz: *k\n', 1],
+    ['? &k x :\nz: *k\n', null],
+    ['? &k x\nz: *k\n', null]
+  ]) {
+    const r = run(text, 'yaml');
+    assert.ok(!r.error, `${JSON.stringify(text)} was refused: ${r.error}`);
+    assert.deepStrictEqual(r.data, [{ x: want, z: want }], JSON.stringify(text));
+  }
+
+  // Two tags on a key is a key that carries two tags, and the message used to
+  // tell the user their key was a value.
+  const twice = run('!a !b x: 1\n', 'yaml');
+  assert.ok(twice.error, 'two tags on one key were accepted');
+  assert.match(twice.error, /one key can only carry one tag, but "!b x" carries two/, twice.error);
+  // A value still says value, so the fix is not the other way round.
+  assert.match(run('a: !x !y 1\n', 'yaml').error, /one value can only carry one tag/, '');
+});
+
 test('a flow collection is read over the lines it is written on', () => {
   // A collection may be wrapped, and a wrapped one is how a hand-written CI
   // config, a compose file or a Kubernetes manifest keeps a list readable. This

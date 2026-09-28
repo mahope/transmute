@@ -2395,7 +2395,7 @@ function splitYAMLKey(content, no) {
       // field `b` and `!!str a: 1` asks for it to be a string, so they are
       // handed back with the key instead of ending up inside its name.
       const raw = content.slice(0, i).trim();
-      const keyProp = readYAMLProperties(raw, no);
+      const keyProp = readYAMLProperties(raw, no, 'key');
       return {
         key: keyProp ? keyProp.rest : raw,
         rawKey: raw,
@@ -2425,8 +2425,12 @@ function splitYAMLKey(content, no) {
  * property was put on. They may stand in any order and more than one of them may
  * be there — `&x !!str 1` and `!!str &x 1` are the same node — so this reads
  * them off in a loop instead of once.
+ *
+ * `subject` is what the properties stand on, because a key says `one key can
+ * only carry one tag` and a value says `one value`, and telling a user their
+ * key is a value is the kind of small untrue thing this file does not do.
  */
-function readYAMLProperties(raw, no) {
+function readYAMLProperties(raw, no, subject = 'value') {
   const where = no ? `YAML line ${no}: ` : '';
   let rest = raw;
   let anchor = null;
@@ -2450,7 +2454,7 @@ function readYAMLProperties(raw, no) {
       alias = name;
     } else {
       if (tag) {
-        throw new SyntaxError(`${where}a value can only carry one tag, but "${rest}" carries two`);
+        throw new SyntaxError(`${where}one ${subject} can only carry one tag, but "${rest}" carries two`);
       }
       tag = name;
     }
@@ -2498,6 +2502,21 @@ const YAML_NULL_KEY = 'null';
 function yamlKeyLeftOut(rawName, quoted) {
   return !quoted && (rawName === '' || rawName === '~');
 }
+/**
+ * The name a key is written with, read the way every other key is read — which
+ * means the text *inside* the quotes, and the quotes only if the file wrote
+ * none. It is asked of the text that is left after the key's `&name` and `!tag`,
+ * so a key that carries properties is read like a key that does not: `&k "x": 1`
+ * is the field `x` and not a field called `"x"`, and `!!int "1": 2` is the field
+ * `1` instead of a `!!int` handed the two quote characters, which refused a
+ * valid file with "is not a whole number". `written` is the text the file wrote
+ * and `quoted` says whether those quotes were there, which is the same question
+ * `yamlKeyLeftOut` asks.
+ */
+function yamlKeyText(text) {
+  const quoted = text && (text[0] === '"' || text[0] === "'") ? readYAMLQuoted(text, 0) : null;
+  return { written: quoted ? quoted.value : text, raw: text, quoted };
+}
 const YAML_TRUE = new Set(['yes', 'true', 'on']);
 const YAML_FALSE = new Set(['no', 'false', 'off']);
 
@@ -2508,8 +2527,12 @@ const YAML_FALSE = new Set(['no', 'false', 'off']);
  * tag (`!!binary`, `!!timestamp`, `!!set`, `!something` of an application's own)
  * is read as it was written and *named on stderr*, because a type the file
  * promised and this file cannot deliver is a value that changes without a word.
+ *
+ * `subject` is what the tag stands on, so a tag on a key is named as a tag on a
+ * key: a field called `!custom x` is a name this tool invented, and the warning
+ * is the one place a reader learns that no other reader would call it that.
  */
-function applyYAMLTag(tag, value, ctx, no, raw) {
+function applyYAMLTag(tag, value, ctx, no, raw, subject = 'value') {
   const where = no ? `YAML line ${no}: ` : '';
   const name = yamlTagName(tag);
   // A bare `!` is the non-specific tag: it asks for no type at all, so there is
@@ -2518,7 +2541,7 @@ function applyYAMLTag(tag, value, ctx, no, raw) {
   if (!CARRIED_YAML_TAGS.has(name)) {
     if (ctx && Array.isArray(ctx.warnings)) {
       ctx.warnings.push(
-        `${where}the tag "${tag}" is not a type JSON carries, so the value was read ` +
+        `${where}the tag "${tag}" is not a type JSON carries, so the ${subject} was read ` +
         `as it was written${name ? '' : ' and the tag is gone'}; something that reads ` +
         'this file with that tag will not get the same value'
       );
@@ -2729,13 +2752,24 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       // other key is asked instead of being taken as the name whole — which is
       // what named a field `? x : 1` and lost both the key and the value.
       const inline = splitYAMLKey(afterQuestion, keyNo);
+      // The properties are the ones `splitYAMLKey` read off the line, and not a
+      // second reading of what is left: it has already taken `&k` and `!custom`
+      // off the key, so reading them again found nothing. That is what lost the
+      // anchor on `? &k x : 1` — a line this reader accepts, whose `*k` two lines
+      // down was then an undefined alias and the whole file refused — and what
+      // dropped the tag on `? !custom x : 1` with nothing on stderr, while the
+      // same key written over two lines was named and warned about.
       const keyText = inline ? inline.key : afterQuestion;
-      const keyProp = keyText ? readYAMLProperties(keyText, keyNo) : null;
+      const written = inline ? inline.rawKey : afterQuestion;
+      const keyProp = inline ? inline.keyProp : (keyText ? readYAMLProperties(keyText, keyNo, 'key') : null);
       // A key written as nothing at all is the key YAML leaves out, which is
       // `null`, and a quoted key is the text inside its quotes — the same answer
       // `k: v` gives. `? ""` is the second of the two, so the empty name and the
-      // empty string stay apart.
-      const quotedKey = keyText[0] === '"' || keyText[0] === "'" ? readYAMLQuoted(keyText, 0) : null;
+      // empty string stay apart. The quotes are looked for *after* the `&name`
+      // and the `!tag`, because a key that carries either of them is quoted just
+      // as often: `? &k "x"` is the field `x`, and it used to be a field called
+      // `"x"` — a name with two quote characters in it that no JSON file has.
+      const quotedKey = yamlKeyText(keyProp ? keyProp.rest : keyText).quoted;
       const rawName = quotedKey
         ? quotedKey.value
         : keyText
@@ -2751,9 +2785,9 @@ function parseYAMLMapping(lines, start, indent, ctx) {
         : yamlKeyLeftOut(rawName, quotedKey)
           ? YAML_NULL_KEY
           : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
-            ? String(applyYAMLTag(keyProp.tag, rawName, ctx, keyNo))
+            ? String(applyYAMLTag(keyProp.tag, rawName, ctx, keyNo, rawName, 'key'))
             : keyProp && keyProp.tag
-              ? keyText
+              ? String(applyYAMLTag(keyProp.tag, written, ctx, keyNo, written, 'key'))
               : rawName;
       if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
       const named = value => {
@@ -2851,12 +2885,25 @@ function parseYAMLMapping(lines, start, indent, ctx) {
       // resolve stays inside the name it was written in. That is T69's measured
       // decision for a `%TAG` handle, and it holds here — splitting `!e!foo`
       // into a namespace and a local name would invent a shape nobody wrote.
+      // PyYAML has no answer to ask for: it refuses the whole file, so the name
+      // is *named* on stderr instead, which is the one thing it cannot do.
+      //
+      // The tag is applied to the text the key was written with, quotes read
+      // away: `!!int "1": 2` is the field `1`, and it used to be refused with
+      // "is not a whole number" because it was handed the `"1"` with its quotes.
+      const keyText = yamlKeyText(keyProp.rest);
       name = keyProp.alias
         ? scalarKeyName(readYAMLAlias(keyProp.alias, ctx, lines[i].no), lines[i].no, ctx)
-        : keyProp.tag ? (CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
-          ? String(applyYAMLTag(keyProp.tag, key, ctx, lines[i].no))
-          : split.rawKey)
-        : key;
+        : CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
+          ? String(applyYAMLTag(keyProp.tag, keyText.written, ctx, lines[i].no, keyText.raw, 'key'))
+          : keyProp.tag
+            ? String(applyYAMLTag(keyProp.tag, split.rawKey, ctx, lines[i].no, split.rawKey, 'key'))
+            // An anchor names the key node and does not rename it, so `&k ~: 1`
+            // is the key YAML leaves out — the same field `~: 1` and `&k ~`
+            // written over two lines already gave, and not a field called `~`.
+            : yamlKeyLeftOut(keyText.written, keyText.quoted)
+              ? YAML_NULL_KEY
+              : keyText.written;
       if (keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
     }
 
@@ -3392,8 +3439,11 @@ function parseYAMLFlow(text, ctx) {
    * the value the anchor holds as the field's name.
    */
   const flowKeyName = (keyText) => {
-    const quoted = keyText[0] === '"' || keyText[0] === "'" ? readYAMLQuoted(keyText, 0) : null;
-    const keyProp = keyText ? readYAMLProperties(keyText, ctx.line) : null;
+    const keyProp = keyText ? readYAMLProperties(keyText, ctx.line, 'key') : null;
+    // The quotes are looked for after the `&name` and the `!tag`, for the same
+    // reason the block reader looks for them there: `{&k "x": 1}` is the field
+    // `x`, and it used to be a field called `"x"`.
+    const quoted = yamlKeyText(keyProp ? keyProp.rest : keyText).quoted;
     const rawName = quoted
       ? quoted.value
       : keyText
@@ -3408,9 +3458,9 @@ function parseYAMLFlow(text, ctx) {
       : yamlKeyLeftOut(rawName, quoted)
         ? YAML_NULL_KEY
         : keyProp && keyProp.tag && CARRIED_YAML_TAGS.has(yamlTagName(keyProp.tag))
-          ? String(applyYAMLTag(keyProp.tag, rawName, ctx, ctx.line, keyProp.rest))
+          ? String(applyYAMLTag(keyProp.tag, rawName, ctx, ctx.line, rawName, 'key'))
           : keyProp && keyProp.tag
-            ? keyText
+            ? String(applyYAMLTag(keyProp.tag, keyText, ctx, ctx.line, keyText, 'key'))
             : rawName;
     if (keyProp && keyProp.anchor) ctx.anchors.set(keyProp.anchor, name);
     return name;
