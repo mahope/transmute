@@ -1621,9 +1621,17 @@ const operations = {
       if (Array.isArray(arr)) {
         for (const sub of arr) {
           if (typeof sub === 'object' && sub !== null) {
-            result.push({ ...item, [field]: undefined, ...sub });
+            // The step writes the record's own fields first and the list member's
+            // after, so that is the order it can claim — the same question `add`
+            // and `join` ask. Read in the source's own order, or a quoted
+            // `"2026":` is carried forward in JavaScript's order, where a name
+            // that looks like a whole number comes first.
+            result.push(carryFieldOrder(
+              { ...item, [field]: undefined, ...sub },
+              [...ownNames(item), ...Object.keys(sub)],
+            ));
           } else {
-            result.push({ ...item, [field]: sub });
+            result.push(carryFieldOrder({ ...item, [field]: sub }, ownNames(item)));
           }
         }
       } else {
@@ -3888,7 +3896,14 @@ function parseYAMLMapping(lines, start, indent, ctx) {
     set(name, named(parseYAMLScalar(rest, ctx)), lines[i].no);
     i++;
   }
-  return { value: map, end: i };
+  // The order the document wrote, kept beside the record: the header line is
+  // where the CSV reader learns it, and here it is the order `set` was called in,
+  // which `seen` holds. Without it a quoted `"2026":` is put in front of `id` by
+  // every writer, because a name that looks like a whole number comes first in a
+  // JavaScript object — measured in `tools/measure_t110.py`, where this was the
+  // only difference between the two readers. A field that arrived through a `<<`
+  // merge is not in `seen` and keeps the place the language gives it.
+  return { value: carryFieldOrder(map, [...seen.keys()]), end: i };
 }
 
 function parseYAMLSequence(lines, start, indent, ctx) {

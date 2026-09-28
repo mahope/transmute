@@ -244,6 +244,57 @@ test('a column name that only looks like a number is left where the file had it'
     serializers.csv(r.data, { warnings: [] }).split('\n')[0], 'id,0074,1.0,name');
 });
 
+// A YAML file says the same thing as a CSV file, so it owes the same order. The
+// CSV reader learns it from the header line; the YAML reader had it in hand —
+// the order the document wrote its keys in — and never handed it on, so a quoted
+// `"2026":` went in front of `id` in all six writers and in every step, because
+// the writers only have the order if a reader gives it to them.
+test('a quoted year column in YAML keeps the place the document gave it', () => {
+  const r = run('id: 1\n"2026": 2\nname: x\n', 'yaml', [], 'json');
+  // The language's own order is left alone, as everywhere else: the document's
+  // order is remembered beside the record, not written into it.
+  assert.deepStrictEqual(Object.keys(r.data[0]), ['2026', 'id', 'name']);
+  assert.deepStrictEqual(r.warnings, []);
+
+  const out = {};
+  for (const format of ['json', 'csv', 'yaml', 'xml', 'table', 'sql']) {
+    out[format] = serializers[format](r.data, { warnings: [], tableName: 't' });
+  }
+  assert.ok(out.json.indexOf('"id"') < out.json.indexOf('"2026"'), out.json);
+  assert.strictEqual(out.csv.split('\n')[0], 'id,2026,name', out.csv);
+  assert.ok(out.sql.includes('("id", "2026", "name")'), out.sql);
+  assert.ok(/\|\s*id\s*\|\s*2026\s*\|\s*name\s*\|/.test(out.table), out.table);
+  // And through a step that builds the record field by field, which is where the
+  // order has to be carried rather than read: a pipeline is the normal way on.
+  const piped = run('id: 1\n"2026": 2\nname: x\n', 'yaml',
+    [{ op: 'add', fields: { extra: '1' } }], 'sql');
+  assert.ok(piped.text.includes('("id", "2026", "name", "extra")'), piped.text);
+});
+
+// `flatten` builds a row by spreading the record and then the list member, so it
+// copies the fields and not the order — the one of the six steps that was left
+// out. The order it can claim is the one it wrote: the record's own fields, then
+// the member's.
+test('flatten writes an expanded row in the order the file had', () => {
+  const text = 'id: 1\n"2026": 2\nname: x\ntags:\n  - t: a\n    u: b\n';
+  const records = run(text, 'yaml', [{ op: 'flatten', field: 'tags' }], 'json');
+  // The list field itself is emptied where it stood, as it always has been, so
+  // what is compared is the file's values: nothing is lost and nothing is added.
+  assert.deepStrictEqual(records.data, [{ id: 1, '2026': 2, name: 'x', tags: undefined, t: 'a', u: 'b' }]);
+  assert.deepStrictEqual(records.warnings, []);
+  const sql = run(text, 'yaml', [{ op: 'flatten', field: 'tags' }], 'sql');
+  assert.ok(sql.text.includes('("id", "2026", "name", "tags", "t", "u")'), sql.text);
+
+  // A list of scalars keeps the same place for the field it expands, and a field
+  // that is not a list is passed through without being written at all.
+  const scalars = run('id: 1\n"2026": 2\ntags:\n  - a\n  - b\n', 'yaml',
+    [{ op: 'flatten', field: 'tags' }], 'csv');
+  assert.strictEqual(scalars.text.trim(), 'id,2026,tags\n1,2,a\n1,2,b');
+  const kept = run('id: 1\n"2026": 2\ntags: a\n', 'yaml',
+    [{ op: 'flatten', field: 'tags' }], 'csv');
+  assert.strictEqual(kept.text.trim(), 'id,2026,tags\n1,2,a');
+});
+
 // The other half of the order's price, measured in `tools/measure_t109.py`: a
 // step that builds a record field by field copied the fields and not the order,
 // so a single `--rename` or `--pipe add` undid what the reader had just got
