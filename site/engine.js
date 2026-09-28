@@ -1191,6 +1191,72 @@ function stableKey(val) {
 }
 
 /**
+ * A record is a plain object, and JavaScript puts the keys that look like array
+ * positions first — whatever order they were set in. So a column called `2026`
+ * comes out in front of `id` in all six writers, in a file whose own order is
+ * `id, 2026, name`: the order is the language's, not the file's, and the values
+ * are all still there.
+ *
+ * The order a file *had* is therefore remembered next to the record, under a
+ * symbol key. A symbol is copied by `{...record}` and by `Object.assign`, and is
+ * invisible to `Object.keys`, `Object.entries` and `JSON.stringify`, so the rest
+ * of the engine keeps reading plain objects and never has to know about this.
+ * Measured with `tools/measure_t108.py`: a symbol survives `map`, `filter`,
+ * `sort`, `unique`, `add`, `head` and `flatten`, and is dropped by the four steps
+ * that rebuild a record field by field — where the output then has the order it
+ * has always had, which is a fallback and not a failure.
+ *
+ * Nothing here is a warning: no value is lost and no file is refused, so there is
+ * nothing on stderr to say. The alternative measured *worse* — a `Map` per record
+ * is invisible to `JSON.stringify` (`{}`), to `Object.keys` (`[]`) and to `{...r}`
+ * (`{}`), so it would empty every record at each of the engine's 57 places that
+ * read one.
+ */
+const FIELD_ORDER = Symbol.for('transmute.fieldOrder');
+
+/** The file's own column order, if this record was read with one. */
+function fieldOrderOf(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  const order = record[FIELD_ORDER];
+  return Array.isArray(order) ? order : null;
+}
+
+/** Remember the order the file had. A record that is not an object is left alone. */
+function withFieldOrder(record, order) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return record;
+  // Not enumerable, so nothing that reads a record can see it: not
+  // `Object.keys`, not `JSON.stringify`, not a deep comparison against the file
+  // the record came from. The price is measured, not guessed — see
+  // `tools/measure_t108.py` — and it is that a step which *copies* a record
+  // field by field copies the fields and not the order.
+  Object.defineProperty(record, FIELD_ORDER, { value: order, enumerable: false, writable: true, configurable: true });
+  return record;
+}
+
+/**
+ * The same record, in the order the file had. `JSON.stringify` and `Object.keys`
+ * both read `[[OwnPropertyKeys]]`, and a proxy is the one thing that can answer
+ * it differently from the object underneath — so this is what makes the order
+ * reach the JSON writer, which cannot be given a column list the way the other
+ * five can. The trap returns the file's order *and then* every key the object has
+ * that the order does not name: a stale order can then only ever hide a key that
+ * is already gone, never lose one that is there.
+ */
+function inFieldOrder(record) {
+  const order = fieldOrderOf(record);
+  if (!order) return record;
+  return new Proxy(record, {
+    // Each key once: a header that names two columns the same is a header the
+    // file really has, and a proxy that answers with a key twice is a TypeError
+    // rather than a file.
+    ownKeys: (target) => [...new Set([
+      ...order.filter(key => Object.prototype.hasOwnProperty.call(target, key)),
+      ...Reflect.ownKeys(target).filter(key => !order.includes(key)),
+    ])],
+  });
+}
+
+/**
  * Every key any record has, in first-seen order. `Object.keys(data[0])` alone
  * silently drops keys that only later records carry, and that is the normal
  * shape of JSON from an API or of a left join with no match. The SQL serializer
@@ -1208,6 +1274,14 @@ function unionKeys(data) {
   const seen = new Set();
   for (const row of data) {
     if (!row || typeof row !== 'object') continue;
+    // A file that was read with a header of its own: that header is the order
+    // the file had, and it comes before anything the loop below meets for the
+    // first time. Without this, a column named like a number leads the file it
+    // came from — in every one of the five writers that take a column list.
+    const order = fieldOrderOf(row);
+    if (order) for (const key of order) {
+      if (key in row && !seen.has(key)) { seen.add(key); keys.push(key); }
+    }
     for (const key of Object.keys(row)) {
       if (!seen.has(key)) { seen.add(key); keys.push(key); }
     }
@@ -1246,7 +1320,12 @@ const serializers = {
     // of all of them — and it is the one writer that answers `null` to a value
     // that is not finite, which is why it needs the walk too.
     assertWritable(data, 'json');
-    return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+    // This writer cannot be given a column list the way the other five are, so
+    // the order a file had has to be answered from the record itself. It is the
+    // one place `inFieldOrder` is called, and the records are the same objects
+    // after it: a proxy reads and writes the record underneath it.
+    const ordered = data.map(row => (row && typeof row === 'object' ? inFieldOrder(row) : row));
+    return pretty ? JSON.stringify(ordered, null, 2) : JSON.stringify(ordered);
   },
   csv: (data, opts = {}) => {
     if (data.length === 0) return '';
@@ -1289,7 +1368,7 @@ const serializers = {
       // A record is a mapping; the dash carries the first line and the keys
       // sit in the column the reader will look for them in.
       if (!isYAMLPlainObject(item)) return `- ${formatYAMLValue(item)}`;
-      return writeYAMLMapping(Object.entries(item), 2, '- ').join('\n');
+      return writeYAMLMapping(unionKeys([item]).map(k => [k, item[k]]), 2, '- ').join('\n');
     }).join('\n') + '\n';
   },
   xml: (data, opts = {}) => {
@@ -2315,6 +2394,11 @@ function parseCSV(text, opts = {}) {
         setField(row, extraNames.get(idx), coerceCSVValue(values[idx]));
       }
     }
+    // The header is the file's own order, and it is the only place it is ever
+    // known: a record cannot hold it (see `FIELD_ORDER`). A column called `2026`
+    // is a real one — a year in a customer export, a number in an inventory
+    // sheet — and without this every writer put it in front of the names.
+    withFieldOrder(row, headers);
     rows.push(row);
   }
   if (extraLines.size > 0 && Array.isArray(opts.warnings)) {
@@ -4644,7 +4728,9 @@ function writeXMLElement(tag, value, depth, key = null) {  const pad = '  '.repe
     return value.map((member) => writeXMLElement(tag, member, depth, key)).join('\n');
   }
   if (typeof value !== 'object' || value === null) return `${pad}<${safeTag}${name}>${escapeXML(String(value))}</${safeTag}>`;
-  const entries = Object.entries(value);
+  // The file's own order where the record carries one, its own order where it
+  // does not — the same rule the other five writers read, asked in one place.
+  const entries = unionKeys([value]).map(k => [k, value[k]]);
   // An attribute name follows the same rules as a tag name, and the `@` prefix
   // does not launder them: `@2fa` and a bare `@` wrote `<item 2fa="x">` and
   // `<item ="x">`, which no parser reads. Those go out as child elements through

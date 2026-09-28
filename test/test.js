@@ -5,7 +5,7 @@
 const assert = require('assert');
 const { readFileSync } = require('fs');
 const { join } = require('path');
-const { run, serializers, detectFormat } = require('../src/engine');
+const { run, parsers, serializers, detectFormat } = require('../src/engine');
 
 const here = join(__dirname, 'fixtures');
 
@@ -194,6 +194,56 @@ test('a file read as one column says so, and names the delimiter it saw', () => 
 // Measured with `tools/measure_t107.py`, the second half of T106's table: a
 // title row over the header is read with the columns named after the *title*,
 // so the real column names arrive as the first row of values. The only line on
+// A column whose name looks like a whole number is a real column — a year in a
+// customer export, a number in an inventory sheet — and JavaScript puts such
+// keys first in an object whatever order they were set in, so every writer put
+// `2026` in front of `id` in a file whose own order is `id, 2026, name`. No
+// value was lost and nothing said so.
+test('a column named like a number is written in the order the file had', () => {
+  const text = 'id,2026,name\n1,2,x\n';
+  const r = run(text, 'csv', [], 'json');
+  // The order a reader asks the object for is the language's own and is left
+  // alone: the file's order is remembered beside the record, not written into it.
+  assert.deepStrictEqual(Object.keys(r.data[0]), ['2026', 'id', 'name']);
+  assert.deepStrictEqual(r.data.map(row => [row.id, row['2026'], row.name]), [[1, 2, 'x']]);
+  assert.deepStrictEqual(r.warnings, []);
+
+  const out = {};
+  for (const format of ['json', 'csv', 'yaml', 'xml', 'table', 'sql']) {
+    out[format] = serializers[format](r.data, { warnings: [], tableName: 't' });
+  }
+  // Every writer takes its columns from one list, so one file per format and the
+  // place in each file where the columns are written in it.
+  assert.ok(out.json.indexOf('"id"') < out.json.indexOf('"2026"'), out.json);
+  assert.ok(out.csv.split('\n')[0] === 'id,2026,name', out.csv);
+  assert.ok(out.yaml.startsWith('- id: 1\n  "2026": 2\n  name: x'), out.yaml);
+  assert.ok(/<id>1<\/id>\s*<field name="2026">2<\/field>\s*<name>x<\/name>/.test(out.xml), out.xml);
+  assert.ok(/\|\s*id\s*\|\s*2026\s*\|\s*name\s*\|/.test(out.table), out.table);
+  assert.ok(out.sql.includes('("id", "2026", "name")'), out.sql);
+  // And read back. The order is in the bytes, not only in the list the writer
+  // was handed — a file written in the wrong order is a file no reader can mend.
+  // `JSON.parse` is the one that cannot: it hands the object back in the
+  // language's order again, which is what the index test above measures, so
+  // only the bytes are asked about here. CSV is read back through a reader that
+  // knows the file's own order, and writes it out in it again.
+  assert.ok(out.json.indexOf('"id"') < out.json.indexOf('"2026"'), out.json);
+  const back = parsers.csv(out.csv);
+  assert.deepStrictEqual(Object.keys(back[0]), ['2026', 'id', 'name']);
+  assert.deepStrictEqual(back.map(row => [row.id, row['2026'], row.name]), [[1, 2, 'x']]);
+  assert.deepStrictEqual(back.map(row => serializers.csv([row], { warnings: [] }).split('\n')[0]),
+    ['id,2026,name']);
+});
+
+// Only a name that *is* an array position moves, and that is the line the fix
+// must not cross: `0074` and `1.0` were never moved, and a name like that is
+// data, not a position.
+test('a column name that only looks like a number is left where the file had it', () => {
+  const r = run('id,0074,1.0,name\n1,74,1.0,x\n', 'csv', [], 'json');
+  assert.deepStrictEqual(Object.keys(r.data[0]), ['id', '0074', '1.0', 'name']);
+  assert.strictEqual(
+    serializers.csv(r.data, { warnings: [] }).split('\n')[0], 'id,0074,1.0,name');
+});
+
 // stderr was T14's "N of N CSV rows have more fields than the header", which
 // describes the ragged rows and never the header they are ragged against.
 test('a file whose first line is narrower than every line below says which line named the columns', () => {
