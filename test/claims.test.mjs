@@ -522,5 +522,36 @@ test('a robots.txt that points language models at a file that cannot answer is r
   assert.match(output, /site\/sitemap\.xml is the file robots\.txt hands a language model and states no payment link/);
 });
 
+test('the file robots.txt hands a language model, stripped of its product key, is refused', () => {
+  // The same reader, asked a follow-up. The price is what a model quotes when
+  // someone asks what Transmute costs; the product key is what it has to send
+  // when someone hands it a licence key and says activate. Measured before the
+  // rule existed: the key was in 0 of the 7 public files, and the licence API
+  // answers a wrong `product` with 403 and "This license key is for another
+  // product." — which a reader holding a correctly purchased key cannot act on.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /`transmute-desktop`/, 'llms.txt is expected to state the product key; this is the bug under test');
+  writeFileSync(file, text.replace('`transmute-desktop`', '`transmute`'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'the file the site hands a language model must state the product key');
+  assert.match(output, /site\/llms\.txt is the file robots\.txt hands a language model and states no product key/);
+});
+
+test('the file robots.txt hands a language model, stripped of the licence API address, is refused', () => {
+  // The product key on its own is half an answer — it is a value with nowhere to
+  // go. Both facts are locked together so neither can be published alone and
+  // still read as a complete instruction.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /https:\/\/mahope\.tools\/api\/license\//, 'llms.txt is expected to state the licence API address; this is the bug under test');
+  writeFileSync(file, text.replaceAll('https://mahope.tools/api/license/', 'https://mahope.tools/'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'the product key must be published with the address it is sent to');
+  assert.match(output, /site\/llms\.txt is the file robots\.txt hands a language model and states no licence API address/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -601,7 +601,7 @@ check('every address llms.txt, llms-full.txt, robots.txt and sitemap.xml publish
 // the file at all.
 const MODEL_GUIDANCE = /^\s*#\s*guidance for language models:\s*(\S+)\s*$/im;
 
-check('the file robots.txt hands a language model can state the price on its own', () => {
+check('the file robots.txt hands a language model can quote the price and activate a key on its own', () => {
   const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
   const robots = readFileSync(join(root, 'site', 'robots.txt'), 'utf8');
   const named = MODEL_GUIDANCE.exec(robots)?.[1];
@@ -627,6 +627,20 @@ check('the file robots.txt hands a language model can state the price on its own
   const machines = new RegExp(`\\b(?:${pro.machines}|${Object.entries(NUMBER_WORDS).filter(([, n]) => n === pro.machines).map(([w]) => w).join('|')})\\s+(?:machines|maskiner)\\b`, 'gi');
   assert(machines.test(text),
     `site/${rel} is the file robots.txt hands a language model and states no machine count; the contract locks it at ${pro.machines}`);
+
+  // The product key is the fourth, and it is the one that costs a sale. A model
+  // that has been handed a key and asked to activate it has to send `product`,
+  // and the API answers a wrong value with 403 and nothing else — the reader
+  // cannot tell a typo from a key they did not buy, and cannot look the value
+  // up because a model that was handed one URL does not follow links.
+  assert(text.includes(pro.product_key),
+    `site/${rel} is the file robots.txt hands a language model and states no product key, so a model asked to activate a key has to guess the \`product\` field and a wrong guess is a 403 that names no remedy; the contract locks it at ${pro.product_key}`);
+
+  // And with it, the address the call goes to. The product key is only useful
+  // next to the endpoint that consumes it; neither fact answers the question on
+  // its own, so locking one without the other locks half an answer.
+  assert(text.includes(pro.licence_api),
+    `site/${rel} is the file robots.txt hands a language model and states no licence API address, so the product key it names has nowhere to be sent; the contract locks it at ${pro.licence_api}`);
 });
 
 // Ten iterations of YAML work — T75 through T92 — each of them measured against

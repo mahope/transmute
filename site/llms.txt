@@ -12,6 +12,16 @@ Pipeline steps are JSON objects run in order. Expressions are plain JavaScript w
 
 The command line tool is free, unlimited and MIT licensed, and stays that way. The desktop app (macOS, Windows, Linux, built with Tauri) is free to download with three transformations per launch. Desktop Pro is a one-time purchase of 19 USD for up to three machines, and unlocks unlimited transformations in the app: https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02. The same page explains how to activate the key and what to do if it will not activate. The CLI has no limits and no licence check at all.
 
+## Licence activation
+
+The desktop app activates a key against `https://mahope.tools/api/license/`. Every call is a POST with a JSON body of `license_key`, `device_id` and `product`, and CORS is open.
+
+- `activate` — spends a machine slot and returns `ok`, `plan`, `expires_at` and `devices_in_use`
+- `validate` — returns `ok` and `valid`, with a `reason` when it is not
+- `deactivate` — frees the machine slot
+
+`product` is always the literal string `transmute-desktop`. It is the value a client gets wrong: a key for another product is refused with 403 and "This license key is for another product." `license_key` is 32 hexadecimal characters, trimmed and lowercased before sending. `device_id` is stable per machine, at most 128 characters. A 503 means the server is briefly unavailable, so a client should fail soft and keep a cached Pro status for about seven days rather than lock a paying customer out.
+
 ## Pages
 
 - [Front page (English)](https://transmute.run/): what it does, examples with real output, formats, operations, install, FAQ
