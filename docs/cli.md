@@ -23,6 +23,68 @@ Requires Node 22 or newer (tested on 22 and 24). No accounts, no configuration, 
 npx @mahope/transmute people.csv --output json
 ```
 
+The examples below read **your** files, so make that one first. This is the
+`people.csv` every example on this page was written against, and the outputs
+further down are what it prints:
+
+```bash
+cat > people.csv <<'CSV'
+name,age,zip,active,city
+Alice,30,0074,true,Aarhus
+Bob,25,2100,false,Odense
+Carla,41,8000,true,Aarhus
+Daniel,25,2100,true,Odense
+CSV
+```
+
+```bash
+npx @mahope/transmute people.csv --output json
+```
+
+```
+[
+  {
+    "name": "Alice",
+    "age": 30,
+    "zip": "0074",
+    "active": true,
+    "city": "Aarhus"
+  },
+  {
+    "name": "Bob",
+    "age": 25,
+    "zip": 2100,
+    "active": false,
+    "city": "Odense"
+  },
+  {
+    "name": "Carla",
+    "age": 41,
+    "zip": 8000,
+    "active": true,
+    "city": "Aarhus"
+  },
+  {
+    "name": "Daniel",
+    "age": 25,
+    "zip": 2100,
+    "active": true,
+    "city": "Odense"
+  }
+]
+```
+
+If the file is not there, the tool says so in one line and stops — the missing
+file is [exit 3](#exit-codes), and the name in the message is the name you typed:
+
+```bash
+npx @mahope/transmute data.csv --output json
+```
+
+```
+Error: File not found: data.csv
+```
+
 Or clone and run it locally:
 
 ```bash
@@ -128,6 +190,18 @@ transmute european.csv --delimiter ';' -o json
 | `1` | The transformation failed | The engine threw while transforming, or the chosen `--output` was asked for data that format cannot represent (a character outside XML 1.0 `Char` or YAML `c-printable`, a `U+0000` or a lone surrogate anywhere, or a number that is not finite in **any** format) |
 | `2` | Usage error | Unknown option, bad option value, an option given twice, an option that cannot do its job (`--out` without `--output`, `--table` without `--output sql`, `--delimiter` without CSV input), `--pipe` that is not a valid pipeline, a step missing a parameter it needs, an expression that is not valid JavaScript |
 | `3` | Input error | File missing, unreadable, unparseable as the input format, or not UTF-8 |
+
+Exit 3 is the one a reader meets first, because the first command on this page
+reads a file they have to have. It names the file it could not find and writes
+nothing:
+
+```bash
+transmute data.csv --output json
+```
+
+```
+Error: File not found: data.csv
+```
 
 Errors always go to stderr, prefixed with `Error:`, and stdout stays empty on
 failure — so `transmute in.json -o csv > out.csv` never leaves a half-written
@@ -3119,12 +3193,18 @@ you never need the desktop app to use Transmute.
 `npm test` runs three suites:
 
 1. `test/test.js` — unit tests for the engine.
-2. `test/cli.test.mjs` — the real CLI in a child process: every command on this
-   page, all exit codes, stdout/stderr separation, `--out`, stdin, and a
-   50-record run.
+2. `test/cli.test.mjs` — the real CLI in a child process: all exit codes,
+   stdout/stderr separation, `--out`, stdin, and a 50-record run.
 3. `test/conformance.test.mjs` — every command and every excerpt above is
    compared with what the engine actually produces, and the CLI engine and the
    browser engine must agree byte for byte.
+
+The one set neither suite can run is the commands that read a file you bring —
+`people.csv`, `customers.csv`, `orders.json` and the rest. They are not in this
+repository, so there is nothing here to run them against; what holds them still
+is the block above each one, and the one that names a file you do not have
+(`data.csv`) is a file the tool itself refuses, so that answer is measured
+against the engine like any other.
 
 If you change engine behaviour, regenerate the snapshots with
 `npm run snapshots:cli`, then update this page in the same commit.

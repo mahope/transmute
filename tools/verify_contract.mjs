@@ -1647,6 +1647,99 @@ check('no workflow inherits implicit dependency caching from setup-node', () => 
   );
 });
 
+// T122 bound the reference's own commands to the suite: each documented command
+// is read off the page and run, so a block that is not what the tool prints
+// turns the gate red. The commands it could bind are the ones naming a file
+// this repository ships, and the rest — `people.csv`, `customers.csv`,
+// `orders.json` — were excluded with a comment in the test, because they are
+// written for the reader's own data.
+//
+// The exclusion is the finding, and it is a reader's first minute with the tool.
+// Measured 2026-09-29 with tools/measure_t123.py, three tables kept apart:
+//
+//   INPUT    54 documented commands name a file they read; 38 name a fixture
+//            here and are bound by the suite, 16 name a file only the reader
+//            has and were bound by nothing at all.
+//   ANSWER   `Error: File not found:` — the tool's own answer — appeared in 0
+//            of 28 public files.
+//   PROMISE  the page claimed "every command on this page" is run by
+//            test/cli.test.mjs, and named no exception.
+//
+// So the first command on the page, `npx @mahope/transmute people.csv --output
+// json`, gave a reader on a fresh machine one line and exit 3, out of a page
+// that writes out every other error verbatim. The exit-code table named "File
+// missing" as a cause and never showed it.
+//
+// The first rule below asks the file the question, not the block: a document
+// that names an input it does not ship has to show what the tool prints when
+// that input is not there. The needle is the tool's own sentence and the file it
+// names has to be one this repository does not have, so a page cannot satisfy
+// this by pasting the answer for a fixture. The second rule asks the promise:
+// coverage a document claims has to say what it skips, because the alternative
+// is a claim that is only true by silence.
+const DOCUMENTED_COMMAND = /^(?:transmute|npx @mahope\/transmute|node src\/cli\.js) /;
+// The engine's refusal, transcribed from src/cli.js's missing-file branch. The
+// conformance suite runs the example it belongs to, so the wording on the page
+// is measured against the tool rather than trusted.
+const MISSING_FILE = /^Error: File not found: (\S+)$/gm;
+const COVERAGE_CLAIM = /every command on this page|all (?:of )?the (?:commands|examples)/i;
+const NAMES_A_SKIP = /your own file|file you (?:have|bring)|the reader's own|file nobody has|not in this repository|cannot be run|not run by|no fixture|shipped fixture|only (?:the )?commands that/i;
+
+check('a document that names an input it does not ship shows what the tool prints without it', () => {
+  let asked = 0;
+  for (const file of published()) {
+    if (!/\.md$/.test(file) && !/\.txt$/.test(file)) continue;
+    const name = label(file);
+    const text = readFileSync(file, 'utf8');
+    const shipped = new Set();
+    let unshipped = 0;
+    for (const block of text.matchAll(/```bash\n([\s\S]*?)```/g)) {
+      for (const line of block[1].split('\n')) {
+        if (!DOCUMENTED_COMMAND.test(line.trim())) continue;
+        const positional = line.trim().replace(DOCUMENTED_COMMAND, '').split(/\s+/)[0] ?? '';
+        if (!/\.(?:csv|tsv|json|jsonl|ndjson|ya?ml|xml|txt)$/i.test(positional)) continue;
+        if (existsSync(join(root, positional.replace(/^["']|["']$/g, '')))) shipped.add(positional);
+        else unshipped += 1;
+      }
+    }
+    if (unshipped === 0) continue;
+    asked += 1;
+    // The answer has to name a file that is not here. A block that quotes the
+    // tool's sentence for `test/fixtures/people.csv` is true and useless: the
+    // reader's file is the one that is missing.
+    const answers = [...text.matchAll(MISSING_FILE)]
+      .map(match => match[1])
+      .filter(file2 => !existsSync(join(root, file2)));
+    assert(answers.length > 0,
+      `${name} shows ${unshipped} command(s) reading a file this repository does not ship, and never shows what Transmute prints when that file is not there. The first command a reader runs is one of them, so write the answer out: run the command against a name that does not exist and paste the "Error: File not found:" line.`);
+    void shipped;
+  }
+  assert(asked > 0,
+    'no published file names an input it does not ship, so the rule above is asserted against nothing. If every example was repointed at a fixture here, delete this check and say so in the plan.');
+});
+
+check('a document that claims its examples are all run says which ones are not', () => {
+  const HONESTY = /##\s*Keeping this page honest\b([\s\S]*)/g;
+  for (const file of published()) {
+    if (!/\.md$/.test(file)) continue;
+    const name = label(file);
+    const text = readFileSync(file, 'utf8');
+    for (const section of text.matchAll(HONESTY)) {
+      // Line wrapping first: the claim sits in a numbered list, and the page
+      // wraps at 80 columns, so "every command on this" and "page" are two
+      // lines. A needle that cannot see a wrapped phrase finds nothing, and
+      // "found nothing" is what a measurement says when it is the needle that
+      // is wrong.
+      const sentences = section[1].replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/);
+      for (const sentence of sentences) {
+        if (!COVERAGE_CLAIM.test(sentence)) continue;
+        assert(NAMES_A_SKIP.test(sentence),
+          `${name} claims "${sentence.trim().slice(0, 90)}…" and names no exception. The suite cannot run the commands that read a file the reader brings, so say which ones it skips and what holds them still — a claim that is only true by silence is the one a reader finds out about first.`);
+      }
+    }
+  }
+});
+
 for (const [file, messages] of failuresByFile) {
   for (const message of messages) {
     failures.push(`${label(file)}: ${message}`);

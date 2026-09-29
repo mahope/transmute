@@ -854,11 +854,29 @@ function documentedCommands() {
   return found.filter(d => {
     if (d.command.includes('|')) return false;
     // A command that reads `people.csv` is written for the reader's own file,
-    // not for a fixture in this repository, so there is nothing here to run it
-    // against. The examples that name a file the repository has are the ones
-    // this suite can hold still.
+    // not for a fixture in this repository. Most of those cannot be run here,
+    // because what they print depends on the data in a file nobody has.
+    //
+    // One of them can, and the exclusion used to throw it away with the rest:
+    // `transmute data.csv --output json` documents what the tool prints for a
+    // file that is not there, and the tool prints it precisely *because* the
+    // file is not there. So instead of a hand-kept list of the commands that
+    // happen to work without their input, the command is run in an empty
+    // directory and kept only if it reproduces the block the page shows. A
+    // command whose block needs the reader's data simply does not reproduce, and
+    // is skipped for the same reason it was skipped before — measured rather
+    // than remembered.
     const input = d.command.split(/\s+/).find(a => a && !a.startsWith('-') && /\.[a-z]+$/i.test(a));
-    return input === undefined || existsSync(join(root, input.replace(/^["']|["']$/g, '')));
+    if (input === undefined || existsSync(join(root, input.replace(/^["']|["']$/g, '')))) return true;
+    if (d.output === null) return false;
+    const empty = mkdtempSync(join(tmpdir(), 'transmute-doc-'));
+    try {
+      const spelled = d.command.replace(/^transmute /, `${join(root, 'src', 'cli.js')} `);
+      const run = spawnSync('/bin/sh', ['-c', spelled], { cwd: empty, encoding: 'utf-8' });
+      return run.stderr.trim() === d.output.trim() && run.status !== 0;
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 }
 
@@ -866,10 +884,11 @@ const documented = documentedCommands();
 const comparable = documented.filter(d => d.output !== null);
 
 test('every documented command that prints something is run, and prints what the page says', () => {
-  // 36 measured on 2026-09-29 (tools/measure_t122.py); the floor is there so
-  // that a page which loses its output blocks cannot turn this test green by
-  // having nothing left to compare.
-  assert.ok(comparable.length >= 36, `only ${comparable.length} documented commands could be compared, expected at least 36`);
+  // 41 measured on 2026-09-29 (tools/measure_t123.py), four of them naming a
+  // file the reader brings rather than a fixture this repository ships; the
+  // floor is there so that a page which loses its output blocks cannot turn
+  // this test green by having nothing left to compare.
+  assert.ok(comparable.length >= 40, `only ${comparable.length} documented commands could be compared, expected at least 40`);
 
   for (const { command, output } of comparable) {
     // The page writes `transmute`; the suite runs the same words through a

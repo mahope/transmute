@@ -761,5 +761,44 @@ test('an address in the README is followed like an address anywhere else', () =>
   assert.match(output, /README\.md publishes https:\/\/transmute\.run\/guides\/no-such-guide\/, but site\/guides\/no-such-guide\/index\.html does not exist/);
 });
 
+test('a document that names an input it does not ship must show what the tool prints without it', () => {
+  // The finding T123 measured: of 54 commands the reference documents, 38 name
+  // a fixture this repository ships and 16 name a file the reader has to bring.
+  // The first command on the page is one of the sixteen, and the tool's answer
+  // to it — `Error: File not found:` — was in none of the 28 public files. The
+  // mutation deletes the answer and leaves the commands, which is what a page
+  // looks like after somebody tidies an example away.
+  const dir = repo();
+  const file = join(dir, 'docs', 'cli.md');
+  const text = readFileSync(file, 'utf8');
+  assert.ok(text.includes('Error: File not found: data.csv'), 'the reference is expected to show the missing-file answer; this is the bug under test');
+  const mutated = text.replace(/```\nError: File not found: data\.csv\n```\n/g, '');
+  assert.notEqual(mutated, text, 'the mutation must actually change the reference');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a document that sends a reader to a file nobody has owes them the answer');
+  assert.match(output, /docs\/cli\.md shows \d+ command\(s\) reading a file this repository does not ship, and never shows what Transmute prints/);
+});
+
+test('a document that claims its examples are all run must say which ones are not', () => {
+  // The promise, not the answer. The reference said `test/cli.test.mjs` ran
+  // "every command on this page" while 16 of them read a file the reader
+  // brings, and the exception lived in a comment in the test rather than on the
+  // page. The mutation puts the claim back without the paragraph that names the
+  // skip — which is how the false claim was written in the first place.
+  const dir = repo();
+  const file = join(dir, 'docs', 'cli.md');
+  const text = readFileSync(file, 'utf8');
+  const paragraph = 'The one set neither suite can run is the commands that read a file you bring';
+  assert.ok(text.includes(paragraph), 'the reference is expected to name the commands the suite skips; this is the bug under test');
+  const mutated = text.replace(paragraph,
+    '`test/cli.test.mjs` — the real CLI in a child process: every command on this\n   page, all exit codes, stdout/stderr separation, `--out`, stdin, and a\n   50-record run.\n\nThe other suites are unit tests for the engine and a comparison of every\ncommand and excerpt above against what the engine produces.');
+  assert.notEqual(mutated, text, 'the mutation must actually change the reference');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'coverage that is only true by silence is the claim a reader finds out about first');
+  assert.match(output, /claims ".*every command on this page.*" and names no exception/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

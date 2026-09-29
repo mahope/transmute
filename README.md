@@ -18,6 +18,29 @@ The CLI in this repository is free and unlimited, with no key and no limits.
 npx @mahope/transmute people.csv --output json
 ```
 
+`people.csv` is your file, so make one first — this is the one every example
+below was written against:
+
+```bash
+cat > people.csv <<'CSV'
+name,age,zip,active,city
+Alice,30,0074,true,Aarhus
+Bob,25,2100,false,Odense
+Carla,41,8000,true,Aarhus
+Daniel,25,2100,true,Odense
+CSV
+```
+
+If the file is not there, Transmute says so and stops with exit 3:
+
+```bash
+npx @mahope/transmute data.csv --output json
+```
+
+```
+Error: File not found: data.csv
+```
+
 Or clone and run locally:
 
 ```bash
