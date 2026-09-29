@@ -50,7 +50,7 @@
       "about": {
         "@id": "https://transmute.run/#app"
       },
-      "dateModified": "2026-09-28"
+      "dateModified": "2026-09-29"
     },
     {
       "@type": "BreadcrumbList",
@@ -140,6 +140,9 @@
 <li>Indsæt nøglen og aktivér. Appen kontrollerer den mod <code>mahope.tools</code> og låser Pro op med det samme.</li>
 </ol>
 <p>Nøglen er 32 hexadecimale tegn. Den er ikke versalfølsom, og ekstra mellemrum og linjeskift ryddes væk for dig, så du også kan indsætte hele blokken fra mailen. Appen husker nøglen på maskinen, så du aktiverer én gang pr. maskine frem for én gang pr. start.</p>
+<h3 id="hvad-appen-sender">Hvad appen sender</h3>
+<p>Værd at vide, hvis du hellere vil tjekke en nøgle end diskutere med appen. Aktivering er et <code>POST</code> til <code>https://mahope.tools/api/license/activate</code> med tre felter: <code>license_key</code>, din nøgle trimmet og i små bogstaver; <code>device_id</code>, et navn til maskinen, højst 128 tegn; og <code>product</code>, som for denne app altid er <code>transmute-desktop</code>.</p>
+<p>Alle Mahope-værktøjer bruger den samme server og den samme nøgle på 32 tegn, så en nøgle købt til et andet af dem afvises med <em>"This license key is for another product."</em> Det er produktet frem for nøglen: det er kvitteringen, der siger Transmute Desktop Pro, du vil have.</p>
 <p>Pro forbliver låst op i op til syv dage efter det seneste vellykkede tjek, så en licensserver med en dårlig eftermiddag ikke kan låse dig ude af software, du allerede har betalt for. Appen tjekker igen, når den starter og før en kørsel, der kræver licensen.</p>
 
 <h2 id="tre-maskiner">Tre maskiner</h2>
@@ -148,7 +151,7 @@
 
 <h2 id="fejlfinding">Fejlfinding</h2>
 <h3 id="noeglen-afvises">Nøglen afvises</h3>
-<p>Kopier den igen fra takkesiden eller kvitteringsmailen. En afkortet indsættelse er den almindelige årsag, og mellemrum håndteres for dig. En nøgle købt til et andet produkt afvises, og det gør også en nøgle, der er blevet annulleret eller er udløbet.</p>
+<p>Kopier den igen fra takkesiden eller kvitteringsmailen. En afkortet indsættelse er den almindelige årsag, og mellemrum håndteres for dig. En nøgle købt til et andet produkt afvises — <a href="#hvad-appen-sender">appen sender et produktnavn, og her er hvilket</a> — og det gør også en nøgle, der er blevet annulleret eller er udløbet.</p>
 <h3 id="enhed-bruger-allerede-licens">"This device already uses a licence"</h3>
 <p>Alle tre pladser er i brug. Deaktivér en maskine, du ikke længere bruger, og aktivér igen — se <a href="#tre-maskiner">tre maskiner</a>.</p>
 <h3 id="pro-blev-ikke-last-op">Pro blev ikke låst op</h3>
@@ -171,7 +174,7 @@
 <h2 id="stoet-projektet">Støt projektet</h2>
 <p>Transmute bygges og vedligeholdes af én person i Odense. Hvis det sparede dig en eftermiddag, og du har lyst til at sige tak, holder en lille <a href="https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c">donation</a> projektet uafhængigt. Det er helt frivilligt, og intet i det gratis værktøj er holdt tilbage for det.</p>
 </article>
-<aside class="toc-side"><details class="toc" open><summary>På denne side</summary><nav aria-label="På denne side"><ol><li class="h2"><a href="#kob-pro">Køb Pro</a></li><li class="h3"><a href="#hvad-pro-aendrer">Hvad Pro ændrer, og hvad det ikke gør</a></li><li class="h2"><a href="#aktiv-din-licens">Aktivér din licens</a></li><li class="h2"><a href="#tre-maskiner">Tre maskiner</a></li><li class="h2"><a href="#fejlfinding">Fejlfinding</a></li><li class="h3"><a href="#noeglen-afvises">Nøglen afvises</a></li><li class="h3"><a href="#enhed-bruger-allerede-licens">&quot;This device already uses a licence&quot;</a></li><li class="h3"><a href="#pro-blev-ikke-last-op">Pro blev ikke låst op</a></li><li class="h3"><a href="#appen-starter-ikke">Appen starter ikke, eller en transformation giver et forkert resultat</a></li><li class="h2"><a href="#hold-noeglen-sikker">Hold din nøgle sikker</a></li><li class="h2"><a href="#kontakt">Kontakt</a></li><li class="h2"><a href="#stoet-projektet">Støt projektet</a></li></ol></nav></details></aside>
+<aside class="toc-side"><details class="toc" open><summary>På denne side</summary><nav aria-label="På denne side"><ol><li class="h2"><a href="#kob-pro">Køb Pro</a></li><li class="h3"><a href="#hvad-pro-aendrer">Hvad Pro ændrer, og hvad det ikke gør</a></li><li class="h2"><a href="#aktiv-din-licens">Aktivér din licens</a></li><li class="h3"><a href="#hvad-appen-sender">Hvad appen sender</a></li><li class="h2"><a href="#tre-maskiner">Tre maskiner</a></li><li class="h2"><a href="#fejlfinding">Fejlfinding</a></li><li class="h3"><a href="#noeglen-afvises">Nøglen afvises</a></li><li class="h3"><a href="#enhed-bruger-allerede-licens">&quot;This device already uses a licence&quot;</a></li><li class="h3"><a href="#pro-blev-ikke-last-op">Pro blev ikke låst op</a></li><li class="h3"><a href="#appen-starter-ikke">Appen starter ikke, eller en transformation giver et forkert resultat</a></li><li class="h2"><a href="#hold-noeglen-sikker">Hold din nøgle sikker</a></li><li class="h2"><a href="#kontakt">Kontakt</a></li><li class="h2"><a href="#stoet-projektet">Støt projektet</a></li></ol></nav></details></aside>
 </div>
 </main>
 

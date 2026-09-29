@@ -600,5 +600,43 @@ test('llms-full.txt, stripped of a field name, is refused', () => {
   assert.match(output, /site\/llms-full\.txt is a file the site publishes for language models and names no `device_id` field/);
 });
 
+test('the support page, stripped of the product it sends, is refused', () => {
+  // This is the bug T118 fixed. Both support pages named the failure — a key
+  // bought for another product is refused — and neither said which product this
+  // one is, so a reader with two keys the same shape was told the diagnosis and
+  // not the treatment. The same sentence on llms.txt did carry the answer, which
+  // is what made it a page defect rather than a missing fact.
+  const dir = repo();
+  const file = join(dir, 'site', 'support', 'index.html');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /<code>transmute-desktop<\/code>/, 'the support page is expected to name the product it sends; this is the bug under test');
+  writeFileSync(file, text.replace('<code>transmute-desktop</code>', '<code>the product name</code>'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a page that names a refused key must say which product this one is');
+  assert.match(output, /site\/support\/index\.html tells a reader that a key bought for another product is refused, but states no product key/);
+});
+
+test('a page that starts naming a refused key is held to the envelope the day it does', () => {
+  // The trigger is the refusal itself, so the front page is not covered today and
+  // is covered the moment it describes a 403. A file list would have had to be
+  // edited here the day someone wrote the sentence, which is the mistake T115's
+  // rule was written to avoid.
+  //
+  // The mutation is checked to have landed, because the front page is not a doc
+  // layout and has no <article> to close — a rewrite that quietly did nothing
+  // would leave this test green for the wrong reason, which is the one way a
+  // claimtest can be worse than no test at all.
+  const dir = repo();
+  const file = join(dir, 'site', 'index.html');
+  const text = readFileSync(file, 'utf8');
+  const mutated = text.replace('</main>',
+    '<p>A key bought for a different product is refused.</p>\n</main>');
+  assert.notEqual(mutated, text, 'the mutation must actually change the front page');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'naming the failure is what earns the rule, so naming it must be enough to fail it');
+  assert.match(output, /site\/index\.html tells a reader that a key bought for another product is refused, but states no licence API address/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

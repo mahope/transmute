@@ -679,6 +679,59 @@ check('every file the site hands a language model can quote the price and activa
   }
 });
 
+// The rule above holds the files written for language models to a file they can
+// be handed whole. It cannot see a person, because a person is handed a page
+// with somewhere to look on it. Measured by tools/measure_t118.py: four of the
+// twenty-three public files say a key bought for another product is refused —
+// `llms.txt`, `llms-full.txt` and the two support pages. The two written for
+// models name the product. **The two written for people did not**, and those are
+// the ones a buyer holding a wrong key is actually reading.
+//
+// This is the one licence failure a reader cannot fix alone. The key is right,
+// the app is right, and the server answers that the key belongs to something
+// else without saying what the right thing is. Every Mahope tool uses that same
+// server and that same 32-character key, so two keys bought on the same afternoon
+// are the same shape and the receipt is the only thing that tells them apart.
+//
+// So the trigger is the refusal itself rather than a list of files, and a file
+// earns this rule only by naming the failure. The front page and the README
+// mention keys in order to promise the CLI needs none, and a page that does not
+// describe a 403 owes no remedy for one — the two questions are asked of two
+// different readers, and scoring a file against both makes the wrong files look
+// broken while hiding the one that is. English and Danish, because the sentence
+// is a sentence and a rule that only knew the English one would have been green
+// on half the site.
+const WRONG_PRODUCT_REFUSAL =
+  /(?:licence key|license key|licensn[øo]gle|key|nøgle|nøglen)[^.]*?(?:different|another)[^.]*?product[^.]*?(?:refused|refuses|afvises|avvises)|(?:et andet produkt|et andet)[^.]*?afvises/i;
+
+check('a file that says a key is refused for another product says which product this one is', () => {
+  // The same five parts of the call the model rule asks for, because the answer
+  // is the same answer: the address and the product value are the envelope, the
+  // two field names are the letter, and a POST missing any one of them activates
+  // nothing and says nothing about why.
+  const envelope = [
+    [pro.licence_api, 'licence API address'],
+    ['activate', 'call that activates'],
+    ['license_key', '`license_key` field'],
+    ['device_id', '`device_id` field'],
+    [pro.product_key, 'product key'],
+  ];
+
+  let named = 0;
+  for (const file of claimed) {
+    const text = readFileSync(file, 'utf8');
+    if (!WRONG_PRODUCT_REFUSAL.test(text)) continue;
+    named += 1;
+    for (const [needle, what] of envelope) {
+      assert(text.includes(needle),
+        `${label(file)} tells a reader that a key bought for another product is refused, but states no ${what} ("${needle}"); a 403 is the one licence failure a reader cannot fix alone, and this site already answers it in llms.txt — just not on the page the reader is on`);
+    }
+  }
+
+  assert(named >= 4,
+    `only ${named} files name the failure, which is fewer than the four that were measured; the rule has stopped covering the files it was written for`);
+});
+
 // Ten iterations of YAML work — T75 through T92 — each of them measured against
 // PyYAML and each of them merged, and `docs/cli.md` still told every reader that
 // anchors, aliases and multi-line strings are not supported. The sentence was

@@ -50,7 +50,7 @@
       "about": {
         "@id": "https://transmute.run/#app"
       },
-      "dateModified": "2026-09-28"
+      "dateModified": "2026-09-29"
     },
     {
       "@type": "BreadcrumbList",
@@ -140,6 +140,9 @@
 <li>Paste the key and activate. The app checks it against <code>mahope.tools</code> and unlocks Pro straight away.</li>
 </ol>
 <p>The key is 32 hexadecimal characters. It is not case sensitive, and stray spaces and line breaks are cleaned up for you, so pasting the whole block from the email also works. The app remembers the key on the machine, so you activate once per machine rather than once per launch.</p>
+<h3 id="what-the-app-sends">What the app sends</h3>
+<p>Worth knowing if you would rather check a key than argue with the app. Activation is a <code>POST</code> to <code>https://mahope.tools/api/license/activate</code> carrying three fields: <code>license_key</code>, your key trimmed and lowercased; <code>device_id</code>, a name for the machine, at most 128 characters; and <code>product</code>, which for this app is always <code>transmute-desktop</code>.</p>
+<p>Every Mahope tool uses that same server and that same 32-character key, so a key bought for another one of them is refused with <em>"This license key is for another product."</em> That is the product rather than the key: the receipt that says Transmute Desktop Pro is the one you want.</p>
 <p>Pro stays unlocked for up to seven days after the last successful check, so a licence server having a bad afternoon cannot lock you out of software you have already paid for. The app checks again when it starts and before a run that needs the licence.</p>
 
 <h2 id="three-machines">Three machines</h2>
@@ -148,7 +151,7 @@
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3 id="the-key-is-rejected">The key is rejected</h3>
-<p>Copy it again from the thank-you page or the receipt email. A truncated paste is the usual cause, and whitespace is handled for you. A key bought for a different product is refused, and so is one that has been cancelled or has run out of time.</p>
+<p>Copy it again from the thank-you page or the receipt email. A truncated paste is the usual cause, and whitespace is handled for you. A key bought for a different product is refused — <a href="#what-the-app-sends">the app sends a product name, and here is which one</a> — and so is one that has been cancelled or has run out of time.</p>
 <h3 id="this-device-already-uses-a-licence">"This device already uses a licence"</h3>
 <p>All three slots are in use. Deactivate a machine you no longer use, then activate again — see <a href="#three-machines">three machines</a>.</p>
 <h3 id="pro-did-not-unlock">Pro did not unlock</h3>
@@ -171,7 +174,7 @@
 <h2 id="supporting-the-project">Supporting the project</h2>
 <p>Transmute is built and maintained by one person in Odense. If it saved you an afternoon and you feel like saying thanks, a small <a href="https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c">donation</a> keeps it independent. It is entirely optional, and nothing in the free tool is held back for it.</p>
 </article>
-<aside class="toc-side"><details class="toc" open><summary>On this page</summary><nav aria-label="On this page"><ol><li class="h2"><a href="#buying-pro">Buying Pro</a></li><li class="h3"><a href="#what-pro-changes-and-what-it-does-not">What Pro changes, and what it does not</a></li><li class="h2"><a href="#activating-your-licence">Activating your licence</a></li><li class="h2"><a href="#three-machines">Three machines</a></li><li class="h2"><a href="#troubleshooting">Troubleshooting</a></li><li class="h3"><a href="#the-key-is-rejected">The key is rejected</a></li><li class="h3"><a href="#this-device-already-uses-a-licence">&quot;This device already uses a licence&quot;</a></li><li class="h3"><a href="#pro-did-not-unlock">Pro did not unlock</a></li><li class="h3"><a href="#the-app-will-not-start-or-a-transformation-gives-the-wrong-r">The app will not start, or a transformation gives the wrong result</a></li><li class="h2"><a href="#keeping-your-key-safe">Keeping your key safe</a></li><li class="h2"><a href="#contact">Contact</a></li><li class="h2"><a href="#supporting-the-project">Supporting the project</a></li></ol></nav></details></aside>
+<aside class="toc-side"><details class="toc" open><summary>On this page</summary><nav aria-label="On this page"><ol><li class="h2"><a href="#buying-pro">Buying Pro</a></li><li class="h3"><a href="#what-pro-changes-and-what-it-does-not">What Pro changes, and what it does not</a></li><li class="h2"><a href="#activating-your-licence">Activating your licence</a></li><li class="h3"><a href="#what-the-app-sends">What the app sends</a></li><li class="h2"><a href="#three-machines">Three machines</a></li><li class="h2"><a href="#troubleshooting">Troubleshooting</a></li><li class="h3"><a href="#the-key-is-rejected">The key is rejected</a></li><li class="h3"><a href="#this-device-already-uses-a-licence">&quot;This device already uses a licence&quot;</a></li><li class="h3"><a href="#pro-did-not-unlock">Pro did not unlock</a></li><li class="h3"><a href="#the-app-will-not-start-or-a-transformation-gives-the-wrong-r">The app will not start, or a transformation gives the wrong result</a></li><li class="h2"><a href="#keeping-your-key-safe">Keeping your key safe</a></li><li class="h2"><a href="#contact">Contact</a></li><li class="h2"><a href="#supporting-the-project">Supporting the project</a></li></ol></nav></details></aside>
 </div>
 </main>
 
