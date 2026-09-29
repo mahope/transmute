@@ -638,5 +638,36 @@ test('a page that starts naming a refused key is held to the envelope the day it
   assert.match(output, /site\/index\.html tells a reader that a key bought for another product is refused, but states no licence API address/);
 });
 
+test('the support page, stripped of the way back from a dead key, is refused', () => {
+  // The bug T119 fixed, and the sibling of the one above: the same sentence names
+  // a key bought for another product and a key that has been cancelled or run
+  // out of time, the first was treated completely and the second not at all. A
+  // subscriber whose term ran out holds a key the server refuses, and the page
+  // told them what was wrong without telling them what to do.
+  const dir = repo();
+  const file = join(dir, 'site', 'support', 'index.html');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /buying again/, 'the support page is expected to say the way back is a new purchase; this is the bug under test');
+  writeFileSync(file, text.replace(/the way forward is <a href="#buying-pro">buying again<\/a>/, 'the way forward is to write in'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a block that names a dead key must say the way back is a new purchase');
+  assert.match(output, /site\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say says the way back is a new purchase/);
+});
+
+test('a block that says what to do but not where to is still refused', () => {
+  // The remedy has two halves — the act and a door to the button — because
+  // "buy again" three sections up the page is the diagnosis again, not a
+  // treatment. A page that carries the button somewhere is not answering a
+  // reader who is stuck, so only the act is not enough.
+  const dir = repo();
+  const file = join(dir, 'site', 'da', 'support', 'index.html');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /#kob-pro/, 'the Danish page is expected to link the door to the button; this is the bug under test');
+  writeFileSync(file, text.replace(/<a href="#kob-pro">at købe igen<\/a>/, 'at købe igen'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'naming the new purchase is half an answer; the door to it is the other half');
+  assert.match(output, /site\/da\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say and gives a door to the button/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -732,6 +732,156 @@ check('a file that says a key is refused for another product says which product 
     `only ${named} files name the failure, which is fewer than the four that were measured; the rule has stopped covering the files it was written for`);
 });
 
+// The rule above was written for one failure, and its own note ended by naming
+// the three it does not cover. Measured by tools/measure_t119.py: the support
+// page describes four licence failures, and three of them are answered in the
+// same block that names them — a wrong product gets the product value, a full
+// set of machines gets "deactivate one", a server having a bad afternoon gets
+// the seven days. **The fourth — a key that was cancelled or ran out of time —
+// was named on both support pages and answered nowhere, not even three sections
+// away.** The site diagnosed it and stopped, in the same sentence as a failure
+// it treats completely.
+//
+// That is a purchase-flow error, not a documentation gap. A subscriber whose
+// term ran out has paid for this product and holds a key the server refuses;
+// nothing on the site tells them that the way back is to buy again, and the
+// reader has no way to tell that from a key they never bought.
+//
+// So the question generalises from the failure to the *block*. A block that
+// names a licence failure must say what to do about it, and what to do differs
+// per failure: the envelope for a wrong product, a new purchase for a dead
+// key, a freed slot for a full set, the days already paid for when the server
+// is down. The block is the unit because a reader standing in a troubleshooting
+// list does not scroll to the buying section — and a file-level question would
+// be answered by the support page's own button, which is three sections up.
+//
+// Neither needle is a list of files, and neither is a list of pages: the trigger
+// is the sentence that names the failure, read off whatever the site publishes,
+// in both languages. The floor per failure is what was measured when the rule
+// was written, so deleting the sentences cannot make the rule go quiet.
+const LICENCE_FAILURES = [
+  {
+    code: 'WRONG',
+    what: 'a key bought for another product (403)',
+    needle: new RegExp(
+      `(?:licence key|license key|licensn[øo]gle|key|n[øo]gle|nøglen)[^.\\n]{0,160}?` +
+      `(?:different|another)[^.\\n]{0,160}?` +
+      `(?:product|one of them|af dem)?[^.\\n]{0,160}?` +
+      `(?:refused|refuses|afvises|avvises)|(?:et andet produkt|et andet)[^.\\n]{0,160}?afvises`,
+      'i'),
+    remedy: [[
+      'names the product, or the receipt that does',
+      new RegExp(`${pro.product_key}|#what-the-app-sends|#hvad-appen-sender|receipt|kvittering`, 'i'),
+    ]],
+    floor: 4,
+  },
+  {
+    code: 'DEAD',
+    what: 'a key that was cancelled or ran out of time (403)',
+    // A key, in either order: a guide that says "no more hiding cancelled orders
+    // in Excel filters" is about a spreadsheet, not a licence. The wider
+    // population this rule reads — every claimed file, not the nine the measure
+    // looked at — found that on the first run.
+    needle: new RegExp(
+      `(?:key|licens|n[øo]gle)[^.\\n]{0,160}?` +
+      `(?:cancelled|canceled|revoked|expired|run out of time|annulleret|udl[øo]bet|udl[øo]ber)` +
+      `|(?:cancelled|canceled|revoked|expired|annulleret|udl[øo]bet|udl[øo]ber)` +
+      `[^.\\n]{0,160}?(?:key|licens|n[øo]gle)`,
+      'i'),
+    remedy: [
+      [
+        'says the way back is a new purchase',
+        new RegExp(
+          `(?:buy(?:ing|s)? (?:it |again|a new )|a new purchase|new key|re-?purchase` +
+          `|k[øo]b(?:e)? (?:igen|den igen|ny)|nyt k[øo]b|ny n[øo]gle|genk[øo]b)`,
+          'i'),
+      ],
+      [
+        'and gives a door to the button',
+        /#buying-pro|#kob-pro|buy\.stripe\.com|support\/#buying|support\/#kob/i,
+      ],
+    ],
+    floor: 2,
+  },
+  {
+    code: 'SLOTS',
+    what: 'all three machines already in use (409)',
+    needle: new RegExp(
+      `(?:(?:licence|license|licens|machine|device|slot|maskin|enhed)[^.\\n]{0,160}?` +
+      `(?:already in use|bruger allerede))` +
+      `|(?:already uses a licen[cs]e|all three slots|tre pladser|device limit|enhedsgr[æa]nse)`,
+      'i'),
+    remedy: [['says how a slot is freed', /deactivate|release the slot|free the slot|sl[øo]s en plads|deaktiv/i]],
+    floor: 2,
+  },
+  {
+    code: 'SERVER',
+    what: 'the licence server is briefly unavailable (503)',
+    needle: new RegExp(
+      `(?:licence server|license server|licensserver|serveren|server)[^.\\n]{0,160}?` +
+      `(?:down|unreachable|unavailable|utilg[æa]ngelig|nede|bad afternoon|dårlig|503)` +
+      `|(?:licence server|license server|licensserver)[^.\\n]{0,160}?503`,
+      'i'),
+    // The two languages promise the same thing in different words; a needle that
+    // knew only one of them would measure the translation instead of the answer.
+    remedy: [[
+      'says what the reader keeps while the server is down',
+      /(?:seven days|7 days|syv dage|free tier|gratisniveau|gratisn[iı]v|cached|cache|stays in the free|forbliver i det gratis|keeps the features|beholder de funktioner)/i,
+    ]],
+    floor: 4,
+  },
+];
+
+const BLOCK_TAG = /<\/(?:p|li|h[1-6]|td|div)>|^\s*[-*]\s+/gim;
+const TOC_BLOCK = /<aside class="toc-side"[\s\S]*?<\/aside>/gi;
+const HEADING_BLOCK = /^\s*<h[1-6][\s>]/i;
+
+/** The blocks a reader scrolls past: a paragraph, a list item, a heading with
+ *  the text under it. A table of contents is a list of labels rather than
+ *  statements, so it is not one of them. */
+function readerBlocks(text) {
+  const parts = text.replace(TOC_BLOCK, ' ').split(BLOCK_TAG).filter((b) => b.trim());
+  const folded = [];
+  let heading = '';
+  for (const part of parts) {
+    if (HEADING_BLOCK.test(part)) {
+      heading = part;
+      continue;
+    }
+    folded.push(heading + part);
+    heading = '';
+  }
+  if (heading) folded.push(heading);
+  return folded;
+}
+
+check('a block that names a licence failure says what to do about it', () => {
+  const counts = new Map(LICENCE_FAILURES.map((f) => [f.code, 0]));
+
+  for (const file of claimed) {
+    const text = readFileSync(file, 'utf8');
+    for (const block of readerBlocks(text)) {
+      for (const failure of LICENCE_FAILURES) {
+        const sentence = failure.needle.exec(block);
+        if (!sentence) continue;
+        counts.set(failure.code, counts.get(failure.code) + 1);
+        for (const [what, remedy] of failure.remedy) {
+          assert(remedy.test(block),
+            `${label(file)} tells a reader about ${failure.what}, but in the same breath does not say ${what}; ` +
+            `a reader standing in the troubleshooting list does not scroll to the buying section, and the server has already said what is wrong — what is missing is what to do about it`);
+        }
+      }
+    }
+  }
+
+  for (const failure of LICENCE_FAILURES) {
+    const seen = counts.get(failure.code);
+    assert(seen >= failure.floor,
+      `only ${seen} block(s) name ${failure.what}, which is fewer than the ${failure.floor} measured when this rule was written; ` +
+      `the rule has stopped covering the failures it was written for`);
+  }
+});
+
 // Ten iterations of YAML work — T75 through T92 — each of them measured against
 // PyYAML and each of them merged, and `docs/cli.md` still told every reader that
 // anchors, aliases and multi-line strings are not supported. The sentence was
