@@ -503,7 +503,7 @@ test('the file robots.txt hands a language model, stripped of its price, is refu
   writeFileSync(file, text.replace('Desktop Pro is a one-time purchase of 19 USD', 'Desktop Pro is a one-time purchase'));
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1, 'the file the site hands a language model must state the price');
-  assert.match(output, /site\/llms\.txt is the file robots\.txt hands a language model and states no price/);
+  assert.match(output, /site\/llms\.txt is a file the site publishes for language models and states no price/);
 });
 
 test('a robots.txt that points language models at a file that cannot answer is refused', () => {
@@ -519,7 +519,7 @@ test('a robots.txt that points language models at a file that cannot answer is r
   writeFileSync(file, text.replace('https://transmute.run/llms.txt', 'https://transmute.run/sitemap.xml'));
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1, 'a pointer to a file with no price must not pass');
-  assert.match(output, /site\/sitemap\.xml is the file robots\.txt hands a language model and states no payment link/);
+  assert.match(output, /site\/sitemap\.xml is a file the site publishes for language models and states no payment link/);
 });
 
 test('the file robots.txt hands a language model, stripped of its product key, is refused', () => {
@@ -536,7 +536,7 @@ test('the file robots.txt hands a language model, stripped of its product key, i
   writeFileSync(file, text.replace('`transmute-desktop`', '`transmute`'));
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1, 'the file the site hands a language model must state the product key');
-  assert.match(output, /site\/llms\.txt is the file robots\.txt hands a language model and states no product key/);
+  assert.match(output, /site\/llms\.txt is a file the site publishes for language models and states no product key/);
 });
 
 test('the file robots.txt hands a language model, stripped of the licence API address, is refused', () => {
@@ -550,7 +550,54 @@ test('the file robots.txt hands a language model, stripped of the licence API ad
   writeFileSync(file, text.replaceAll('https://mahope.tools/api/license/', 'https://mahope.tools/'));
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1, 'the product key must be published with the address it is sent to');
-  assert.match(output, /site\/llms\.txt is the file robots\.txt hands a language model and states no licence API address/);
+  assert.match(output, /site\/llms\.txt is a file the site publishes for language models and states no licence API address/);
+});
+
+test('llms-full.txt, stripped of the licence call, is refused even though nothing points at it', () => {
+  // The reach, measured 2026-09-29 with tools/measure_t117.py before this test
+  // existed. The rule asked the one file robots.txt names. llms-full.txt is the
+  // file the llmstxt.org convention calls the whole text, and llms.txt links it
+  // as "Full reference in one file" — so it is a file a model can be handed, and
+  // it stated the price and 0 of the 5 parts of the call. A model given the full
+  // file could quote 19 USD and could not activate anything. Nothing caught it:
+  // the pointer does not name this file, which is exactly why the rule now asks
+  // the convention rather than the pointer.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms-full.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /https:\/\/mahope\.tools\/api\/license\//, 'llms-full.txt is expected to state the licence API address; this is the bug under test');
+  writeFileSync(file, text.replaceAll('https://mahope.tools/api/license/', 'https://mahope.tools/'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'every file the site publishes for models must state the licence call, not only the one robots.txt names');
+  assert.match(output, /site\/llms-full\.txt is a file the site publishes for language models and states no licence API address/);
+});
+
+test('a new llms file published without the call is refused the day it is added', () => {
+  // The rule reads the convention rather than a list of filenames, so a file the
+  // site adds later is covered the day it exists and not the day somebody
+  // remembers to add it here. A list is a rule that goes green the moment the
+  // site publishes somewhere else — which is the mistake T115's rule was written
+  // to avoid, in the other direction.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms-da.txt');
+  writeFileSync(file, '# Transmute\n\nEt CLI der konverterer filer.\n');
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a file published under the llms.txt convention must carry the same answer as the others');
+  assert.match(output, /site\/llms-da\.txt is a file the site publishes for language models and states no payment link/);
+});
+
+test('llms-full.txt, stripped of a field name, is refused', () => {
+  // The address and the product key are the envelope, not the letter. A POST
+  // with the wrong field name activates nothing and reports nothing about why,
+  // so the two field names are locked with the address and the key.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms-full.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /`device_id`/, 'llms-full.txt is expected to name the device_id field; this is the bug under test');
+  writeFileSync(file, text.replaceAll('`device_id`', '`machine`'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'the fields the call needs must be named wherever the address is');
+  assert.match(output, /site\/llms-full\.txt is a file the site publishes for language models and names no `device_id` field/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

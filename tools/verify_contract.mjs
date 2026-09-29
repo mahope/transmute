@@ -595,13 +595,27 @@ check('every address llms.txt, llms-full.txt, robots.txt and sitemap.xml publish
 //
 // So this asks the question the HTML rules cannot: not "does the page have a
 // way through" but "can the file the site hands a language model state the
-// price on its own". The file is read out of robots.txt rather than named here,
-// because a list of filenames is a rule that is green the moment the pointer
-// moves somewhere else — and the pointer is the thing that decides who gets
-// the file at all.
+// price and activate a key on its own". The file is read out of robots.txt
+// rather than named here, because a list of filenames is a rule that is green
+// the moment the pointer moves somewhere else — and the pointer is the thing
+// that decides who gets the file at all.
+//
+// T117 measured the reach of that rule and it was smaller than it looked: the
+// rule asked the one file robots.txt names, and `llms-full.txt` — the file the
+// llmstxt.org convention says is the whole text, linked from llms.txt as
+// "Full reference in one file" — had 0 of the 5 parts of the call while stating
+// the price. A model handed the full file could quote the price and could not
+// activate anything. So the reach is now the convention, not the one pointer:
+// every `llms*.txt` the site publishes has to answer, and the pointer still
+// decides which file is the entry. Both are read from the site, so adding
+// `llms-de.txt` is covered the day it is published rather than the day someone
+// remembers to add it here.
 const MODEL_GUIDANCE = /^\s*#\s*guidance for language models:\s*(\S+)\s*$/im;
 
-check('the file robots.txt hands a language model can quote the price and activate a key on its own', () => {
+/** The llmstxt.org convention: /llms.txt is the index, /llms-full.txt the whole text. */
+const MODEL_CONVENTION = /^llms[A-Za-z0-9-]*\.txt$/;
+
+check('every file the site hands a language model can quote the price and activate a key on its own', () => {
   const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
   const robots = readFileSync(join(root, 'site', 'robots.txt'), 'utf8');
   const named = MODEL_GUIDANCE.exec(robots)?.[1];
@@ -611,36 +625,58 @@ check('the file robots.txt hands a language model can quote the price and activa
     `site/robots.txt points language models at ${named}, which is not on the locked site ${locked}`);
 
   const rel = named.slice(locked.length).replace(/^\/+/, '');
-  const file = join(root, 'site', rel);
-  assert(existsSync(file),
+  const entry = join(root, 'site', rel);
+  assert(existsSync(entry),
     `site/robots.txt points language models at ${named}, but site/${rel} does not exist; the file the site sends models to is the whole answer`);
 
-  const text = readFileSync(file, 'utf8');
-  assert(text.includes(pro.payment_link),
-    `site/${rel} is the file robots.txt hands a language model and states no payment link, so it cannot be answered from; a model will not open /support/ and read the price off it`);
-  assert(new RegExp(`\\b${pro.amount}\\s*(?:${pro.currency}|US\\$)`, 'i').test(text),
-    `site/${rel} is the file robots.txt hands a language model and states no price; the contract locks it at ${pro.amount} ${pro.currency}`);
+  // Everything the site publishes under the convention, plus whatever the
+  // pointer names — so a site that renames llms.txt is covered by the pointer
+  // and a site that adds llms-de.txt is covered by the convention.
+  const files = readdirSync(join(root, 'site'))
+    .filter((name) => MODEL_CONVENTION.test(name))
+    .map((name) => join(root, 'site', name));
+  if (!files.some((file) => file === entry)) files.push(entry);
 
-  // The machine count is the third fact, because a price without it is half an
-  // answer: 19 USD is cheap per machine and expensive per seat, and a model
-  // recommending this for a team needs to know which one it is quoting.
-  const machines = new RegExp(`\\b(?:${pro.machines}|${Object.entries(NUMBER_WORDS).filter(([, n]) => n === pro.machines).map(([w]) => w).join('|')})\\s+(?:machines|maskiner)\\b`, 'gi');
-  assert(machines.test(text),
-    `site/${rel} is the file robots.txt hands a language model and states no machine count; the contract locks it at ${pro.machines}`);
+  for (const file of files) {
+    const where = `site/${relative(join(root, 'site'), file).split('\\').join('/')}`;
+    const text = readFileSync(file, 'utf8');
 
-  // The product key is the fourth, and it is the one that costs a sale. A model
-  // that has been handed a key and asked to activate it has to send `product`,
-  // and the API answers a wrong value with 403 and nothing else — the reader
-  // cannot tell a typo from a key they did not buy, and cannot look the value
-  // up because a model that was handed one URL does not follow links.
-  assert(text.includes(pro.product_key),
-    `site/${rel} is the file robots.txt hands a language model and states no product key, so a model asked to activate a key has to guess the \`product\` field and a wrong guess is a 403 that names no remedy; the contract locks it at ${pro.product_key}`);
+    assert(text.includes(pro.payment_link),
+      `${where} is a file the site publishes for language models and states no payment link, so it cannot be answered from; a model will not open /support/ and read the price off it`);
+    assert(new RegExp(`\\b${pro.amount}\\s*(?:${pro.currency}|US\\$)`, 'i').test(text),
+      `${where} is a file the site publishes for language models and states no price; the contract locks it at ${pro.amount} ${pro.currency}`);
 
-  // And with it, the address the call goes to. The product key is only useful
-  // next to the endpoint that consumes it; neither fact answers the question on
-  // its own, so locking one without the other locks half an answer.
-  assert(text.includes(pro.licence_api),
-    `site/${rel} is the file robots.txt hands a language model and states no licence API address, so the product key it names has nowhere to be sent; the contract locks it at ${pro.licence_api}`);
+    // The machine count is the third fact, because a price without it is half an
+    // answer: 19 USD is cheap per machine and expensive per seat, and a model
+    // recommending this for a team needs to know which one it is quoting.
+    const machines = new RegExp(`\\b(?:${pro.machines}|${Object.entries(NUMBER_WORDS).filter(([, n]) => n === pro.machines).map(([w]) => w).join('|')})\\s+(?:machines|maskiner)\\b`, 'gi');
+    assert(machines.test(text),
+      `${where} is a file the site publishes for language models and states no machine count; the contract locks it at ${pro.machines}`);
+
+    // The product key is the fourth, and it is the one that costs a sale. A model
+    // that has been handed a key and asked to activate it has to send `product`,
+    // and the API answers a wrong value with 403 and nothing else — the reader
+    // cannot tell a typo from a key they did not buy, and cannot look the value
+    // up because a model that was handed one URL does not follow links.
+    assert(text.includes(pro.product_key),
+      `${where} is a file the site publishes for language models and states no product key, so a model asked to activate a key has to guess the \`product\` field and a wrong guess is a 403 that names no remedy; the contract locks it at ${pro.product_key}`);
+
+    // And with it, the address the call goes to. The product key is only useful
+    // next to the endpoint that consumes it; neither fact answers the question on
+    // its own, so locking one without the other locks half an answer.
+    assert(text.includes(pro.licence_api),
+      `${where} is a file the site publishes for language models and states no licence API address, so the product key it names has nowhere to be sent; the contract locks it at ${pro.licence_api}`);
+
+    // And the two field names the body needs, because the address and the product
+    // key are the envelope, not the letter: a reader that cannot spell the fields
+    // cannot send them. `llms-full.txt` had 0 of 5 parts of the call — the address,
+    // the three call names, both field names and the key — while stating the
+    // price, which is the half that was already there.
+    for (const field of ['license_key', 'device_id']) {
+      assert(text.includes(field),
+        `${where} is a file the site publishes for language models and names no \`${field}\` field, so the call it documents cannot be made; a POST with the wrong field name activates nothing and says nothing about why`);
+    }
+  }
 });
 
 // Ten iterations of YAML work — T75 through T92 — each of them measured against
