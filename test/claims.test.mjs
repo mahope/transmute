@@ -669,5 +669,60 @@ test('a block that says what to do but not where to is still refused', () => {
   assert.match(output, /site\/da\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say and gives a door to the button/);
 });
 
+test('a document that names the same section twice is refused', () => {
+  // The bug T120 fixed: `## Publishing the site` was written into the README
+  // twice, eighteen lines apart and byte for byte identical, by the commit that
+  // added the deploy command. Nobody saw it because the rules read the README for
+  // what it claims and for the addresses it gives, and no rule read what it is
+  // shaped like — so the section sat there twice on GitHub and on npmjs.com.
+  const dir = repo();
+  const file = join(dir, 'README.md');
+  const text = readFileSync(file, 'utf8');
+  const mutated = text.replace('## License', '## Publishing the site\n\nOne more thing about the site.\n\n## License');
+  assert.notEqual(mutated, text, 'the mutation must actually change the README');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a reader who opens the outline sees one heading twice, so the gate must see it too');
+  assert.match(output, /README\.md names the section "Publishing the site" twice/);
+});
+
+test('a document that prints the same block of lines twice is refused, even under a new heading', () => {
+  // The sibling of the test above, and the one a heading check cannot see: the
+  // same four lines written twice, the second time under a different heading.
+  // That is what copy-paste turns into once the two copies are days apart, and it
+  // is why the rule asks of blocks as well as of names. Four lines is the floor
+  // the rule uses, and this is the paragraph in the README that meets it — the
+  // two-line ones below and above it are left alone on purpose, because a
+  // two-line repeat is a divider.
+  const dir = repo();
+  const file = join(dir, 'README.md');
+  const text = readFileSync(file, 'utf8');
+  const block = 'It refuses, naming the reason, when `HEAD` is not the default branch, when the\nworking tree is dirty, or when the credentials are missing — a branch or a\nlaptop is not something to publish. Afterwards it runs `npm run check:deploy`,\nwhich compares the live files against `main`; a 200 on its own proves nothing.';
+  assert.ok(text.includes(block), 'the README is expected to carry this paragraph once; this is the bug under test');
+  const mutated = text.replace('## License', `## Notes\n\n${block}\n\n## License`);
+  assert.notEqual(mutated, text, 'the mutation must actually change the README');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a paragraph printed twice is a section written twice, whatever it is called');
+  assert.match(output, /README\.md prints the same \d+ lines twice/);
+});
+
+test('an address in the README is followed like an address anywhere else', () => {
+  // The reach, not the finding: T114's rule read `site/` only, so of the 29
+  // published files 23 gave addresses the gate never looked at — the README and
+  // the reference the CLI itself points to among them. All 23 resolved on
+  // 2026-09-29, so widening the rule repaired nothing that day; it closed a
+  // blind spot, and this is the test that says the blind spot is closed.
+  const dir = repo();
+  const file = join(dir, 'README.md');
+  const text = readFileSync(file, 'utf8');
+  const mutated = text.replace('https://transmute.run/support/', 'https://transmute.run/guides/no-such-guide/');
+  assert.notEqual(mutated, text, 'the mutation must actually change the README');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'the README is a published file, so its addresses resolve the day they are written');
+  assert.match(output, /README\.md publishes https:\/\/transmute\.run\/guides\/no-such-guide\/, but site\/guides\/no-such-guide\/index\.html does not exist/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

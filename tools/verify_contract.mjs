@@ -16,7 +16,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -520,14 +520,42 @@ check('every page states the address the contract locks, and no other', () => {
   }
 });
 
-// The three files a reader, a crawler or a language model reaches the site
-// through, and the only ones the rules above did not follow into: the HTML rules
-// read rendered pages, and nothing read the addresses these three files publish.
-// Measured 2026-09-29 with tools/measure_t114.py, on this repository: the
-// addresses all resolved and every guide was listed, which is why this is a
-// check and not a repair. What the measurement found instead was in the prose —
-// see the next check.
+// The files a reader, a crawler or a language model reaches the site through,
+// and the ones the rules above did not follow into: the HTML rules read rendered
+// pages, and nothing read the addresses these files publish. Measured
+// 2026-09-29 with tools/measure_t114.py, on this repository: the addresses all
+// resolved and every guide was listed, which is why this is a check and not a
+// repair. What the measurement found instead was in the prose — see the next
+// check.
+//
+// Only these four are *required to exist*: they are the site's entry points, and
+// a site that lost one of them has lost a way in. Which files are *followed* is
+// a different question and is answered by walking, below — the list here is the
+// one thing this repository has learned not to grow.
 const ADDRESS_FILES = ['llms.txt', 'llms-full.txt', 'robots.txt', 'sitemap.xml'];
+
+/**
+ * Every file a reader can be handed that is not part of the build: the two
+ * public documents, and everything the site publishes.
+ *
+ * Bounded by category rather than by walking the repository, because a walk
+ * finds the build environment: `.venv-site/` holds a Playwright install with its
+ * own `storage-state.md`, which names a section twice and is nobody's document.
+ * The implementation plan is left out for a different reason — it is a log of
+ * 120 iterations, its repeated headings are how the log reads, and no reader is
+ * ever sent to it. A new document under `docs/` is covered the day it is written.
+ */
+function published() {
+  const plan = `${sep}IMPLEMENTATION_PLAN.md`;
+  const files = [
+    // collect() walks from an absolute directory and returns absolute paths;
+    // the root listing gives names, so they are joined before the two meet.
+    ...readdirSync(root).filter(name => name.endsWith('.md')).map(name => join(root, name)),
+    ...collect(join(root, 'docs'), ['.md']),
+    ...collect(join(root, 'site'), ['.html', '.txt', '.xml']),
+  ];
+  return files.filter(path => !path.endsWith(plan));
+}
 
 function addressToFile(url, locked) {
   const path = url.split('#')[0].split('?')[0].slice(locked.length);
@@ -541,24 +569,35 @@ function addressToFile(url, locked) {
   return relative;
 }
 
-check('every address llms.txt, llms-full.txt, robots.txt and sitemap.xml publish exists here', () => {
+check('the four files the site is reached through exist, and every address any published file gives resolves here', () => {
   const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
 
   for (const name of ADDRESS_FILES) {
     const file = join(root, 'site', name);
     assert(existsSync(file), `site/${name} is gone, and it is a file the site publishes`);
+  }
+
+  // Which files are followed is asked of the tree rather than of a list, because
+  // a list is green the moment the site starts publishing somewhere new, or the
+  // day the README grows an address. Measured 2026-09-29 with
+  // tools/measure_t120.py: `site/` was followed and four other published files
+  // were not — the two Markdown files a reader is most likely to be holding, the
+  // site's own security.txt, and this repository's implementation plan, which is
+  // left out as a log rather than followed as a document.
+  for (const file of published()) {
+    const name = label(file);
     const text = readFileSync(file, 'utf8');
     const addresses = new Set([
-      ...text.matchAll(new RegExp(`${locked.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\s)\\]\"'><]*[A-Za-z0-9/]`, 'g')),
+      ...text.matchAll(new RegExp(`${escapeFor(locked)}[^\\s)\\]\"'><]*[A-Za-z0-9/]`, 'g')),
       ...text.matchAll(/<loc>([^<]+)<\/loc>/g),
     ].map((match) => match[0].replace(/^<loc>|<\/loc>$/g, '')));
 
     for (const url of addresses) {
       assert(url.startsWith(`${locked}/`) || url === locked,
-        `site/${name} publishes ${url}, which is not on the locked site ${locked}`);
+        `${name} publishes ${url}, which is not on the locked site ${locked}`);
       const rel = addressToFile(url, locked);
       assert(existsSync(join(root, 'site', rel)),
-        `site/${name} publishes ${url}, but site/${rel} does not exist`);
+        `${name} publishes ${url}, but site/${rel} does not exist`);
     }
   }
 
@@ -575,6 +614,105 @@ check('every address llms.txt, llms-full.txt, robots.txt and sitemap.xml publish
     if (/noindex/.test(readFileSync(page, 'utf8'))) continue;
     const rel = relative(join(root, 'site'), page).split('\\').join('/');
     assert(listed.has(rel), `site/${rel} is indexable but sitemap.xml does not list it`);
+  }
+});
+
+// The address check above follows every address a published file gives. It
+// cannot see that a file gives the same one twice, because resolving
+// `https://transmute.run/support/` twice succeeds twice.
+//
+// Measured 2026-09-29 with tools/measure_t120.py: README.md carried its
+// `## Publishing the site` section twice, eighteen lines apart, byte for byte
+// identical — and the commit that wrote it (6e30434, the deploy command) has
+// been on GitHub and npmjs.com since the 27th, because the rules read the
+// README for what it *claims* and for the addresses it gives, and no rule read
+// what it is *shaped* like. A reader sees the same section twice under the same
+// heading, and the outline of the document has two entries with one name.
+//
+// Two needles, because the two accidents are different. A heading appears twice
+// when a section is appended to a document that already had it. A block of lines
+// appears twice when one section is written twice — including the case where
+// the second copy got a different heading, which the first needle cannot see and
+// which is what most copy-paste accidents turn into once the two copies are
+// days apart. Both are asked of the same documents, so a document that is fixed
+// in one way is held to the other.
+//
+// Fenced code is stripped first. A `#` in a shell example is a comment, not a
+// section, and the lines inside a fence are an example, not a paragraph printed
+// twice — reading either as prose is a false positive that would teach everyone
+// to ignore this rule, which is the way a gate dies.
+const FENCE = /^\s*(?:```|~~~)/;
+const HEADING_LINE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+
+/** GitHub's heading slugs, so a name is compared the way a reader's link is. */
+function headingSlug(text) {
+  return String(text).replace(/[`*_[\]()]/g, '').trim().toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-');
+}
+
+/** The document with every fenced block removed, so prose can be read as prose. */
+function unfenced(text) {
+  const out = [];
+  let fence = null;
+  for (const line of text.split('\n')) {
+    const marker = FENCE.exec(line);
+    if (fence) {
+      if (marker && line.trim().startsWith(fence)) fence = null;
+      continue;
+    }
+    if (marker) {
+      fence = line.trim().slice(0, 3);
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+check('a published document does not name the same section twice', () => {
+  for (const file of published()) {
+    if (!file.endsWith('.md')) continue;
+    const name = label(file);
+    const seen = new Map();
+    for (const [index, line] of unfenced(readFileSync(file, 'utf8')).entries()) {
+      const match = HEADING_LINE.exec(line);
+      if (!match) continue;
+      const slug = headingSlug(match[2]);
+      const first = seen.get(slug);
+      assert(first === undefined,
+        `${name} names the section ${JSON.stringify(match[2].trim())} twice, at lines ${first + 1} and ${index + 1}, so a reader sees the same heading twice in the outline`);
+      seen.set(slug, index);
+    }
+  }
+});
+
+check('a published document does not print the same block of lines twice', () => {
+  // Four lines is the floor, and it is a floor rather than a needle: a two-line
+  // repeat is a divider, and a document about repeating tables will have those
+  // on purpose. Four consecutive lines that are not a table rule or a fence is a
+  // sentence, and a sentence printed twice is a section written twice.
+  for (const file of published()) {
+    if (!file.endsWith('.md')) continue;
+    const name = label(file);
+    const runs = [];
+    let current = [];
+    for (const line of unfenced(readFileSync(file, 'utf8'))) {
+      const bare = line.trim();
+      if (bare && !['|', '```', '---', '==='].includes(bare)) current.push(line.trimEnd());
+      else {
+        if (current.length >= 4) runs.push(current.join('\n'));
+        current = [];
+      }
+    }
+    if (current.length >= 4) runs.push(current.join('\n'));
+    const firstSeen = new Map();
+    for (const [index, run] of runs.entries()) {
+      const first = firstSeen.get(run);
+      assert(first === undefined,
+        `${name} prints the same ${run.split('\n').length} lines twice, starting ${JSON.stringify(run.split('\n')[0].slice(0, 60))} — the second copy is at block ${index + 1}, the first at block ${first + 1}`);
+      firstSeen.set(run, index);
+    }
   }
 });
 
