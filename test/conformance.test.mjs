@@ -819,5 +819,85 @@ test('docs/cli.md shows a list in XML as repeated elements, and the loss it cann
   assert.deepEqual(JSON.parse(back.stdout)[0].tags, ['red', 'blue']);
 });
 
+console.log('── the commands on the page, run as they are written ──');
+
+/**
+ * One documented command and the block that shows what it printed.
+ *
+ * The cases in `fixtures/cases.mjs` cover every *operation* with an exit-0
+ * fixture, which leaves the commands that exit 2, that warn on stderr or that
+ * document a rejected shape unbound: a page can print an error message and
+ * nothing executes it, and the day the engine changes its wording the page is
+ * wrong with nothing to notice. This reads the command out of the page and runs
+ * it, so "the examples are executed by `npm test`" is a statement about the
+ * page and not about the case list.
+ *
+ * A command is only compared when the very next fence is a plain output block,
+ * which is how the page writes an example. Two of the commands in the file are
+ * followed by their output *before* them — a pipeline shown as "what you got"
+ * and then "how" — and picking their block out needs the surrounding prose, so
+ * they are counted as uncovered rather than compared against the wrong text.
+ */
+function documentedCommands() {
+  const found = [];
+  for (const block of docs.matchAll(/```bash\n([\s\S]*?)```/g)) {
+    const body = block[1].replace(/\\\n/g, ' ');
+    const lines = body.split('\n').map(l => l.trim()).filter(l => /^(?:transmute |node src\/cli\.js )/.test(l));
+    if (lines.length === 0) continue;
+    const command = lines.join(' ').replace(/\s+/g, ' ');
+    const after = docs.slice(block.index + block[0].length);
+    // The page writes the result as the very next fence, tagged with its own
+    // format (`json`, `csv`, `yaml`) or left empty for a warning.
+    const next = after.match(/^\s*```[a-z]*\n([\s\S]*?)\n```/);
+    found.push({ command, output: next ? next[1] : null });
+  }
+  return found.filter(d => {
+    if (d.command.includes('|')) return false;
+    // A command that reads `people.csv` is written for the reader's own file,
+    // not for a fixture in this repository, so there is nothing here to run it
+    // against. The examples that name a file the repository has are the ones
+    // this suite can hold still.
+    const input = d.command.split(/\s+/).find(a => a && !a.startsWith('-') && /\.[a-z]+$/i.test(a));
+    return input === undefined || existsSync(join(root, input.replace(/^["']|["']$/g, '')));
+  });
+}
+
+const documented = documentedCommands();
+const comparable = documented.filter(d => d.output !== null);
+
+test('every documented command that prints something is run, and prints what the page says', () => {
+  // 36 measured on 2026-09-29 (tools/measure_t122.py); the floor is there so
+  // that a page which loses its output blocks cannot turn this test green by
+  // having nothing left to compare.
+  assert.ok(comparable.length >= 36, `only ${comparable.length} documented commands could be compared, expected at least 36`);
+
+  for (const { command, output } of comparable) {
+    // The page writes `transmute`; the suite runs the same words through a
+    // shell — so a `--pipe` argument keeps the quotes the page gave it — with
+    // the repo's own entry point in front of it, so a clone without
+    // `npm link` measures the same thing the reader would get.
+    const spelled = command.replace(/^transmute /, `${join(root, 'src', 'cli.js')} `);
+    const result = spawnSync('/bin/sh', ['-c', spelled], { cwd: root, encoding: 'utf-8' });
+    const printed = (result.stdout || '').replace(/\n$/, '');
+    // A block that starts with a warning or an error is what the page says the
+    // run prints *beside* the data, so stderr belongs in the comparison.
+    const withStderr = /^(?:Warning|Error)/.test(output) ? `${printed}\n${(result.stderr || '').replace(/\n$/, '')}` : printed;
+    const expectedText = /^(?:Warning|Error)/.test(output)
+      ? output.split('\n').filter(l => /^(?:Warning|Error)/.test(l)).join('\n')
+      : output;
+    const actualText = /^(?:Warning|Error)/.test(output)
+      ? (result.stderr || '').replace(/\n$/, '')
+      : printed;
+    // A fence cannot hold a trailing blank line, and one at the end of a file
+    // is not something a reader copying the command can act on, so both sides
+    // are compared without it.
+    assert.equal(actualText.replace(/\s+$/, ''), expectedText.replace(/\s+$/, ''),
+      `docs/cli.md no longer shows what this command prints:\n  ${command}\n  documented: ${JSON.stringify(expectedText)}\n  actual:    ${JSON.stringify(actualText)}`);
+    assert.equal(/^Error/.test(output) ? result.status !== 0 : result.status === 0, true,
+      `docs/cli.md shows a different exit code for: ${command} (got ${result.status})`);
+    void withStderr;
+  }
+});
+
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

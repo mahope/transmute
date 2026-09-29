@@ -2360,12 +2360,12 @@ transmute test/fixtures/people.csv --pipe '[{"op":"group","by":"city"}]' --outpu
 ```
 
 ```text
-+--------+-------+---------------------------------+
-| key    | count | items                           |
-+--------+-------+---------------------------------+
-| Aarhus | 2     | [{"name":"Alice","age":30,…},{…}] |
-| Odense | 2     | [{"name":"Bob","age":25,…},{…}]   |
-+--------+-------+---------------------------------+
++--------+-------+-------------------------------------------------------------------------------------------------------------------------------------------+
+| key    | count | items                                                                                                                                     |
++--------+-------+-------------------------------------------------------------------------------------------------------------------------------------------+
+| Aarhus | 2     | [{"name":"Alice","age":30,"zip":"0074","active":true,"city":"Aarhus"},{"name":"Carla","age":41,"zip":8000,"active":true,"city":"Aarhus"}] |
+| Odense | 2     | [{"name":"Bob","age":25,"zip":2100,"active":false,"city":"Odense"},{"name":"Daniel","age":25,"zip":2100,"active":true,"city":"Odense"}]   |
++--------+-------+-------------------------------------------------------------------------------------------------------------------------------------------+
 (2 rows, 3 columns)
 ```
 
@@ -2438,6 +2438,34 @@ transmute test/fixtures/orders.json --pipe '[{"op":"rename","mapping":{"customer
       }
     ],
     "amount": 120
+  },
+  {
+    "id": 2,
+    "buyer": "bob",
+    "status": "open",
+    "items": [
+      {
+        "sku": "b-1",
+        "qty": 1
+      },
+      {
+        "sku": "b-2",
+        "qty": 3
+      }
+    ],
+    "amount": 60
+  },
+  {
+    "id": 3,
+    "buyer": "carla",
+    "status": "paid",
+    "items": [
+      {
+        "sku": "c-1",
+        "qty": 5
+      }
+    ],
+    "amount": 250
   }
 ]
 ```
@@ -2539,8 +2567,45 @@ transmute test/fixtures/orders.json --pipe '[{"op":"add","fields":{"lines":"item
     "id": 1,
     "customer": "alice",
     "status": "paid",
-    "items": [{ "sku": "a-1", "qty": 2 }],
+    "items": [
+      {
+        "sku": "a-1",
+        "qty": 2
+      }
+    ],
     "total": 120,
+    "lines": 1,
+    "big": true
+  },
+  {
+    "id": 2,
+    "customer": "bob",
+    "status": "open",
+    "items": [
+      {
+        "sku": "b-1",
+        "qty": 1
+      },
+      {
+        "sku": "b-2",
+        "qty": 3
+      }
+    ],
+    "total": 60,
+    "lines": 2,
+    "big": false
+  },
+  {
+    "id": 3,
+    "customer": "carla",
+    "status": "paid",
+    "items": [
+      {
+        "sku": "c-1",
+        "qty": 5
+      }
+    ],
+    "total": 250,
     "lines": 1,
     "big": true
   }
@@ -2683,6 +2748,27 @@ transmute test/fixtures/people.csv --output json
     "zip": "0074",
     "active": true,
     "city": "Aarhus"
+  },
+  {
+    "name": "Bob",
+    "age": 25,
+    "zip": 2100,
+    "active": false,
+    "city": "Odense"
+  },
+  {
+    "name": "Carla",
+    "age": 41,
+    "zip": 8000,
+    "active": true,
+    "city": "Aarhus"
+  },
+  {
+    "name": "Daniel",
+    "age": 25,
+    "zip": 2100,
+    "active": true,
+    "city": "Odense"
   }
 ]
 ```
@@ -2820,6 +2906,16 @@ transmute test/fixtures/users.xml --output json
     "name": "Alice",
     "age": "30",
     "city": "Aarhus"
+  },
+  {
+    "name": "Bob",
+    "age": "25",
+    "city": "Odense"
+  },
+  {
+    "name": "Carla",
+    "age": "41",
+    "city": "Aarhus"
   }
 ]
 ```
@@ -2951,6 +3047,14 @@ transmute test/fixtures/orders.json --pipe '[{"op":"pick","fields":["id","status
 <data>
   <item>
     <id>1</id>
+    <status>paid</status>
+  </item>
+  <item>
+    <id>2</id>
+    <status>open</status>
+  </item>
+  <item>
+    <id>3</id>
     <status>paid</status>
   </item>
 </data>

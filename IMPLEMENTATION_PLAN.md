@@ -1,9 +1,24 @@
 # IMPLEMENTATION_PLAN
 
-Opdateret: 2026-09-29 (T121)
+Opdateret: 2026-09-29 (T122)
 
 
 ## Mission
+
+**Næste iteration (T122): T122 er færdig på `ceo/reader-shape-claims` (fra `main`).** Den tog **T121's (b) ordret** — *hvad dokumenterne siger om sig selv* — og målingen sagde at **den flade der aldrig er spurgt, er det mest læste dokument i repoet, og at fire af dets kodeblokke viste en udgang, værktøjet aldrig har printet.** Se punkt 122.
+
+**Først de to målinger alleiterationer gør.** CI med ét kald: `success`, `success` — **halvtredsindstyvende og enoghalvtredsindstyvende grønne kørsel i træk** siden T83's rettelse. `npm run check:deploy`: **`DEPLOY-MISSING` uændret for hundrede** gang i træk, live `83f6d02`, 26 afvigende filer mod `518fd7f`. Se `❓ Til Mads` punkt 1.
+
+**Målingen, og hvor den flyttede opgaven.** `tools/measure_t122.py` spørger i to tabeller holdt adskilt (READER / DENIAL). **READER: 18 former i de fem øvrige læsere, 18 af 18 læsbare gennem den committede `run()`** — altså T114's regel dækker YAML, og de andre fem læsere har intet at skulle være sunde i. **DENIAL: 0 fornærmelser på 28 offentlige filer.** Den halvdel var ren, så målingen gik videre til det punktet egentlig skrev om: **hvad `docs/cli.md` siger om sig selv.** Den siger det i linje 4: *"The examples are executed by `npm test`, so they cannot drift away from the code"* — og 38 af dens kommandoer navngiver en fixture i repoet, hvoraf **de otte aldrig kørte i nogen suite**, fordi de er exit 2, advarsler eller afviste former.
+
+**Fundet er fire blokke, der aldrig kunne komme fra værktøjet.** Kørt gennem den rigtige binary viste de otte at være sande; kørt *alle 38* mod deres egen dokumenterede blok kom fire med en blok der ikke findes: `group --by city --output table` viste celler med `[{"name":"Alice","age":30,…},{…}]` mens værktøjet skriver hele JSON'en, `rename` og `add` viste **én post af tre**, og tre andre var forkortet. Det er præcis den løftefejl siden selv er skrevet for, i det mest læste offentlige dokument i repoet — og **den lå lige uden for rækken af caselisten, fordi caselisten dækker operationer og ikke kommandoer.**
+
+**Rettelsen er seks blokke gjort sande og én test der holder dem sande.** Testen læser kommandoen *af siden* og kører den gennem en skal med sit egen indgangsnavn, så citatet i `--pipe` overlever, og den sammenligner både data og stderr med den blok siden viser. Konformitetstjek 89 → **90**, `npm test` exit 0 i alle tolv trin (309/168/**90**/6/39/10/10/11/45, 4 workflows, **195** kontraktjek), `npm pack --dry-run` 5 filer uændret, `npm run check:site` grøn. **`src/engine.js` urørt og byte-identisk**, ingen asset-hash ændret, ingen site-fil rørt.
+
+**Baseline for den ændrede kode (uændret af en tekstrettelse):** Plausible `transmute.run` 28 dage: **1 besøgende, 1 sidevisning**, bounce 100 %, besøgstid 0 s. Cloudflare 28 d: 3922 unikke besøg-dage, 8386 sidevisninger, 23404 requests, 939 unikke sidste 7 dage. Det kan ikke måles i trafik; det kan måles i at **38 af 38 dokumenterede fixture-kommandoer nu køres af gaten**, og i at **gaten er rød for enhver blok der ikke er, hvad værktøjet printer**.
+
+**Næste opgave, målt før den skrives.** (a) **De 38 er ikke alle 51** — de 13 der læser `people.csv` eller `customers.csv` er skrevet til læserens egen fil og kan ikke køres her, og en læser der kopierer dem får `File not found`, hvilket er et svar dokumentet ikke har. (b) T121's (a) ulæst: reglen læser `id` og `#anker`, men ikke `name`. (c) `❓ Til Mads` 21: de ti guides har 0 købsknapper, målt ikke rettet. (d) `❓ Til Mads` 22: live mangler `/da/guides/`. (e) `❓ Til Mads` 25: hvad en fornyelse gør ved nøglen.
+
 
 **Næste iteration (T121): T121 er færdig på `ceo/html-one-section` (fra `main`).** Den tog **T120's egen begrænsning ordret** — *de to nye regler åbner med `if (!file.endsWith('.md')) continue;`, så de spørger aldrig en HTML-side* — og målingen sagde at **de 21 publicerede sider, læserne faktisk lander på, var ubåde dækket af påstande og af form**, og at der lå **ét rigtigt brud på den side med mest vilje**. Se punkt 121.
 
@@ -1153,6 +1168,10 @@ Repoet har ingen root scripts for lint eller typecheck. Den nuværende PR-CI bru
 
 **Læren er skrevet ned som en regel, ikke som en note: en test der kører et rigtigt script, skal køre det i et miljø, der ligner CI's.** Git-identitet er det første eksempel, og det er ikke det eneste — `HOME`, `npm_config_*`, locale og tidszone er de samme slags. Den nye test i punkt 83 siger det i én linje: release-committen skal være skrevet af temp-repoets egen identitet, så et kørende testparløb ikke kan være grønt ved at låne en udviklers navn.
 
+VERIFICÉR DEPLOY: **`docs/cli.md` viste fire kodeblokke, værktøjet aldrig har printet** — dokumentet siger i linje 4 at eksemplerne køres af `npm test` og derfor ikke kan drive fra koden, og fire af dem gjorde. `https://transmute.run/` er ikke på spil, men **den samme fil ligger på github.com/mahope/transmute og på npmjs.com** (npm renderer README og pakkens sider mod pakke-URL'en). **Verificér ved at åbne `docs/cli.md` på GitHub, gå tilafsnittet *"Group"* (kommandoen `transmute test/fixtures/people.csv --pipe '[{"op":"group","by":"city"}]' --output table' ~linje 2359) og se at `items`-cellerne nu står i fuld længde uden `…`** — før stod de som `[{"name":"Alice","age":30,…},{…}]`, hvilket intet program i repoet nogensinde har skrevet. Samme sted: `rename`-eksemplet og `add`-eksemplet skal vise **alle tre poster**, ikke den første. **Bemærk: `docs/cli.md` er ikke en site-fil, så dette er live i samme øjeblik committen er pushet.** Den nye del er `test/conformance.test.mjs` (89 → **90** konformitetstjek), der læser hver dokumenteret kommando *af siden* og kører den; `tools/measure_t122.py` er målingen. `src/engine.js` urørt, ingen asset-hash ændret.
+
+DEPLOY-MISSING, nyeste måling 2026-09-29 ca. 10:0x (T122, `npm run check:deploy` kørt fra `main` som det første i iterationen):** uændret igen, siden CEO kørte `npm run deploy:site` 27/9 kl. 17. **Live svarer til `83f6d02` (2026-09-27 16:29:56 +0200)** og **26 afvigende filer** mod `518fd7f`. Hundrede måling i træk. Se `❓ Til Mads` punkt 1.
+
 ## Deploy
 
 DEPLOY-MISSING, nyeste måling 2026-09-29 ca. 07:0x (T120, `npm run check:deploy` kørt fra `main` som det første i iterationen):** uændret igen, siden CEO kørte `npm run deploy:site` 27/9 kl. 17. **Live svarer til `83f6d02` (2026-09-27 16:29:56 +0200)** og **26 afvigende filer** mod `94e906f`. Nioghalvtredsindstyvende måling i træk. Se `❓ Til Mads` punkt 1.
@@ -1514,6 +1533,31 @@ VERIFICÉR DEPLOY: blandet indhold læses som `#text` i stedet for at blive afvi
 
 - 2026-09-27 ca. 13:4x–14:0x CEST: **T72 gennemført på `ceo/xml-prefix-names` (fra `main`), commits `fa52410` + `3aeac9e`, MERGERET til `main` som `e44a1cf`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **seksoghalvtredsindstyvende** gang i træk, live er `3d90812` og de samme 28 afvigende filer. Emnet var T71's eget næste mål: **de værdier der mangler en hel stavning.** Elle varianter målt på den rigtige binary før koden blev rørt, **med `xml.etree.ElementTree` som dommer** i stedet for værktøjets egen læser. Tre fund: et kolon i et navn er en navnerumsreference, så `{"a:b":1}` skrev `<a:b>` og **filen kunne ikke åbnes** af nogen parser; en tabulator eller et linjeskift i en attributværdi bliver et mellemrum, så værktøjet og en rigtig læser læste samme byte som to forskellige værdier; og `@xmlns` skrev en navnerumserklæring, som en konformer læser ser som nul attributter. `$` i en YAML-nøgle viste sig allerede rettet. Rettelsen er `writesAsXMLName` (skriverens spørgsmål, læserens `XML_NAME` urørt) og `escapeXMLAttr`. Se punkt 72.
 - 2026-09-27 ca. 12:4x–13:2x CEST: **T71 gennemført på `ceo/boolean-truthy` (fra `main`), commit `cf9803c`, MERGERET til `main` som `19b9737`.** `npm run check:deploy` kørt først, som altid: `DEPLOY-MISSING` uændret for **femoghalvtredsindstyvende** gang i træk, live er `3d90812`, 2 sider utilgængelige (`/support/`, `/da/support/`) og de samme 28 afvigende filer. Emnet var T70's eget næste mål: **sandhedsværdier på tværs af formaterne.** `{"a":true}` gennem alle seks formater, frem og tilbage gennem dem der kan læses, plus den passage i `docs/cli.md` der siger at `sql` skriver en streng der ligner en boolean som `'true'` og en rigtig boolean som `TRUE` — den passage stod der **uden en eneste kørsel bag sig**, og den er nu kørt ordret: **den er sand.** To veje rene, ét fund der ikke lå i koden men i en påstand: **`reportAbsentFields` sagde "json, yaml and xml keep the difference" om en `null`, og en test låste den påstand — målt er den falsk for `xml`**, fordi `String(null)` er de fire bogstaver `null`, så en fraværende værdi blev en værdi, exit 0, tom stderr. Rettelsen er `reportXMLNulls` (samme idiom som `reportXMLListShape`, talt pr. felt og med hvert steds eget navn), den rettede sætning i `reportAbsentFields`, de to advarselsblokke i `docs/cli.md` der lavede samme fejl, og en ny sektion i dokumentationen. Se punkt 71.
+
+### 122. Bind `docs/cli.md`s egne kommandoer til suiten — fire af dem viste output værktøjet aldrig har printet
+
+**Begrundelse.** T121's (b) ordret: *"hvad siderne siger om sig selv"*. `docs/cli.md` er 3 026 linjer, det er den adresse CLI'en selv printer, og npm renderer den på npmjs.com — **det er det næstmest læste dokument i repoet og det med færrest spørgsmål stillet**. Siden åbner det med *"The examples are executed by `npm test`, so they cannot drift away from the code"*, og `cases.mjs` binder hver **operation** til en exit-0-fixture. Men de kommandoer der **exit 2, advarer på stderr eller viser en afvist form** var ikke bundet til noget.
+
+**Målingen.** `tools/measure_t122.py`, to tabeller holdt adskilt (READER / DENIAL) — READER spørger 18 former i de fem øvrige læsere gennem den committede `run()` (**18 af 18 læsbare**), og DENIAL spørger de 28 offentlige filer med T114's nåle: **0 fornærmelser**. Så den halvdel var ren, og målingen gik videre til det punktet egentlig skrev om.
+
+**Fundet er fire dokumenterede outputs værktøjet aldrig har printet.** 38 dokumenterede kommandoer navngiver en fixture i repoet; **otte af dem kørte i ingen suite**. Kørt gennem den rigtige binary viste de otte at være sande — og da *alle* 38 blev kørt mod deres egen dokumenterede blok, kom **fire** med en blok der aldrig kunne komme fra værktøjet:
+
+| Kommando | Dokumenteret | Virkeligt |
+|---|---|---|
+| `group --by city --output table` | celler med `[{"name":"Alice","age":30,…},{…}]` | hele JSON'en i cellen, ubeskåret |
+| `rename --output json` | **én** post af tre | alle tre poster |
+| `add --output json` | **én** post af tre, `items` skrevet på én linje | alle tre, `items` foldet ud |
+| `people.csv --output json`, `users.xml --output json`, `pick --output json` | forkortet | fuld |
+
+Det er **præcis den løftefejl siden selv er skrevet for**: dokumentet siger det ikke kan drive, og fire steder driver det. Rettelsen er **seks blokke gjort sande** og **én test der holder dem sande**.
+
+**Testen læser kommandoen *af siden* og kører den**, så løftet er en udsagn om siden og ikke om caselisten: 90 konformitetstjek (89 → **90**), `npm test` exit 0 i alle tolv trin (309/168/**90**/6/39/10/10/11/45, 4 workflows, **195** kontraktjek), `npm pack --dry-run` 5 filer uændret, `npm run check:site` grøn. **`engine.js` urørt** (byte-identisk), ingen asset-hash ændret.
+
+**Tre målefejl i min egen måling, samme klasse som de halvfjerds tidligere.** (1) Den første nåle delte et bash-block på *hver* kommandolinje og greb det næste fence som dokumentets svar, så to af 38 viste en fejl der var **min** — den ene greb en række prosa, den anden et `json`-fence der lå *inde i* det forrige blocks svar; de er nu undtaget af en navngiven grund (et `|` i kommandoen, eller inputfilen findes ikke i repoet fordi eksemplet er skrevet til læserens egen fil). (2) Nålen sagde **exit 2** på enhver dokumenteret `Error:`, men den ene af de fire fund er en **exit 1**-afvisning; reglen spørger nu *"er den nul, når siden ikke viser en fejl, og ikke nul når den gør"*, fordi den ikke skal gætte hvilken kode klassen har. (3) `nested.yaml --output yaml` afveg på **én afsluttende tom linje**, som et fence ikke kan rumpe, og som en læser der kopierer kommandoen ikke kan handle på; begge sider sammenlignes nu uden den, og det står i kommentaren.
+
+**Baseline (uændret af en tekstrettelse):** Plausible `transmute.run` 28 dage: **1 besøgende, 1 sidevisning**, bounce 100 %, besøgstid 0 s. Cloudflare 28 d: 3922 unikke besøg-dage, 8386 sidevisninger, 23404 requests, 939 unikke sidste 7 dage. `docs/cli.md` kan ikke måles i trafik; det kan måles i at **38 af 38 dokumenterede fixture-kommandoer nu er bundet til en kørsel**, og i at gaten er rød for enhver fremtidig blok der ikke er, hvad værktøjet printer.
+
+**Næste opgave, målt før den skrives.** (a) De **38 er ikke alle 51**: de 13 der læser `people.csv` eller `customers.csv` er skrevet til læserens egen fil og kan ikke køres her — den næste måling er at spørge om de i det hele taget burde kunne, fordi en læser der kopierer dem får `File not found`, og det er et svar dokumentet ikke har. (b) T121's (a) ulæst: `name`-attributten i HTML. (c) `❓ Til Mads` 21: guides' købsknapper. (d) `❓ Til Mads` 22: live mangler `/da/guides/`. (e) `❓ Til Mads` 25: hvad en fornyelse gør ved nøglen.
 
 ### 121. Giv hvert navn sin egen adresse, og spørg de 21 sider der læserne lander på
 
