@@ -8,6 +8,10 @@ Usage: `transmute <file> [options]` or `cat <file> | transmute [options]`. Optio
 
 Pipeline steps are JSON objects run in order. Expressions are plain JavaScript with the current row as `item`, e.g. `{"op":"filter","expr":"item.age > 18"}`.
 
+## Desktop Pro
+
+The command line tool is free, unlimited and MIT licensed, and stays that way. The desktop app (macOS, Windows, Linux, built with Tauri) is free to download with three transformations per launch. Desktop Pro is a one-time purchase of 19 USD for up to three machines, and unlocks unlimited transformations in the app: https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02. The same page explains how to activate the key and what to do if it will not activate. The CLI has no limits and no licence check at all.
+
 ## Pages
 
 - [Front page (English)](https://transmute.run/): what it does, examples with real output, formats, operations, install, FAQ

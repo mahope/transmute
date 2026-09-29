@@ -578,6 +578,57 @@ check('every address llms.txt, llms-full.txt, robots.txt and sitemap.xml publish
   }
 });
 
+// Every rule above asks a *reader* a question, and a reader arrives on a page:
+// they are given HTML and they can follow a link. robots.txt names a third kind
+// of reader, in a comment the site writes on purpose —
+// `# Guidance for language models: https://transmute.run/llms.txt` — and that
+// reader never arrives anywhere. It is handed one URL and answers from the
+// text, so a link is not an answer to it: it will not open `/support/` and read
+// the price off it.
+//
+// Measured 2026-09-29 with tools/measure_t115.py, on this repository, before
+// this rule. The file robots.txt names as model guidance named Desktop Pro and
+// "three machines" and stated no price and no payment link, while
+// `llms-full.txt` — the file nothing points at — carried all four. So the one
+// file written to be answered from could not answer, and the file that could
+// answer was the one nothing was sent to.
+//
+// So this asks the question the HTML rules cannot: not "does the page have a
+// way through" but "can the file the site hands a language model state the
+// price on its own". The file is read out of robots.txt rather than named here,
+// because a list of filenames is a rule that is green the moment the pointer
+// moves somewhere else — and the pointer is the thing that decides who gets
+// the file at all.
+const MODEL_GUIDANCE = /^\s*#\s*guidance for language models:\s*(\S+)\s*$/im;
+
+check('the file robots.txt hands a language model can state the price on its own', () => {
+  const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
+  const robots = readFileSync(join(root, 'site', 'robots.txt'), 'utf8');
+  const named = MODEL_GUIDANCE.exec(robots)?.[1];
+  assert(named,
+    'site/robots.txt names no file as guidance for language models, so a model that is told to read this site is told nothing about how to use it');
+  assert(named.startsWith(`${locked}/`),
+    `site/robots.txt points language models at ${named}, which is not on the locked site ${locked}`);
+
+  const rel = named.slice(locked.length).replace(/^\/+/, '');
+  const file = join(root, 'site', rel);
+  assert(existsSync(file),
+    `site/robots.txt points language models at ${named}, but site/${rel} does not exist; the file the site sends models to is the whole answer`);
+
+  const text = readFileSync(file, 'utf8');
+  assert(text.includes(pro.payment_link),
+    `site/${rel} is the file robots.txt hands a language model and states no payment link, so it cannot be answered from; a model will not open /support/ and read the price off it`);
+  assert(new RegExp(`\\b${pro.amount}\\s*(?:${pro.currency}|US\\$)`, 'i').test(text),
+    `site/${rel} is the file robots.txt hands a language model and states no price; the contract locks it at ${pro.amount} ${pro.currency}`);
+
+  // The machine count is the third fact, because a price without it is half an
+  // answer: 19 USD is cheap per machine and expensive per seat, and a model
+  // recommending this for a team needs to know which one it is quoting.
+  const machines = new RegExp(`\\b(?:${pro.machines}|${Object.entries(NUMBER_WORDS).filter(([, n]) => n === pro.machines).map(([w]) => w).join('|')})\\s+(?:machines|maskiner)\\b`, 'gi');
+  assert(machines.test(text),
+    `site/${rel} is the file robots.txt hands a language model and states no machine count; the contract locks it at ${pro.machines}`);
+});
+
 // Ten iterations of YAML work — T75 through T92 — each of them measured against
 // PyYAML and each of them merged, and `docs/cli.md` still told every reader that
 // anchors, aliases and multi-line strings are not supported. The sentence was

@@ -488,5 +488,39 @@ test('an address in llms.txt that leads nowhere is refused', () => {
   assert.match(output, /site\/llms\.txt publishes https:\/\/transmute\.run\/guides\/csv-to-sqall\//);
 });
 
+test('the file robots.txt hands a language model, stripped of its price, is refused', () => {
+  // The measured fund, and a different reader from every rule above it. Every
+  // one of those asks a reader who has arrived on a page, and a link is an
+  // answer to that reader. robots.txt names a reader who is handed one URL and
+  // answers from the text, so a link is not an answer: it will not open
+  // /support/ and read the price off it. Measured before the rule existed,
+  // llms.txt named Desktop Pro and "three machines" and stated no price and no
+  // payment link, while llms-full.txt — which nothing points at — had all four.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /Desktop Pro is a one-time purchase of 19 USD/, 'llms.txt is expected to state the price; this is the bug under test');
+  writeFileSync(file, text.replace('Desktop Pro is a one-time purchase of 19 USD', 'Desktop Pro is a one-time purchase'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'the file the site hands a language model must state the price');
+  assert.match(output, /site\/llms\.txt is the file robots\.txt hands a language model and states no price/);
+});
+
+test('a robots.txt that points language models at a file that cannot answer is refused', () => {
+  // The same rule, from the other end: it reads the pointer out of robots.txt
+  // instead of naming llms.txt, so moving the pointer is caught too. Without
+  // this the rule would be a check on one filename that goes green the moment
+  // the site sends models somewhere else — and the pointer is what decides who
+  // gets the file at all.
+  const dir = repo();
+  const file = join(dir, 'site', 'robots.txt');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /Guidance for language models: https:\/\/transmute\.run\/llms\.txt/, 'robots.txt is expected to name the model guidance; this is the bug under test');
+  writeFileSync(file, text.replace('https://transmute.run/llms.txt', 'https://transmute.run/sitemap.xml'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a pointer to a file with no price must not pass');
+  assert.match(output, /site\/sitemap\.xml is the file robots\.txt hands a language model and states no payment link/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
