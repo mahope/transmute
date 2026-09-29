@@ -716,6 +716,59 @@ check('a published document does not print the same block of lines twice', () =>
   }
 });
 
+// The two rules above open with `if (!file.endsWith('.md')) continue;`. That
+// guard was written for a Markdown reason — `#` is a comment inside a fence —
+// and it carried over to the twenty-one published HTML pages, which is where the
+// readers of this site arrive. Nothing asked any of them what shape they are.
+//
+// Measured 2026-09-29 with tools/measure_t121.py: 21 pages, 222 ids, 206
+// headings, and exactly one defect, on the page a reader visits with the most
+// intent — site/cheatsheet/index.html held the name `count` twice, on its
+// `<section id="count">` and on the `<h3>` inside it. The twenty-four other
+// reference sections put the operation's argument in the heading's name
+// (`-expr`, `-n`, `-fields`), and `count` takes no argument, so the twenty-fifth
+// is the one where the two names were written the same and only a question could
+// tell. An id is what `#count` resolves to, so the second one is unreachable and
+// the heading's own anchor is a name nothing can hold.
+//
+// The fix was in tools/site_chrome.py, which stamped heading names without
+// knowing the names the page already carried. The heading check is left out on
+// purpose: two sections may honestly share a *title* and still be two sections,
+// which is a confusing outline rather than a broken link. A name is not a title.
+const ID_ATTR = /\sid="([^"]+)"/g;
+const IN_PAGE = /href="#([^"]+)"/g;
+
+check('a published page holds no name twice, and every name it links to is one it holds', () => {
+  for (const file of published()) {
+    if (!file.endsWith('.html')) continue;
+    const name = label(file);
+    const text = readFileSync(file, 'utf8');
+    const held = new Map();
+    for (const match of text.matchAll(ID_ATTR)) {
+      const id = match[1];
+      const line = text.slice(0, match.index).split('\n').length;
+      const first = held.get(id);
+      assert(first === undefined,
+        `${name} gives the name ${JSON.stringify(id)} to two elements, at lines ${first + 1} and ${line}, so only the first of them is a name a link can reach`);
+      held.set(id, line);
+    }
+    // The other half, and the reason the first half is worth asking: a page may
+    // name everything once and still link to something it never wrote. Measured
+    // clean on all 21 pages, and covered the day a page links to itself.
+    //
+    // `match[1]`, not `[frag]`. The iterator yields the whole match first and the
+    // groups after it, so destructuring takes `href="#main"` where the name is
+    // `main` — and the rule then fails on a page whose link is perfectly good,
+    // which is how a needle that cannot tell a match from a group teaches
+    // everyone to ignore it.
+    for (const match of text.matchAll(IN_PAGE)) {
+      const frag = match[1];
+      assert(held.has(frag),
+        `${name} links to #${frag}, which it does not hold a name for, so the link goes nowhere on the page`);
+    }
+  }
+});
+
 // Every rule above asks a *reader* a question, and a reader arrives on a page:
 // they are given HTML and they can follow a link. robots.txt names a third kind
 // of reader, in a comment the site writes on purpose —

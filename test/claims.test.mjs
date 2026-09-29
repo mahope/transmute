@@ -707,6 +707,43 @@ test('a document that prints the same block of lines twice is refused, even unde
   assert.match(output, /README\.md prints the same \d+ lines twice/);
 });
 
+test('a page that gives one name to two elements is refused', () => {
+  // The finding T121 measured: site/cheatsheet/index.html held `count` on its
+  // `<section>` and again on the `<h3>` inside it, so the second one was not a
+  // name anything could reach. Twenty-four sibling sections avoided it by
+  // putting the operation's argument in the heading's name, and `count` takes no
+  // argument — which is why only a question could tell. The mutation gives the
+  // name to a second element, which is what a copied `<section>` looks like.
+  const dir = repo();
+  const file = join(dir, 'site', 'guides', 'flatten-nested-json', 'index.html');
+  const text = readFileSync(file, 'utf8');
+  assert.ok(text.includes('<h2 id="problem">'), 'the guide is expected to carry this heading; this is the bug under test');
+  assert.ok(text.includes('<h2 id="gotchas">'), 'and this other one, which the mutation hands the same name as');
+  const mutated = text.replace('<h2 id="problem">', '<h2 id="gotchas">');
+  assert.notEqual(mutated, text, 'the mutation must actually change the page');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a name two elements share is a name the second element cannot be reached by');
+  assert.match(output, /gives the name "gotchas" to two elements, at lines \d+ and \d+/);
+});
+
+test('a page that links to a name it does not hold is refused', () => {
+  // The other half, and the one that decides whether the first half is worth
+  // asking: a page may name everything once and still link to something it
+  // never wrote. There were none on 2026-09-29, which is why this is a mutation
+  // and not a repair — the rule covers the day a page links to itself wrongly.
+  const dir = repo();
+  const file = join(dir, 'site', 'cheatsheet', 'index.html');
+  const text = readFileSync(file, 'utf8');
+  assert.ok(text.includes('href="#count"'), 'the cheatsheet is expected to link its count section; this is the bug under test');
+  const mutated = text.replace('href="#count"', 'href="#counted"');
+  assert.notEqual(mutated, text, 'the mutation must actually change the page');
+  writeFileSync(file, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a link inside a page is an address, and an address that names nothing goes nowhere');
+  assert.match(output, /site\/cheatsheet\/index\.html links to #counted, which it does not hold a name for/);
+});
+
 test('an address in the README is followed like an address anywhere else', () => {
   // The reach, not the finding: T114's rule read `site/` only, so of the 29
   // published files 23 gave addresses the gate never looked at — the README and

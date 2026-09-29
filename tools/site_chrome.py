@@ -433,19 +433,34 @@ def crumbs_html(items: list[tuple[str, str]], lang: str) -> str:
 
 
 def add_heading_ids(article: str) -> str:
-    seen: set[str] = set()
+    # Every name the page already carries on an element that is not a heading.
+    # A `<section id="count">` and a `<h3 id="count">` are one name written twice:
+    # an id is what an in-page link resolves to, so the second one is unreachable
+    # and the heading's own anchor is a name nothing can hold. Measured
+    # 2026-09-29 with tools/measure_t121.py — 1 of 222 names on
+    # site/cheatsheet/index.html, where the 24 other reference sections put the
+    # operation's argument in the heading's name (`-expr`, `-n`, `-fields`) and
+    # `count` takes no argument, so nothing but this question stood between them.
+    #
+    # Deliberately not the headings' own names. This runs twice over the same
+    # file, so a name one pass stamped is in the file when the next pass reads
+    # it; asking "is this name taken" of it answers yes and suffixes it again.
+    seen: set[str] = set(re.findall(r'<(?!h[23]\b)[a-z][^>]*?\sid="([^"]+)"', article, re.I))
 
     def sub(m):
         tag, attrs, inner = m.group(1), m.group(2), m.group(3)
         idm = re.search(r'\sid="([^"]+)"', attrs)
-        if idm:
-            seen.add(idm.group(1))
+        base = idm.group(1) if idm else slugify(inner)
+        if base not in seen:
+            seen.add(base)
             return m.group(0)
-        base = slugify(inner)
         hid, n = base, 2
         while hid in seen:
             hid, n = f"{base}-{n}", n + 1
         seen.add(hid)
+        if idm:
+            attrs = re.sub(r'\sid="[^"]+"', f' id="{hid}"', attrs)
+            return f'<{tag}{attrs}>{inner}</{tag}>'
         return f'<{tag} id="{hid}"{attrs}>{inner}</{tag}>'
 
     return re.sub(r"<(h[23])([^>]*)>(.*?)</\1>", sub, article, flags=re.S)

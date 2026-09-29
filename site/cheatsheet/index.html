@@ -49,7 +49,7 @@
       "about": {
         "@id": "https://transmute.run/#app"
       },
-      "dateModified": "2026-09-28"
+      "dateModified": "2026-09-29"
     },
     {
       "@type": "BreadcrumbList",
@@ -118,7 +118,7 @@
 <div class="doc-layout">
 <article class="prose">
 <h1>Cheat sheet</h1>
-<p class="meta"><span>Updated <time datetime="2026-09-28">28 September 2026</time></span><span>10 min read</span><button class="share" type="button" data-done="Link copied"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy link</span></button></p>
+<p class="meta"><span>Updated <time datetime="2026-09-29">29 September 2026</time></span><span>10 min read</span><button class="share" type="button" data-done="Link copied"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Copy link</span></button></p>
 <p>Everything the CLI understands, on one page. A pipeline is a JSON array of steps run in order; each step is an object with an <code>op</code> and its parameters. Expressions are plain JavaScript with the current row as <code>item</code> and its index as <code>i</code>. Every heading is a link, so you can send someone straight to <a href="#join">#join</a>.</p>
 
 <pre><code><span class="p">$</span> transmute data.json --pipe '[{"op":"filter","expr":"item.age > 18"},{"op":"sort","by":"name"}]' -o csv</code></pre>
@@ -177,7 +177,7 @@
 </section>
 
 <section class="ref" id="count" data-section="Operations">
-<h3 id="count"><a href="#count">count</a></h3>
+<h3 id="count-2"><a href="#count">count</a></h3>
 <p>Replace the rows with a single <code>{"count": n}</code>. Useful at the end of a filter.</p>
 <pre><code>{"op":"count"}</code></pre>
 <span hidden data-tags="how many total number"></span>
@@ -316,7 +316,7 @@ const { data, text, error } = run(csvText, 'csv', [{ op: 'filter', expr: 'item.a
 <h2 id="full-reference">Full reference</h2>
 <p>This page is the quick answer. The <a href="https://github.com/mahope/transmute/blob/main/docs/cli.md">CLI reference in the repository</a> has every operation with a fixture and its exact output, the coercion rules for CSV, YAML and XML, the exit codes (0 success, 1 the transformation failed, 2 usage error, 3 input error), and script and batch examples. Every command on that page is executed by <code>npm test</code>, so it cannot drift from the code.</p>
 </article>
-<aside class="toc-side"><details class="toc" open><summary>On this page</summary><nav aria-label="On this page"><ol><li class="h2"><a href="#operations">Operations</a></li><li class="h3"><a href="#filter-expr">filter expr</a></li><li class="h3"><a href="#map-expr">map expr</a></li><li class="h3"><a href="#pick-fields">pick fields</a></li><li class="h3"><a href="#omit-fields">omit fields</a></li><li class="h3"><a href="#sort-by-dir">sort by, dir</a></li><li class="h3"><a href="#unique-by">unique by</a></li><li class="h3"><a href="#group-by">group by</a></li><li class="h3"><a href="#count">count</a></li><li class="h3"><a href="#head-n">head n</a></li><li class="h3"><a href="#tail-n">tail n</a></li><li class="h3"><a href="#rename-mapping">rename mapping</a></li><li class="h3"><a href="#flatten-field">flatten field</a></li><li class="h3"><a href="#add-fields">add fields</a></li><li class="h3"><a href="#join-on-with-keep-prefix">join on, with, keep, prefix</a></li><li class="h2"><a href="#cli-flags">CLI flags</a></li><li class="h3"><a href="#pipe-p-json">--pipe, -p &lt;json&gt;</a></li><li class="h3"><a href="#format-f-json-csv-yaml-xml">--format, -f json | csv | yaml | xml</a></li><li class="h3"><a href="#output-o-json-csv-yaml-xml-table-sql">--output, -o json | csv | yaml | xml | table | sql</a></li><li class="h3"><a href="#table-name">--table &lt;name&gt;</a></li><li class="h3"><a href="#help-h">--help, -h</a></li><li class="h2"><a href="#formats">Formats</a></li><li class="h3"><a href="#json-read-write">JSON read, write</a></li><li class="h3"><a href="#csv-read-write">CSV read, write</a></li><li class="h3"><a href="#yaml-read-write">YAML read, write</a></li><li class="h3"><a href="#xml-read-write">XML read, write</a></li><li class="h3"><a href="#sql-write-only">SQL write only</a></li><li class="h3"><a href="#table-write-only">table write only</a></li><li class="h2"><a href="#expressions">Expressions</a></li><li class="h2"><a href="#from-your-own-code">From your own code</a></li><li class="h2"><a href="#no-terminal">No terminal to hand?</a></li><li class="h2"><a href="#full-reference">Full reference</a></li></ol></nav></details></aside>
+<aside class="toc-side"><details class="toc" open><summary>On this page</summary><nav aria-label="On this page"><ol><li class="h2"><a href="#operations">Operations</a></li><li class="h3"><a href="#filter-expr">filter expr</a></li><li class="h3"><a href="#map-expr">map expr</a></li><li class="h3"><a href="#pick-fields">pick fields</a></li><li class="h3"><a href="#omit-fields">omit fields</a></li><li class="h3"><a href="#sort-by-dir">sort by, dir</a></li><li class="h3"><a href="#unique-by">unique by</a></li><li class="h3"><a href="#group-by">group by</a></li><li class="h3"><a href="#count-2">count</a></li><li class="h3"><a href="#head-n">head n</a></li><li class="h3"><a href="#tail-n">tail n</a></li><li class="h3"><a href="#rename-mapping">rename mapping</a></li><li class="h3"><a href="#flatten-field">flatten field</a></li><li class="h3"><a href="#add-fields">add fields</a></li><li class="h3"><a href="#join-on-with-keep-prefix">join on, with, keep, prefix</a></li><li class="h2"><a href="#cli-flags">CLI flags</a></li><li class="h3"><a href="#pipe-p-json">--pipe, -p &lt;json&gt;</a></li><li class="h3"><a href="#format-f-json-csv-yaml-xml">--format, -f json | csv | yaml | xml</a></li><li class="h3"><a href="#output-o-json-csv-yaml-xml-table-sql">--output, -o json | csv | yaml | xml | table | sql</a></li><li class="h3"><a href="#table-name">--table &lt;name&gt;</a></li><li class="h3"><a href="#help-h">--help, -h</a></li><li class="h2"><a href="#formats">Formats</a></li><li class="h3"><a href="#json-read-write">JSON read, write</a></li><li class="h3"><a href="#csv-read-write">CSV read, write</a></li><li class="h3"><a href="#yaml-read-write">YAML read, write</a></li><li class="h3"><a href="#xml-read-write">XML read, write</a></li><li class="h3"><a href="#sql-write-only">SQL write only</a></li><li class="h3"><a href="#table-write-only">table write only</a></li><li class="h2"><a href="#expressions">Expressions</a></li><li class="h2"><a href="#from-your-own-code">From your own code</a></li><li class="h2"><a href="#no-terminal">No terminal to hand?</a></li><li class="h2"><a href="#full-reference">Full reference</a></li></ol></nav></details></aside>
 </div>
 </main>
 
