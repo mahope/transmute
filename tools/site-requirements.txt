@@ -1,10 +1,9 @@
 # Hash-låste siteværktøjer for Transmute. Generér med: npm run lock:site
 # Kilde: tools/site-requirements.in — redigér ikke denne fil i hånden.
-
 boolean-py==5.0 \
     --hash=sha256:60cbc4bad079753721d32649545505362c754e121570ada4658b852a3a318d95 \
     --hash=sha256:ef28a70bd43115208441b53a045d1549e2f0ec6e3d08a9d142cbc41c1938e8d9
-cachecontrol==0.14.4 \
+cachecontrol[filecache]==0.14.4 \
     --hash=sha256:b7ac014ff72ee199b5f8af1de29d60239954f223e948196fa3d84adaffc71d2b \
     --hash=sha256:e6220afafa4c22a47dd0badb319f84475d79108100d04e26e8542ef7d3ab05a1
 certifi==2026.7.22 \
@@ -189,9 +188,9 @@ cyclonedx-python-lib==9.1.0 \
 defusedxml==0.7.1 \
     --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
     --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
-filelock==4.0.3 \
-    --hash=sha256:30cd166e2aee2c7534ce2c33c6367c4cd051b8368e20e2c4eb0c34f699bacfab \
-    --hash=sha256:87296d60478e14204fd9406e79831400fef76693bae2895deec236c98e87a8aa
+filelock==4.2.1 \
+    --hash=sha256:7be2662e9e826b9bba28afc0f843a123280d799a2ea44bb5d35ccec67905ae44 \
+    --hash=sha256:c4c937ccac2a813cee448e662a56366cfb374c0f8702e75f295c412cc1c5d5a3
 greenlet==3.5.6 \
     --hash=sha256:0616b8f878098c5681fd8f0dc92d887551717402342a70f0abcbfea5f5ad8a44 \
     --hash=sha256:06c0e933290fba8ffe53ead4ae1b8044b0e9754b75cebf381aa2bc3e50d82fac \
@@ -379,9 +378,6 @@ packageurl-python==0.17.6 \
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
-pip==26.2.1 \
-    --hash=sha256:71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e \
-    --hash=sha256:f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f
 pip-api==0.0.35 \
     --hash=sha256:14dea05d7b3b68f4c7582213e3ae8932bbba8e1f754bf06b95263d5fa6ab4363 \
     --hash=sha256:66990d0da25378555cbb538db79384bab92d4617c6350dfd7a2126ba2a3a9894
