@@ -1,5 +1,5 @@
 {
-  "$comment": "Single source of truth for Transmute's commercial constants. tools/verify_contract.mjs fails if this file drifts from the Stripe contract or if README, docs or the site state a different price, currency, billing term, machine count, product key or payment link. No secrets belong in this file.",
+  "$comment": "Single source of truth for what Transmute states about Transmute Desktop Pro, which is no longer sold (owner decision 2026-11-22). tools/verify_contract.mjs fails if this file drifts from that decision or if README, docs or the site offer a price, a payment link or a way to buy, or state a different machine count, product key or licence address. The licence API keeps working for keys that were already issued. No secrets belong in this file.",
   "cli": {
     "package": "@mahope/transmute",
     "license": "MIT",
@@ -8,15 +8,12 @@
   "desktop_pro": {
     "product_key": "transmute-desktop",
     "product_name": "Transmute Desktop Pro",
-    "amount": 19,
-    "currency": "USD",
-    "billing": "one_time",
+    "status": "no-longer-sold",
+    "sales_closed_on": "2026-11-22",
     "machines": 3,
     "free_tier_transformations_per_launch": 3,
-    "payment_link": "https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02",
     "licence_api": "https://mahope.tools/api/license/",
     "licence_cache_days": 7,
-    "order_email": "orders@mahoje.dk",
     "source_repository_private": true
   },
   "donation_link": "https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c",
@@ -25,8 +22,8 @@
     "/#desktop",
     "/da/#desktop",
     "/support/",
-    "/support/#buying-pro",
+    "/support/#no-longer-sold",
     "/da/support/",
-    "/da/support/#buying-pro"
+    "/da/support/#solgt-ikke-laengere"
   ]
 }

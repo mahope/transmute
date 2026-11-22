@@ -130,10 +130,10 @@ def h1(path: Path) -> str:
 
 def main() -> None:
     render("Convert JSON, CSV, YAML, XML and SQL from the terminal. Nothing leaves your machine.",
-           install(), "Offline CLI and desktop app. MIT licensed. Made by Mads Holst Jensen, mahoje.dk",
+           install(), "Offline CLI. MIT licensed. Made by Mads Holst Jensen, mahoje.dk",
            OUT / "home.png")
     render("Konvertér JSON, CSV, YAML, XML og SQL fra terminalen. Intet forlader din maskine.",
-           install(), "Offline CLI og desktop-app. MIT-licens. Udviklet af Mads Holst Jensen, mahoje.dk",
+           install(), "Offline CLI. MIT-licens. Udviklet af Mads Holst Jensen, mahoje.dk",
            OUT / "home-da.png")
     for page in sorted((SITE / "guides").glob("*/index.html")):
         slug = page.parent.name

@@ -3180,13 +3180,13 @@ The same engine runs in the browser on [transmute.run](https://transmute.run/)
 and inside Transmute Desktop, and the test suite runs every example on this
 page through both copies to prove the output is identical.
 
-Transmute Desktop is the paid, separate app: $19 one time, up to three
-machines, with a visual pipeline builder for people who would rather not write
-JSON. The CLI in this repository is free, MIT licensed and complete on its own —
-you never need the desktop app to use Transmute.
+Transmute Desktop was the separate, paid app with a visual pipeline builder for
+people who would rather not write JSON. It is no longer sold. The CLI in this
+repository is free, MIT licensed and complete on its own — you never needed the
+desktop app to use Transmute.
 
-- Desktop and the purchase: https://transmute.run/
-- License help: https://transmute.run/support/
+- About Transmute Desktop: https://transmute.run/#desktop
+- License help for keys that were already issued: https://transmute.run/support/
 
 ## Keeping this page honest
 

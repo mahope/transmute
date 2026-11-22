@@ -402,39 +402,39 @@ test('deleting the derivation is refused, so the rule is not satisfied by absenc
   assert.match(output, /src\/cli\.js must bind `repository` from package\.json/);
 });
 
-test('a page whose path to the paid product crosses into another language is refused', () => {
-  // The measured fund, T112. Thirteen pages were held to this question, twelve
-  // pointed at a page in their own language, and the Danish front page pointed
-  // at the English support page — so a reader who had decided to buy was handed
-  // the price in a language they did not ask for. The rule that shipped with
-  // T105 is a set of strings and could not see it: the English path was in the
-  // set, so the page was credited for having a way through.
+test('a page whose link to the Transmute Desktop notice crosses into another language is refused', () => {
+  // The measured fund, T112, when the page still sold the app. Thirteen pages
+  // were held to this question, twelve pointed at a page in their own language,
+  // and the Danish front page pointed at the English support page — so a reader
+  // was handed the price in a language they did not ask for. The shop is closed
+  // and the question survives it: a Danish reader sent to an English notice about
+  // what happened to the app has been told nothing they can read.
   const dir = repo();
   const page = join(dir, 'site', 'da', 'index.html');
   const text = readFileSync(page, 'utf8');
-  assert.match(text, /href="\/da\/support\/#kob-pro"/, 'the Danish page is expected to point at the Danish path; this is the bug under test');
-  writeFileSync(page, text.replace('href="/da/support/#kob-pro"', 'href="/support/#buying-pro"'));
+  assert.match(text, /href="\/da\/support\/#solgt-ikke-laengere"/, 'the Danish page is expected to point at the Danish path; this is the bug under test');
+  writeFileSync(page, text.replace('href="/da/support/#solgt-ikke-laengere"', 'href="/support/#no-longer-sold"'));
   const { code, output } = contractCheck(dir);
-  assert.equal(code, 1, 'a path to the paid product that changes language must not pass');
-  assert.match(output, /site\/da\/index\.html is written in "da" but its path to the paid product, \/support\/#buying-pro, is a "en" page/);
+  assert.equal(code, 1, 'a link to the notice that changes language must not pass');
+  assert.match(output, /site\/da\/index\.html is written in "da" but its link to the Transmute Desktop notice, \/support\/#no-longer-sold, is a "en" page/);
 });
 
-test('a path to a paid product that leads nowhere is refused', () => {
+test('a path to the Transmute Desktop notice that leads nowhere is refused', () => {
   // The other half, and the reason the rule cannot simply be "is the English
-  // anchor name present". The set above also accepted `/da/support/#buying-pro`,
+  // anchor name present". A set that accepts `/da/support/#no-longer-sold` accepts
   // a path that leads nowhere: the Danish support page calls that section
-  // `kob-pro`. So a fix that translated the anchor *name* and nothing else would
-  // have passed the gate and sent Danish readers to a dead link.
+  // `solgt-ikke-laengere`. A fix that copied the English anchor name and nothing
+  // else would pass the gate and send Danish readers to a dead link.
   const dir = repo();
   const rule = join(dir, 'tools', 'verify_contract.mjs');
   const text = readFileSync(rule, 'utf8');
   const at = text.indexOf('const PRO_PATHS');
-  assert.ok(at > 0, 'the paid-path set should be readable by this test');
+  assert.ok(at > 0, 'the notice-path set should be readable by this test');
   writeFileSync(rule, text.slice(0, at)
-    + text.slice(at).replace("'/da/support/#kob-pro'", "'/da/support/#buying-pro'"));
+    + text.slice(at).replace("'/da/support/#solgt-ikke-laengere'", "'/da/support/#no-longer-sold'"));
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1, 'a whitelisted path with no anchor behind it must not pass');
-  assert.match(output, /the rule accepts \/da\/support\/#buying-pro, but the page it opens has no id="buying-pro"/);
+  assert.match(output, /the rule accepts \/da\/support\/#no-longer-sold, but the page it opens has no id="no-longer-sold"/);
 });
 
 test('a Danish page may still link an English guide when it says so', () => {
@@ -488,22 +488,68 @@ test('an address in llms.txt that leads nowhere is refused', () => {
   assert.match(output, /site\/llms\.txt publishes https:\/\/transmute\.run\/guides\/csv-to-sqall\//);
 });
 
-test('the file robots.txt hands a language model, stripped of its price, is refused', () => {
+test('the file robots.txt hands a language model, stripped of the notice that the app is no longer sold, is refused', () => {
   // The measured fund, and a different reader from every rule above it. Every
   // one of those asks a reader who has arrived on a page, and a link is an
   // answer to that reader. robots.txt names a reader who is handed one URL and
   // answers from the text, so a link is not an answer: it will not open
-  // /support/ and read the price off it. Measured before the rule existed,
-  // llms.txt named Desktop Pro and "three machines" and stated no price and no
-  // payment link, while llms-full.txt — which nothing points at — had all four.
+  // /support/ and learn that the app can no longer be bought. While the app was
+  // sold, the same rule asked this file for the price and the payment link.
   const dir = repo();
   const file = join(dir, 'site', 'llms.txt');
   const text = readFileSync(file, 'utf8');
-  assert.match(text, /Desktop Pro is a one-time purchase of 19 USD/, 'llms.txt is expected to state the price; this is the bug under test');
-  writeFileSync(file, text.replace('Desktop Pro is a one-time purchase of 19 USD', 'Desktop Pro is a one-time purchase'));
+  assert.match(text, /no longer sold/, 'llms.txt is expected to say the app is no longer sold; this is the bug under test');
+  writeFileSync(file, text.replaceAll('no longer sold', 'sold'));
   const { code, output } = contractCheck(dir);
-  assert.equal(code, 1, 'the file the site hands a language model must state the price');
-  assert.match(output, /site\/llms\.txt is a file the site publishes for language models and states no price/);
+  assert.equal(code, 1, 'the file the site hands a language model must say the app is no longer sold');
+  assert.match(output, /site\/llms\.txt is a file the site publishes for language models and does not say Transmute Desktop is no longer sold/);
+});
+
+test('a payment link put back into the file robots.txt hands a language model is refused', () => {
+  // The notice is half of it. A model that is told the app is no longer sold and
+  // also handed a checkout URL will quote the URL.
+  const dir = repo();
+  const file = join(dir, 'site', 'llms.txt');
+  const text = readFileSync(file, 'utf8');
+  writeFileSync(file, `${text}\nBuy: https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02\n`);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a checkout link must not come back, in any file');
+  assert.match(output, /site\/llms\.txt: links no payment page, only the donation link: Stripe link https:\/\/buy\.stripe\.com\/eVqbJ0dvdbaW55cgN9bMQ02/);
+});
+
+test('a price or a buy button on a page is refused', () => {
+  const dir = repo();
+  const page = join(dir, 'site', 'guides', 'csv-to-sql', 'index.html');
+  const text = readFileSync(page, 'utf8');
+  const mutated = text.replace('</article>',
+    '<p>Pro costs 19 USD. <a class="btn" href="/support/">Buy Pro</a></p>\n</article>');
+  assert.notEqual(mutated, text, 'the mutation must actually change the guide');
+  writeFileSync(page, mutated);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a price and a button that asks a reader to pay must not pass');
+  assert.match(output, /site\/guides\/csv-to-sql\/index\.html: states no price: states a price \("19 USD"\)/);
+  assert.match(output, /site\/guides\/csv-to-sql\/index\.html: gives no way to buy: "Buy Pro" is a button or link that asks a reader to pay/);
+});
+
+test('a README that stops saying the app is no longer sold is refused, so the notice is not satisfied by absence', () => {
+  const dir = repo();
+  const file = join(dir, 'README.md');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /no longer sold/, 'the README is expected to carry the notice; this is the bug under test');
+  writeFileSync(file, text.replaceAll('no longer sold', 'sold separately'));
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a surface that names the app without saying it is no longer sold must not pass');
+  assert.match(output, /README\.md does not say that Transmute Desktop is no longer sold/);
+});
+
+test('a contract that grows a price or a payment link again is refused', () => {
+  const dir = repo();
+  const contract = readJson(dir, 'tools/product-contract.json');
+  contract.desktop_pro.payment_link = 'https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02';
+  writeJson(dir, 'tools/product-contract.json', contract);
+  const { code, output } = contractCheck(dir);
+  assert.equal(code, 1, 'a payment link in the contract is the first sign of a rebuilt sales path');
+  assert.match(output, /payment_link is back in the contract: Transmute Desktop Pro is no longer sold/);
 });
 
 test('a robots.txt that points language models at a file that cannot answer is refused', () => {
@@ -518,8 +564,8 @@ test('a robots.txt that points language models at a file that cannot answer is r
   assert.match(text, /Guidance for language models: https:\/\/transmute\.run\/llms\.txt/, 'robots.txt is expected to name the model guidance; this is the bug under test');
   writeFileSync(file, text.replace('https://transmute.run/llms.txt', 'https://transmute.run/sitemap.xml'));
   const { code, output } = contractCheck(dir);
-  assert.equal(code, 1, 'a pointer to a file with no price must not pass');
-  assert.match(output, /site\/sitemap\.xml is a file the site publishes for language models and states no payment link/);
+  assert.equal(code, 1, 'a pointer to a file that does not say the app is gone must not pass');
+  assert.match(output, /site\/sitemap\.xml is a file the site publishes for language models and does not say Transmute Desktop is no longer sold/);
 });
 
 test('the file robots.txt hands a language model, stripped of its product key, is refused', () => {
@@ -583,7 +629,7 @@ test('a new llms file published without the call is refused the day it is added'
   writeFileSync(file, '# Transmute\n\nEt CLI der konverterer filer.\n');
   const { code, output } = contractCheck(dir);
   assert.equal(code, 1, 'a file published under the llms.txt convention must carry the same answer as the others');
-  assert.match(output, /site\/llms-da\.txt is a file the site publishes for language models and states no payment link/);
+  assert.match(output, /site\/llms-da\.txt is a file the site publishes for language models and does not say Transmute Desktop is no longer sold/);
 });
 
 test('llms-full.txt, stripped of a field name, is refused', () => {
@@ -638,35 +684,38 @@ test('a page that starts naming a refused key is held to the envelope the day it
   assert.match(output, /site\/index\.html tells a reader that a key bought for another product is refused, but states no licence API address/);
 });
 
-test('the support page, stripped of the way back from a dead key, is refused', () => {
+test('the support page, stripped of what to do about a dead key, is refused', () => {
   // The bug T119 fixed, and the sibling of the one above: the same sentence names
   // a key bought for another product and a key that has been cancelled or run
   // out of time, the first was treated completely and the second not at all. A
-  // subscriber whose term ran out holds a key the server refuses, and the page
-  // told them what was wrong without telling them what to do.
+  // holder whose key the server refuses was told what was wrong without being
+  // told what to do. While the app was sold the answer was to buy again; it is no
+  // longer sold, so the answer is that there is no new purchase and who to write to.
   const dir = repo();
   const file = join(dir, 'site', 'support', 'index.html');
   const text = readFileSync(file, 'utf8');
-  assert.match(text, /buying again/, 'the support page is expected to say the way back is a new purchase; this is the bug under test');
-  writeFileSync(file, text.replace(/the way forward is <a href="#buying-pro">buying again<\/a>/, 'the way forward is to write in'));
+  const sentence = ', and since Transmute Desktop is no longer sold there is no new purchase to make. Write a line to';
+  assert.ok(text.includes(sentence), 'the support page is expected to say there is no new purchase to make; this is the bug under test');
+  writeFileSync(file, text.replace(sentence, '. Write a line to'));
   const { code, output } = contractCheck(dir);
-  assert.equal(code, 1, 'a block that names a dead key must say the way back is a new purchase');
-  assert.match(output, /site\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say says the way back is a new purchase/);
+  assert.equal(code, 1, 'a block that names a dead key must say there is no new purchase to make');
+  assert.match(output, /site\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say says there is no new purchase to make/);
 });
 
-test('a block that says what to do but not where to is still refused', () => {
-  // The remedy has two halves — the act and a door to the button — because
-  // "buy again" three sections up the page is the diagnosis again, not a
-  // treatment. A page that carries the button somewhere is not answering a
-  // reader who is stuck, so only the act is not enough.
+test('a block that says there is no new purchase but not where to write is still refused', () => {
+  // The remedy has two halves — the fact and a door to a person — because "there
+  // is nothing to buy" with nowhere to go is the diagnosis again, not a
+  // treatment. A page that says the app is gone somewhere is not answering a
+  // reader who is stuck, so only the fact is not enough.
   const dir = repo();
   const file = join(dir, 'site', 'da', 'support', 'index.html');
   const text = readFileSync(file, 'utf8');
-  assert.match(text, /#kob-pro/, 'the Danish page is expected to link the door to the button; this is the bug under test');
-  writeFileSync(file, text.replace(/<a href="#kob-pro">at købe igen<\/a>/, 'at købe igen'));
+  const door = 'Skriv en linje til <a href="https://mahoje.dk">mahoje.dk</a>';
+  assert.ok(text.includes(door), 'the Danish page is expected to name where to write; this is the bug under test');
+  writeFileSync(file, text.replace(door, 'Skriv en linje til forfatteren'));
   const { code, output } = contractCheck(dir);
-  assert.equal(code, 1, 'naming the new purchase is half an answer; the door to it is the other half');
-  assert.match(output, /site\/da\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say and gives a door to the button/);
+  assert.equal(code, 1, 'saying there is no new purchase is half an answer; where to write is the other half');
+  assert.match(output, /site\/da\/support\/index\.html tells a reader about a key that was cancelled or ran out of time \(403\), but in the same breath does not say and says where to write instead/);
 });
 
 test('a document that names the same section twice is refused', () => {

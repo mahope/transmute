@@ -1,13 +1,16 @@
 /**
  * Product contract check.
  *
- * The Stripe contract fixes Transmute Desktop Pro's commercial constants, and
- * this repository is the only public place where they are quoted. This script
- * keeps README, docs/ and the site from drifting away from that contract, and
- * keeps the claims they make verifiable: only the official Payment Link, no
- * price or machine count invented per page, no link to a private repository,
- * no reference to a workflow that does not exist, and one version for npm, the
- * CLI and the site.
+ * Transmute Desktop Pro is no longer sold (owner decision 2026-11-22): the
+ * payment links are closed in Stripe and the sales pages are shut. What stays
+ * is the CLI, which is free under the MIT licence, and the licence server, which
+ * keeps activating keys that were already issued. This script keeps README,
+ * docs/ and the site from drifting away from that decision: no payment link, no
+ * price, no way to buy, and a plain statement on every page that says what
+ * Transmute Desktop is that it is no longer sold. It also keeps the claims that
+ * remain verifiable: the licence call an existing customer needs, the machine
+ * count, no link to a private repository, no reference to a workflow that does
+ * not exist, and one version for npm, the CLI and the site.
  *
  * It is part of `npm test`. Fix tools/product-contract.json or the page, not
  * this script, when it fails — unless the contract itself changed, which is
@@ -24,14 +27,11 @@ import { fileURLToPath } from 'node:url';
 const LOCKED = {
   product_key: 'transmute-desktop',
   product_name: 'Transmute Desktop Pro',
-  amount: 19,
-  currency: 'USD',
-  billing: 'one_time',
+  status: 'no-longer-sold',
+  sales_closed_on: '2026-11-22',
   machines: 3,
-  payment_link: 'https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02',
   licence_api: 'https://mahope.tools/api/license/',
   licence_cache_days: 7,
-  order_email: 'orders@mahoje.dk',
   donation_link: 'https://donate.stripe.com/7sYeVcbn50wieFM8gDbMQ0c',
   site_url: 'https://transmute.run',
 };
@@ -45,6 +45,21 @@ const SECRET_PATTERN = /\b(?:sk|rk|pk|whsec)_[A-Za-z0-9]{8,}|\bBearer\s+[A-Za-z0
 const WORD_BEFORE = '(?<![\\p{L}\\p{N}_])';
 const WORD_AFTER = '(?![\\p{L}\\p{N}_])';
 const RECURRING_CLAIM = new RegExp(`${WORD_BEFORE}(?:per month|monthly|per year|yearly|annually|subscription fee|per month or year)${WORD_AFTER}|${WORD_BEFORE}(?:pr\\. måned|månedlig|per år|årlig)${WORD_AFTER}`, 'iu');
+/**
+ * What the contract no longer holds. Transmute Desktop Pro is not sold, so a
+ * price, a currency, a billing term, a payment link or an order address coming
+ * back into the contract is the first sign that a sales path is being rebuilt.
+ */
+const SALES_KEYS = ['amount', 'currency', 'billing', 'payment_link', 'order_email'];
+/** A link that sells: Stripe's checkout host, or the anchors the sales pages used. */
+const BUYING_HREF = /^https?:\/\/buy\.stripe\.com\b|#(?:buying-pro|kob-pro)\b/i;
+/** The label of a button or link that asks a reader to pay. */
+const BUYING_LABEL = /^\s*(?:buy|purchase|k[øo]b)\b/i;
+/** A price: a number with a currency, or a dollar amount with a billing word after it. */
+const PRICE = /(\d+)\s*(?:USD|US\$|EUR|DKK|kr\.?)(?![\p{L}\p{N}_])|\$\s?\d+(?:[.,]\d+)?\s+(?:one[- ]time|once|per|a year|a month|\/)/giu;
+/** The sentence every surface that names the product has to carry, in both languages. */
+const NO_LONGER_SOLD = /no longer sold|sælges ikke længere/i;
+
 /** Anything that promises a desktop build this repository does not publish. */
 const PUBLIC_DOWNLOAD_CLAIM = /github\.com\/mahope\/transmute\/releases/i;
 const DESKTOP_LABEL = /desktop[-\s]?app|desktopapp|macos,? windows/i;
@@ -174,6 +189,10 @@ check('product-contract.json states the locked commercial constants', () => {
     const actual = key in contract ? contract[key] : pro[key];
     assert(actual === value, `${key} is ${JSON.stringify(actual)}, the contract says ${JSON.stringify(value)}`);
   }
+  for (const key of SALES_KEYS) {
+    assert(!(key in contract) && !(key in pro),
+      `${key} is back in the contract: Transmute Desktop Pro is no longer sold, so there is no price, billing term, payment link or order address to state`);
+  }
   assert(pro.source_repository_private === true, 'desktop_pro.source_repository_private must be true: the desktop app is built from a private repository');
   assert(Number.isInteger(pro.free_tier_transformations_per_launch) && pro.free_tier_transformations_per_launch > 0, 'desktop_pro.free_tier_transformations_per_launch must be a positive number, so the free tier is stated in one place');
 });
@@ -194,19 +213,18 @@ for (const file of claimed) {
   const text = readFileSync(file, 'utf8');
   const name = label(file);
 
-  check(`${name}: quotes only the official Stripe links`, () => {
+  check(`${name}: links no payment page, only the donation link`, () => {
     for (const [url] of text.matchAll(/https:\/\/(?:buy|donate)\.stripe\.com\/[A-Za-z0-9]+/g)) {
-      const allowed = [pro.payment_link, contract.donation_link];
-      assert(allowed.includes(url), `unknown Stripe link ${url}`);
+      assert(url === contract.donation_link,
+        `Stripe link ${url}: Transmute Desktop is no longer sold, so the donation link is the only Stripe link a page may carry`);
     }
+    assert(!/buy\.stripe\.com/i.test(text),
+      'mentions buy.stripe.com: Transmute Desktop is no longer sold, so no page may point at a checkout');
   });
 
-  check(`${name}: quotes the locked price`, () => {
-    for (const [, amount] of text.matchAll(/(\d+)\s*(?:USD|US\$)\b/g)) {
-      assert(Number(amount) === pro.amount, `price ${amount} ${pro.currency} does not match the contract (${pro.amount} ${pro.currency})`);
-    }
-    for (const [, amount, unit] of text.matchAll(/(\d+)\s*(EUR|DKK|kr\.?)\b/gi)) {
-      assert(false, `hardcoded ${unit} price ${amount}: Stripe chooses the currency, so only ${pro.amount} ${pro.currency} is a product constant`);
+  check(`${name}: states no price`, () => {
+    for (const [match] of text.matchAll(PRICE)) {
+      assert(false, `states a price ("${match.trim()}"): Transmute Desktop is no longer sold, so no page may quote one`);
     }
   });
 
@@ -262,82 +280,83 @@ for (const file of claimed) {
         assert(allowed.includes(url), `"${plain}" points at ${url}, which is not one of ${allowed.join(', ')}`);
       }
     });
+
+    check(`${name}: gives no way to buy`, () => {
+      for (const [, url, inner] of text.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)) {
+        const plain = inner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        assert(!BUYING_HREF.test(url),
+          `"${plain}" points at ${url}, which is a way to buy: Transmute Desktop is no longer sold`);
+        assert(!BUYING_LABEL.test(plain),
+          `"${plain}" is a button or link that asks a reader to pay: Transmute Desktop is no longer sold`);
+      }
+    });
   }
 }
 
-// Eleven of the seventeen indexable pages — every guide and the cheat sheet,
-// which is where a visitor arrives from a search result — carried the paid
-// product in the shared footer and nowhere else. That is chrome, identical on
-// every page, so a reader who lands on one guide and wants the app is told
-// where to look without being told anything about whether it is worth it.
-// Measured by tools/measure_t105.py, which counts body links and reports the
-// footer separately for exactly that reason.
+// Until 2026-11-22 this rule asked every page a reader lands on to give them a
+// way to the paid product (now Transmute Desktop), because eleven of the seventeen indexable pages
+// carried it in the shared footer and nowhere else (tools/measure_t105.py). The
+// product is no longer sold, so the rule is turned round rather than removed: a
+// page that can be bought from is the failure now, and the pages that say what
+// Transmute Desktop is have to say that it is no longer sold.
 //
-// The rule asks one question per page: does the body give a reader a way
-// through? A page that is not a place someone decides to buy is exempt and has
-// to say so here, so adding an exempt page is a visible decision rather than a
-// gap in a count. Privacy and terms pages are exempt because nobody arrives
-// from a search result intending to buy on them, and a buy button in a privacy
-// policy is the ontrængende case the product rules rule out.
+// The first half is read per file above (no payment link, no price, no button
+// that asks a reader to pay). This is the second half, the one a page cannot
+// satisfy by saying nothing.
+//
+// A page that is not a place someone would look for the product is exempt and
+// has to say so here, so adding an exempt page is a visible decision rather than
+// a gap in a count. Privacy and search pages and the error page are exempt from
+// the language rule below for the reason they always were: nobody arrives on
+// them looking for the app.
 const PRO_PATH_EXEMPT = [
-  { match: /privacy/, why: 'a privacy page is not where a reader decides to buy, and selling there would be pushy' },
-  { match: /404\.html$/, why: 'an error page has no reader to sell to' },
+  { match: /privacy/, why: 'a privacy page is not where a reader looks for the app' },
+  { match: /404\.html$/, why: 'an error page has no reader to tell' },
   { match: /search\//, why: 'search results are a list, not a landing page' },
-  { match: /support\//, why: 'the support page is where the buy button lives' },
+  { match: /support\//, why: 'the support page is the destination of the links the rule reads, not a page that points at it' },
 ];
 
-check('every page a reader lands on gives them a way to the paid product', () => {
-  const buying = new Set([
-    pro.payment_link,
-    '/support/', '/support/#buying-pro', '/da/support/', '/da/support/#kob-pro',
-    '/#desktop', '/da/#desktop',
-  ]);
-  let measured = 0;
+/** The surfaces that name Transmute Desktop, and the language each is written in. */
+const CLOSED_NOTICE_SURFACES = [
+  'README.md',
+  'site/index.html',
+  'site/da/index.html',
+  'site/support/index.html',
+  'site/da/support/index.html',
+  'site/llms.txt',
+  'site/llms-full.txt',
+];
 
-  for (const file of claimed) {
-    if (!file.endsWith('.html')) continue;
-    const rel = file.slice(root.length + 1).replace(/\\/g, '/');
-    if (/noindex/.test(readFileSync(file, 'utf8'))) continue;
-    const exempt = PRO_PATH_EXEMPT.find(e => e.match.test(rel));
-    if (exempt) continue;
-    measured += 1;
-
-    // The footer is stripped before the question is asked. Counting it made
-    // this check report that every page was fine, which was true and useless:
-    // chrome is the same on all of them and is not where the reader is.
-    const body = readFileSync(file, 'utf8')
-      .replace(/<header\b[\s\S]*?<\/header>/g, '')
-      .replace(/<footer\b[\s\S]*?<\/footer>/g, '');
-
-    const paths = [...body.matchAll(/<a\b[^>]*href="([^"]+)"/g)]
-      .map(([, href]) => href)
-      .filter(href => buying.has(href));
-    assert(paths.length > 0,
-      `${rel} gives a reader no way to the paid product outside the shared footer; the guides and the cheat sheet are where visitors arrive from a search result, so that is where the path has to be`);
+check('every surface that names Transmute Desktop says it is no longer sold', () => {
+  for (const rel of CLOSED_NOTICE_SURFACES) {
+    const text = readFileSync(join(root, rel), 'utf8');
+    assert(NO_LONGER_SOLD.test(text),
+      `${rel} does not say that Transmute Desktop is no longer sold, so a reader who arrives here is left to guess whether the app can still be bought`);
+    assert(/Transmute Desktop/.test(text),
+      `${rel} does not name Transmute Desktop, so the notice it carries is about nothing`);
   }
-
-  assert(measured >= 11,
-    `only ${measured} pages are held to this rule, which is fewer than the eleven that were measured as missing a path; the rule has stopped covering the pages it was written for`);
 });
 
-// The rule above is a set of strings, and a set of strings cannot see where it
-// lands. Measured by tools/measure_t112.py on this repository: of the thirteen
-// pages it holds, twelve pointed at a page in their own language and **one — the
-// Danish front page — pointed at the English support page**, so a reader who had
-// decided to buy was handed the price in a language they did not ask for, at the
-// one step that states it. The same measurement found that the set above also
-// accepted `/da/support/#buying-pro`, a path that leads nowhere: the Danish
-// support page calls that section `kob-pro`, so whitelisting the English anchor
-// credited a page for a door that is not there and would have passed a fix that
-// simply translated the anchor name.
+check('the no-way-to-buy rule is not satisfied by scanning nothing', () => {
+  const measured = claimed.filter(file => file.endsWith('.html')).length;
+  assert(measured >= 17,
+    `only ${measured} pages are held to the no-way-to-buy rule, which is fewer than the seventeen it was written for; the rule has stopped covering the pages it was written for`);
+});
+
+// The rules above are sets of strings, and a set of strings cannot see where it
+// lands. Measured by tools/measure_t112.py when the site still sold the app: of
+// thirteen pages, twelve pointed at a page in their own language and **one — the
+// Danish front page — pointed at the English support page**, and the set also
+// accepted `/da/support/#buying-pro`, a path that leads nowhere because the
+// Danish page calls that section by another name. Both failures survive the
+// closing of the shop: a Danish reader sent to an English notice, and a link to
+// an anchor that is not there.
 //
-// So this asks the question the string set could not: not "is one of these paths
+// So these two ask what a string set cannot: not "is one of these paths
 // present" but "does the page it opens declare the same language as the page it
-// is written in". The payment link is off this site and has one language, so it
-// is exempt by being off-site rather than by being named here.
+// is written in", and "does every path the rule accepts lead somewhere".
 const PRO_PATHS = new Set([
-  pro.payment_link,
-  '/support/', '/support/#buying-pro', '/da/support/', '/da/support/#kob-pro',
+  '/support/', '/support/#no-longer-sold', '/da/support/', '/da/support/#solgt-ikke-laengere',
   '/#desktop', '/da/#desktop',
 ]);
 
@@ -346,14 +365,14 @@ function pageLang(text) {
   return /<html[^>]*\blang="([^"]+)"/.exec(text)?.[1] ?? null;
 }
 
-/** The site-relative file a path such as `/da/support/#kob-pro` opens. */
+/** The site-relative file a path such as `/da/support/#solgt-ikke-laengere` opens. */
 function pageForPath(path) {
   const rel = path.replace(/^\//, '');
   const file = rel === '' || rel.endsWith('/') ? join(root, 'site', rel, 'index.html') : null;
   return file && existsSync(file) ? file : null;
 }
 
-check('the path to the paid product lands in the language the page is written in', () => {
+check('a link to the Transmute Desktop notice lands in the language the page is written in', () => {
   const langs = new Map();
   for (const file of collect(join(root, 'site'), ['.html'])) {
     langs.set(file, pageLang(readFileSync(file, 'utf8')));
@@ -380,7 +399,7 @@ check('the path to the paid product lands in the language the page is written in
       assert(target, `${rel} sends a reader to ${href}, which is not a page of this site`);
       const lands = pageLang(readFileSync(target, 'utf8'));
       assert(lands === lang,
-        `${rel} is written in "${lang}" but its path to the paid product, ${href}, is a "${lands}" page; a reader who has decided to buy is handed the price in another language`);
+        `${rel} is written in "${lang}" but its link to the Transmute Desktop notice, ${href}, is a "${lands}" page; a reader is sent to the notice in another language`);
     }
   }
 
@@ -388,7 +407,7 @@ check('the path to the paid product lands in the language the page is written in
     `only ${measured} pages are held to this rule, which is fewer than the thirteen that were measured; the rule has stopped covering the pages it was written for`);
 });
 
-check('every path the paid-product rule accepts leads somewhere', () => {
+check('every path the Transmute Desktop notice rules accept leads somewhere', () => {
   for (const href of PRO_PATHS) {
     const [path, fragment] = href.split('#');
     if (!path.startsWith('/')) continue;
@@ -397,7 +416,7 @@ check('every path the paid-product rule accepts leads somewhere', () => {
     if (!fragment) continue;
     const ids = readFileSync(target, 'utf8').match(/\bid="([^"]+)"/g) ?? [];
     assert(ids.includes(`id="${fragment}"`),
-      `the rule accepts ${href}, but the page it opens has no id="${fragment}"; the Danish support page calls that section "kob-pro", so the English anchor name leads nowhere`);
+      `the rule accepts ${href}, but the page it opens has no id="${fragment}"; the Danish support page names its sections in Danish, so an English anchor name leads nowhere`);
   }
 });
 
@@ -785,8 +804,10 @@ check('a published page holds no name twice, and every name it links to is one i
 // answer was the one nothing was sent to.
 //
 // So this asks the question the HTML rules cannot: not "does the page have a
-// way through" but "can the file the site hands a language model state the
-// price and activate a key on its own". The file is read out of robots.txt
+// way through" but "can the file the site hands a language model answer on its
+// own". While the app was sold that meant stating the price and the payment
+// link; since 2026-11-22 it means saying the app is no longer sold, and still
+// carrying everything a holder of an existing key needs to activate it. The file is read out of robots.txt
 // rather than named here, because a list of filenames is a rule that is green
 // the moment the pointer moves somewhere else — and the pointer is the thing
 // that decides who gets the file at all.
@@ -806,7 +827,7 @@ const MODEL_GUIDANCE = /^\s*#\s*guidance for language models:\s*(\S+)\s*$/im;
 /** The llmstxt.org convention: /llms.txt is the index, /llms-full.txt the whole text. */
 const MODEL_CONVENTION = /^llms[A-Za-z0-9-]*\.txt$/;
 
-check('every file the site hands a language model can quote the price and activate a key on its own', () => {
+check('every file the site hands a language model says the app is no longer sold and can activate a key on its own', () => {
   const locked = String(contract.site_url ?? '').replace(/\/+$/, '');
   const robots = readFileSync(join(root, 'site', 'robots.txt'), 'utf8');
   const named = MODEL_GUIDANCE.exec(robots)?.[1];
@@ -832,14 +853,16 @@ check('every file the site hands a language model can quote the price and activa
     const where = `site/${relative(join(root, 'site'), file).split('\\').join('/')}`;
     const text = readFileSync(file, 'utf8');
 
-    assert(text.includes(pro.payment_link),
-      `${where} is a file the site publishes for language models and states no payment link, so it cannot be answered from; a model will not open /support/ and read the price off it`);
-    assert(new RegExp(`\\b${pro.amount}\\s*(?:${pro.currency}|US\\$)`, 'i').test(text),
-      `${where} is a file the site publishes for language models and states no price; the contract locks it at ${pro.amount} ${pro.currency}`);
+    // The first fact is the one that replaced the price: a model asked whether
+    // the app can be bought has to be told it cannot, in the file it is handed,
+    // because it will not open /support/ to find out. (A payment link or a price
+    // in the file is refused by the per-file rules above.)
+    assert(NO_LONGER_SOLD.test(text),
+      `${where} is a file the site publishes for language models and does not say Transmute Desktop is no longer sold, so a model asked about buying it has nothing to answer from`);
 
-    // The machine count is the third fact, because a price without it is half an
-    // answer: 19 USD is cheap per machine and expensive per seat, and a model
-    // recommending this for a team needs to know which one it is quoting.
+    // The machine count is the second fact, because the notice without it is half
+    // an answer for someone who already holds a key: it is one licence on three
+    // machines, and a model helping them needs to know which limit it is quoting.
     const machines = new RegExp(`\\b(?:${pro.machines}|${Object.entries(NUMBER_WORDS).filter(([, n]) => n === pro.machines).map(([w]) => w).join('|')})\\s+(?:machines|maskiner)\\b`, 'gi');
     assert(machines.test(text),
       `${where} is a file the site publishes for language models and states no machine count; the contract locks it at ${pro.machines}`);
@@ -979,17 +1002,19 @@ const LICENCE_FAILURES = [
       `|(?:cancelled|canceled|revoked|expired|annulleret|udl[øo]bet|udl[øo]ber)` +
       `[^.\\n]{0,160}?(?:key|licens|n[øo]gle)`,
       'i'),
+    // Until 2026-11-22 the way back from a dead key was to buy again, and the
+    // block had to carry a door to the button. The app is no longer sold, so the
+    // way back is a person: the block has to say there is no new purchase to make
+    // and where to write instead of leaving a reader to look for a button that is
+    // gone. A remedy that sent them to buy again is refused by the per-file rules.
     remedy: [
       [
-        'says the way back is a new purchase',
-        new RegExp(
-          `(?:buy(?:ing|s)? (?:it |again|a new )|a new purchase|new key|re-?purchase` +
-          `|k[øo]b(?:e)? (?:igen|den igen|ny)|nyt k[øo]b|ny n[øo]gle|genk[øo]b)`,
-          'i'),
+        'says there is no new purchase to make',
+        /no longer sold|no new purchase|ikke l[æa]ngere s[æa]lges|s[æa]lges ikke l[æa]ngere|intet nyt k[øo]b/i,
       ],
       [
-        'and gives a door to the button',
-        /#buying-pro|#kob-pro|buy\.stripe\.com|support\/#buying|support\/#kob/i,
+        'and says where to write instead',
+        /mahoje\.dk|#contact|#kontakt/i,
       ],
     ],
     floor: 2,
@@ -1254,7 +1279,7 @@ check('every address the product hands a user is absolute', () => {
   }
 });
 
-check('the paid product is named the way the contract locks it', () => {
+check('Transmute Desktop is named the way the contract locks it', () => {
   // product_name was in the contract of record and no rule could contradict it, so
   // a page was free to invent "Transmute Desktop Premium" and sell a tier that
   // does not exist. Only a capitalised word after the product is a tier claim;
@@ -1321,7 +1346,7 @@ check('the Danish support page says what the English one says', () => {
   assert(sections(da).length === sections(en).length,
     `the Danish support page has ${sections(da).length} sections, the English one has ${sections(en).length}: a section must be translated, not dropped`);
   assert(stripe(da).join() === stripe(en).join(),
-    `the Danish support page links ${stripe(da).join(', ')}, the English one links ${stripe(en).join(', ')}: both languages must sell and donate through the same links`);
+    `the Danish support page links ${stripe(da).join(', ')}, the English one links ${stripe(en).join(', ')}: both languages must link the same donation page`);
   const machines = text => [...new Set([...text.matchAll(new RegExp(`\\b(?:${COUNT}|\\d+)\\s+(?:machines|maskiner)`, 'gi'))]
     .map(m => NUMBER_WORDS[m[0].split(/\s+/)[0].toLowerCase()] ?? Number(m[0].split(/\s+/)[0])))].sort();
   assert(machines(da).join() === machines(en).join() && machines(en).length > 0,
