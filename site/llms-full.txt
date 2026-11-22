@@ -1,18 +1,18 @@
 # Transmute — full reference for language models
 
-Transmute is an offline command-line tool and desktop app for converting data files between JSON, CSV, YAML, XML and SQL, with an optional transformation pipeline run on the way. Everything runs locally: no network requests (apart from the desktop app's one-time licence activation), no telemetry, no account, no server side. The CLI and engine are MIT licensed. Published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), a developer based in Odense, Denmark. Website: https://transmute.run (English) and https://transmute.run/da/ (Danish). Source and issues: https://github.com/mahope/transmute.
+Transmute is an offline command-line tool for converting data files between JSON, CSV, YAML, XML and SQL, with an optional transformation pipeline run on the way. Everything runs locally: no network requests, no telemetry, no account, no server side. The CLI and engine are MIT licensed. Published on npm as @mahope/transmute. Made by Mads Holst Jensen (https://mahoje.dk), a developer based in Odense, Denmark. Website: https://transmute.run (English) and https://transmute.run/da/ (Danish). Source and issues: https://github.com/mahope/transmute.
 
 ## Install
 
 - Global install: `npm i -g @mahope/transmute` (requires Node.js 22 or newer, no other dependencies)
 - Run once without installing: `npx @mahope/transmute data.yaml -o json`
-- Desktop app (macOS, Windows, Linux, built with Tauri): https://github.com/mahope/transmute/releases. Free to download with three transformations per launch; Pro is a one-time purchase of 19 USD for up to three machines (https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02). The CLI has no limits.
+- Transmute Desktop is no longer sold; see the next section. The CLI has no limits and needs no key.
 
-## Desktop Pro and licence activation
+## Transmute Desktop (no longer sold) and licence activation
 
-The command line tool is free, unlimited and MIT licensed. The desktop app is free to download with three transformations per launch. Desktop Pro is a one-time purchase of 19 USD for up to three machines, and unlocks unlimited transformations in the app: https://buy.stripe.com/eVqbJ0dvdbaW55cgN9bMQ02. The same page explains how to activate the key and what to do if it will not activate. The CLI has no limits and no licence check at all.
+The command line tool is free, unlimited and MIT licensed, and stays that way. Transmute Desktop, the separate desktop app (macOS, Windows, Linux, built with Tauri), is no longer sold as of 22 November 2026: there is no payment link and no price, and no new keys are issued. Licences that were already issued keep working, for up to three machines, and unlock unlimited transformations in the app. The support page has the activation steps and what to do if a key will not activate. The CLI has no limits and no licence check at all.
 
-The desktop app activates a key against `https://mahope.tools/api/license/`. Every call is a POST with a JSON body of `license_key`, `device_id` and `product`, and CORS is open.
+For keys that were already issued, the desktop app activates against `https://mahope.tools/api/license/`. Every call is a POST with a JSON body of `license_key`, `device_id` and `product`, and CORS is open.
 
 - `activate` — spends a machine slot and returns `ok`, `plan`, `expires_at` and `devices_in_use`
 - `validate` — returns `ok` and `valid`, with a `reason` when it is not

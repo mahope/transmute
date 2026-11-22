@@ -113,8 +113,8 @@ STRINGS = {
                lang_other=("da", "DA", "Dansk"), theme="Theme", theme_light="Switch to light theme",
                theme_dark="Switch to dark theme", theme_system="Use system theme", menu="Open menu",
                family="Mahope tools:", family_label="Mahope tools",
-               f_product="Transmute converts JSON, CSV, YAML, XML and SQL offline, from the terminal or a small desktop app.",
-               f_install="Install the CLI", f_desktop="Desktop app", f_releases="Releases", f_cheatsheet="Cheat sheet",
+               f_product="Transmute converts JSON, CSV, YAML, XML and SQL offline, from the terminal.",
+               f_install="Install the CLI", f_releases="Releases", f_cheatsheet="Cheat sheet",
                 f_family="Family", f_site="Site", f_privacy="Privacy", f_support="Support", f_security="Security", f_sitemap="Sitemap",
                f_report="Report a bug", f_badge="Feedback powered by",
                f_built='Built by Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — developer and technical partner for small businesses, Odense, Denmark.',
@@ -128,8 +128,8 @@ STRINGS = {
                lang_other=("en", "EN", "English"), theme="Tema", theme_light="Skift til lyst tema",
                theme_dark="Skift til mørkt tema", theme_system="Brug systemets tema", menu="Åbn menu",
                family="Mahope tools:", family_label="Mahope tools",
-               f_product="Transmute konverterer JSON, CSV, YAML, XML og SQL offline, fra terminalen eller en lille desktop-app.",
-               f_install="Installér CLI'en", f_desktop="Desktop-app", f_releases="Udgivelser", f_cheatsheet="Cheat sheet",
+               f_product="Transmute konverterer JSON, CSV, YAML, XML og SQL offline, fra terminalen.",
+               f_install="Installér CLI'en", f_releases="Udgivelser", f_cheatsheet="Cheat sheet",
                 f_family="Familie", f_site="Site", f_privacy="Privatliv", f_support="Support", f_security="Sikkerhed", f_sitemap="Sitemap",
                f_report="Meld en fejl", f_badge="Feedback drevet af",
                f_built='Lavet af Mads Holst Jensen · <a href="https://mahoje.dk">mahoje.dk</a> — udvikler og teknisk partner for små virksomheder, Odense.',
@@ -207,7 +207,6 @@ def footer(lang: str, alt_url: str | None) -> str:
         <p>{s["f_product"]}</p>
         <ul>
           <li><a href="{home}#install">{s["f_install"]}</a></li>
-          <li><a href="{home}#desktop">{s["f_desktop"]}</a></li>
           <li><a href="/cheatsheet/">{s["f_cheatsheet"]}</a></li>
           <li><a href="{REPO}">GitHub</a></li>
           <li><a href="{REPO}/releases">{s["f_releases"]}</a></li>
